@@ -1,0 +1,8 @@
+node_modules/
+dist/
+data/raw/
+reference/mapillary/
+.venv/
+__pycache__/
+.DS_Store
+.env

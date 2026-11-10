@@ -1,0 +1,11 @@
+{
+  "moti_jheel": {
+    "title": "Moti Jheel, Kanpur",
+    "bbox": [26.4736, 80.3119, 26.4846, 80.3239],
+    "water_names": [["Moti Jheel", [26.4791, 80.3179], 900]],
+    "landmarks": {
+      "moti_jheel_metro": [26.47911, 80.31787]
+    },
+    "note": "bbox = [south, west, north, east], ~1.2 x 1.2 km around the Moti Jheel metro. water_names labels unnamed OSM water: [name, [lat, lon], search radius m]."
+  }
+}

@@ -36,3 +36,13 @@ boundary walls, tree density. Uncovered streets borrow the nearest covered style
 ## Known limits
 - Heights are estimated where neither OSM nor Overture has them.
 - Mapillary coverage in Kanpur may be partial.
+
+## Status (2026-11-10)
+- OSM (Overpass): 187 road pieces (clipped to bbox + 80 m), Orange Line viaduct, Moti Jheel lake, Japani Garden,
+  Tulsi Upvan, Kargil Park. OSM here has **no street names, lanes, lamps or poles**, and only 20 buildings.
+- Overture 2026-10-21.0: 2,420 footprints (Google Open Buildings 2,127, Microsoft 273, OSM 20).
+  After dedup (> 30 % overlap) and road check: **2,412 real buildings**, no procedural infill.
+- Heights: neither source has heights here → 2,410 are estimated (`hsrc: "est"`) from footprint size + road class.
+- Fetching Overture takes ~14 min on a slow connection (DuckDB reads parquet footers worldwide).
+  `fetch_msbuildings.py` is a fallback using the Microsoft quadkey tile (123132010, 68 MB).
+- Mapillary: script ready, **needs `MAPILLARY_TOKEN`** (not yet run). Street furniture is generated until then.

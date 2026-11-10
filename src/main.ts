@@ -3,6 +3,7 @@ import { CollisionWorld } from './player/collide';
 import { Ramu } from './player/ramu';
 import { Hud } from './ui/hud';
 import { City } from './world/city';
+import { Landmarks } from './world/landmarks';
 import { makeOccupancy, StreetDetail } from './world/streetDetail';
 import { MapData, project } from './world/types';
 
@@ -55,13 +56,18 @@ async function main() {
   const world = new CollisionWorld(map);
   for (const [x, z] of city.pillars) world.addPost(x, z, 0.9);
   for (const [x, z, r] of detail.obstacles) world.addPost(x, z, r);
+  const landmarks = new Landmarks(map);
+  scene.add(landmarks.group);
+  for (const [x, z, r] of landmarks.posts) world.addPost(x, z, r);
+  for (const ring of landmarks.walls) world.addWall(ring, 6);
   const ramu = new Ramu(camera, world, renderer.domElement);
   scene.add(ramu.root);
   const hud = new Hud(map);
   console.log(`city built in ${(performance.now() - t0).toFixed(0)} ms`, city.stats);
 
   // Spawn: near the Moti Jheel metro on the nearest road point.
-  let spawn = map.landmarks.moti_jheel_metro ?? [0, 0];
+  const m = map.landmarks.moti_jheel_metro ?? [0, 0];
+  let spawn: [number, number] = [m[0] + 6, m[1] + 45]; // just south of the station, facing it
   if (params.get('spawn')) {
     const [lat, lon] = params.get('spawn')!.split(',').map(Number);
     spawn = project(map, lat, lon);
@@ -72,6 +78,7 @@ async function main() {
     if (d < bd) [bd, best] = [d, p];
   }
   ramu.position.set(best[0], 0, best[1]);
+  ramu.yaw = Math.atan2(best[0] - m[0], best[1] - m[1]); // camera looks toward the metro
 
   // Fixed debug cameras.
   let fixed = false;

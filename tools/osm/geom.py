@@ -105,3 +105,17 @@ class Grid:
                     yield it
 
 
+
+
+def overlap_fraction(p, q, n=6):
+    """Approximate share of polygon p's area that lies inside q (grid sampling over p's bbox)."""
+    x0, z0, x1, z1 = bbox_of(p)
+    inside_p = inside_both = 0
+    for i in range(n):
+        for j in range(n):
+            pt = (x0 + (i + 0.5) / n * (x1 - x0), z0 + (j + 0.5) / n * (z1 - z0))
+            if point_in_poly(pt, p):
+                inside_p += 1
+                if point_in_poly(pt, q):
+                    inside_both += 1
+    return inside_both / inside_p if inside_p else 0.0

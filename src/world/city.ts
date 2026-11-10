@@ -120,7 +120,7 @@ export class City {
     for (const pk of map.parks) {
       const [x, z] = centroid(pk.pts);
       tileOf(x, z).flat.polygon(pk.pts, 0.03, COL.park);
-      scatter(pk.pts, 110, trees);
+      scatter(pk.pts, 110, trees, map.water.map((w) => w.pts));
     }
     for (const f of map.furniture) if (f.t === 'tree') trees.push([f.p[0], f.p[1], hash2(f.p[0], f.p[1])]);
 
@@ -307,7 +307,7 @@ export function walkAlong(pts: P2[], step: number, fn: (x: number, z: number, dx
   }
 }
 
-function scatter(poly: P2[], areaPer: number, out: [number, number, number][]): void {
+function scatter(poly: P2[], areaPer: number, out: [number, number, number][], avoid: P2[][] = []): void {
   let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
   for (const [x, z] of poly) {
     x0 = Math.min(x0, x);
@@ -322,7 +322,7 @@ function scatter(poly: P2[], areaPer: number, out: [number, number, number][]): 
     i++;
     const x = x0 + hash2(x0 + i, z0) * (x1 - x0);
     const z = z0 + hash2(z0, x0 + i * 1.7) * (z1 - z0);
-    if (pointInPoly(x, z, poly)) {
+    if (pointInPoly(x, z, poly) && !avoid.some((a) => pointInPoly(x, z, a))) {
       out.push([x, z, hash2(x, z)]);
       count--;
     }

@@ -20,6 +20,10 @@ export class CollisionWorld {
     this.addRing([[x - r, z - r], [x + r, z - r], [x + r, z + r], [x - r, z + r]], h, r > 0.5);
   }
 
+  addWall(ring: P2[], h: number): void {
+    this.addRing(ring, h);
+  }
+
   private key(cx: number, cz: number): number {
     return (cx + 4096) * 8192 + (cz + 4096);
   }

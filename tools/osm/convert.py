@@ -17,7 +17,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from geom import Grid, bbox_of, centroid, point_in_poly, polys_overlap, seg_point_dist, signed_area  # noqa: E402
+from geom import Grid, bbox_of, centroid, overlap_fraction, point_in_poly, polys_overlap, seg_point_dist, signed_area  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FLOOR_H = 3.2
@@ -282,16 +282,21 @@ def main():
         for a, b in zip(r["pts"], r["pts"][1:]):
             road_grid.add(bbox_of([a, b], r["w"] / 2), (a, b, r["w"] / 2, r))
 
-    if os.path.exists(ov_path):
-        ov = json.load(open(ov_path))
+    ml_files = [p for p in (ov_path, os.path.join(raw_dir, args.area + ".ms.json")) if os.path.exists(p)]
+    for path_ in ml_files:
+        ov = json.load(open(path_))
         for ob in ov["buildings"]:
             pts = ring([proj(lat, lon) for lon, lat in ob["pts"]])
             if not pts or not inside(centroid(pts), 30):
                 continue
-            if ob["source"] == "OpenStreetMap" and any(polys_overlap(pts, q) for q in bgrid.query(bbox_of(pts))):
-                n_ov_dup += 1
-                continue
-            if any(polys_overlap(pts, q) for q in bgrid.query(bbox_of(pts))):
+            # Duplicate if it substantially covers an accepted footprint (OSM first); terraced
+            # neighbours that merely touch or overlap by a sliver are kept.
+            dup = False
+            for q in bgrid.query(bbox_of(pts)):
+                if polys_overlap(pts, q) and (overlap_fraction(pts, q) > 0.3 or overlap_fraction(q, pts) > 0.3):
+                    dup = True
+                    break
+            if dup:
                 n_ov_dup += 1
                 continue
             c = centroid(pts)
@@ -307,8 +312,8 @@ def main():
                               "_hs": hs})
             bgrid.add(bbox_of(pts), pts)
             n_ov += 1
-    else:
-        print("WARNING: no Overture file; only OSM buildings (run fetch_overture.py)")
+    if not ml_files:
+        print("WARNING: no Overture / MS file; only OSM buildings (run fetch_overture.py)")
 
     # Frontage, style and height for every building.
     def style_for(road):

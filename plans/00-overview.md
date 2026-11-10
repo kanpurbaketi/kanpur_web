@@ -5,7 +5,7 @@ This is the active project; the Godot prototype in `../kanpur` is paused.
 
 ## Decisions
 - Engine: **Three.js** + TypeScript + Vite. Static build, desktop + phone.
-- Style: low-poly stylized 3D, third-person.
+- Style: grounded semi-realistic 3D (procedural textures, leaf-card trees, IBL + AO), third-person.
 - Map: **Moti Jheel core, ~1.2 × 1.2 km**, made as close to the real streets as public data allows
   (see `01-map-accuracy.md`).
 - Stories are inspired by Kanpur news but fictionalized: no real people, brands, victims or ongoing cases.

@@ -2,14 +2,15 @@ import { DRIVABLE, MapData } from '../world/types';
 
 const SIZE = 180;      // minimap size in CSS px
 const RANGE = 160;     // meters shown from center to edge
-const PX_PER_M = 1.5;  // resolution of the pre-rendered map image
+export const PX_PER_M = 1.5;  // resolution of the pre-rendered map image
 
 /** Minimap (pre-rendered map, rotated around the player each frame) and the credit line. */
 export class Hud {
   private ctx: CanvasRenderingContext2D;
-  private img: HTMLCanvasElement;
-  private x0: number;
-  private z0: number;
+  /** pre-rendered north-up map; pixel = (x - x0, z - z0) * PX_PER_M. Also drawn by the Map panel. */
+  readonly img: HTMLCanvasElement;
+  readonly x0: number;
+  readonly z0: number;
 
   constructor(map: MapData) {
     const canvas = document.getElementById('minimap') as HTMLCanvasElement;

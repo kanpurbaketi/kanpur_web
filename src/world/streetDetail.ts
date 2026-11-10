@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { walkAlong } from './city';
+import { makeGroundMaterial, SURF } from './ground';
 import { MeshBuilder, offsetLines } from './meshBuilder';
+import { makeTrees } from './trees';
 import { DRIVABLE, hash2, MapData, P2, pointInPoly } from './types';
 
 const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'secondary_link', 'trunk_link', 'primary_link']);
@@ -45,8 +47,10 @@ export class StreetDetail {
 
       if (hasWalk) {
         const [L, R] = offsetLines(r.pts, hw + 1.1);
+        kerb.surf = SURF.paving;
         if (r.sidewalk !== 'right') kerb.slab(L, 2.2, 0, 0.16, C('#a39d92'));
         if (r.sidewalk !== 'left') kerb.slab(R, 2.2, 0, 0.16, C('#a39d92'));
+        kerb.surf = SURF.concrete;
       }
       // Dual carriageway: median on the right edge (India drives on the left).
       if (r.oneway && major) {
@@ -91,7 +95,7 @@ export class StreetDetail {
       }
     }
 
-    this.addMesh(kerb.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), true);
+    this.addMesh(kerb.build(), makeGroundMaterial(), true);
     this.addPoles(poles);
     this.addLamps(lamps);
     this.addTrees(trees);
@@ -149,20 +153,10 @@ export class StreetDetail {
   }
 
   private addTrees(list: [number, number, number][]): void {
-    // Neem / ashoka-like: trunk + two stacked crowns, merged into one geometry.
-    const trunk = new THREE.CylinderGeometry(0.14, 0.22, 3, 6).translate(0, 1.5, 0);
-    const c1 = new THREE.IcosahedronGeometry(2.0, 0).scale(1.2, 0.75, 1.2).translate(0, 3.8, 0);
-    const c2 = new THREE.IcosahedronGeometry(1.4, 0).scale(1, 0.8, 1).translate(0.4, 5.0, -0.2);
-    const paint = (g: THREE.BufferGeometry, hex: string) => {
-      const n = g.getAttribute('position').count;
-      const c = C(hex);
-      g.setAttribute('color', new THREE.Float32BufferAttribute(Array.from({ length: n }, () => [c.r, c.g, c.b]).flat(), 3));
-      return g.index ? g.toNonIndexed() : g;
-    };
-    const parts = [paint(trunk, '#5a4330'), paint(c1, '#3f6e2c'), paint(c2, '#557f35')];
-    const merged = mergeNonIndexed(parts);
-    merged.computeVertexNormals();
-    this.instanced(merged, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }), list, true);
+    for (const im of makeTrees(list)) {
+      this.group.add(im);
+      this.drawCalls++;
+    }
   }
 }
 
@@ -188,18 +182,6 @@ function addWires(out: number[], ax: number, az: number, bx: number, bz: number,
       }
     }
   }
-}
-
-function mergeNonIndexed(gs: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  const pos: number[] = [], col: number[] = [];
-  for (const g of gs) {
-    pos.push(...(g.getAttribute('position').array as Float32Array));
-    col.push(...(g.getAttribute('color').array as Float32Array));
-  }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  return out;
 }
 
 /** Fast point-in-building test on a grid (for keeping furniture off footprints). */

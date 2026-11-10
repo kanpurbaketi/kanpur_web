@@ -3,5 +3,9 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   base: './',
   server: { port: 5180 },
-  build: { target: 'es2022', chunkSizeWarningLimit: 1200 },
+  build: {
+    target: 'es2022',
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: { input: { main: 'index.html', admin: 'admin.html' } },
+  },
 });

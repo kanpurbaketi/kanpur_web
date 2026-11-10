@@ -38,6 +38,10 @@ for (const q of queries) {
   const name = q.replace(/[^a-z0-9.,=_-]+/gi, '_').slice(0, 80) + '.png';
   await page.screenshot({ path: path.join(outDir, name) });
   console.log('saved', path.join(outDir, name));
+  if (/(^|&)debug/.test(q)) {
+    await page.waitForTimeout(1500);
+    console.log('  stats:', await page.textContent('#debug'));
+  }
 }
 await browser.close();
 

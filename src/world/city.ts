@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { makeFacadeMaterial } from './facade';
+import { makeGroundMaterial, SURF } from './ground';
 import { MeshBuilder, offsetLines } from './meshBuilder';
+import { waterNormal } from './textures';
+import { makeTrees, TreeSpot } from './trees';
 import { centroid, DRIVABLE, hash2, MapData, MARKED, P2, pointInPoly, signedArea } from './types';
 
 const TILE = 250;
@@ -9,20 +12,17 @@ const VIADUCT_Y = 9.5;
 const C = (hex: string) => new THREE.Color(hex);
 const COL = {
   ground: C('#a89a7c'),
-  asphalt: C('#3d3e40'),
+  asphalt: C('#3b3a39'),
   asphaltLane: C('#4a4b4d'),
-  verge: C('#8e8270'),
-  footpath: C('#9d978c'),
+  verge: C('#958670'),
+  footpath: C('#a39d92'),
   kerb: C('#c9c4b8'),
   mark: C('#e9e6dc'),
-  water: C('#2f5f66'),
-  park: C('#5f8a3e'),
+  water: C('#3a4a3c'),
+  park: C('#5d6d3a'),
   rail: C('#6e665c'),
   concrete: C('#b9b5ac'),
   tank: C('#151515'),
-  trunk: C('#5a4330'),
-  crown: C('#3f6e2c'),
-  crown2: C('#4f7d33'),
 };
 
 export interface CityStats {
@@ -42,8 +42,8 @@ export class City {
   readonly stats: CityStats = { drawCalls: 0, triangles: 0, buildings: 0 };
 
   private mats = {
-    flat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }),
-    water: new THREE.MeshStandardMaterial({ color: COL.water, roughness: 0.1, metalness: 0.35 }),
+    flat: makeGroundMaterial(),
+    water: makeWaterMaterial(),
     facade: null as unknown as THREE.MeshStandardMaterial,
   };
 
@@ -69,18 +69,26 @@ export class City {
         const t = tileOf(x, z).flat;
         if (drivable) {
           const sw = r.sidewalk && r.sidewalk !== 'no' && r.sidewalk !== 'none' ? 2.2 : 1.0;
+          t.surf = sw > 1 ? SURF.paving : SURF.dirt;
           t.ribbon(pts, r.w + sw * 2, y + 0.02, sw > 1 ? COL.footpath : COL.verge);
+          t.surf = SURF.asphalt;
           t.ribbon(pts, r.w, y + 0.05, COL.asphalt);
+          t.surf = SURF.concrete;
           if (MARKED.has(r.cls)) dashes(t, pts, y + 0.065);
         } else {
+          t.surf = SURF.paving;
           t.ribbon(pts, r.w, y + 0.035, COL.footpath);
+          t.surf = SURF.concrete;
         }
       });
       if (drivable) {
         for (const end of [r.pts[0], r.pts[r.pts.length - 1]]) {
           const t = tileOf(end[0], end[1]).flat;
+          t.surf = SURF.dirt;
           t.disc(end[0], end[1], r.w / 2 + 1.0, 0.021, COL.verge, 12);
+          t.surf = SURF.asphalt;
           t.disc(end[0], end[1], r.w / 2, 0.051, COL.asphalt, 12);
+          t.surf = SURF.concrete;
         }
         for (const p of r.pts) this.roadPoints.push(p);
       }
@@ -116,10 +124,13 @@ export class City {
       tileOf(x, z).water.polygon(wb.pts, 0.08);
     }
 
-    const trees: [number, number, number][] = [];
+    const trees: TreeSpot[] = [];
     for (const pk of map.parks) {
       const [x, z] = centroid(pk.pts);
-      tileOf(x, z).flat.polygon(pk.pts, 0.03, COL.park);
+      const f = tileOf(x, z).flat;
+      f.surf = SURF.grass;
+      f.polygon(pk.pts, 0.03, COL.park);
+      f.surf = SURF.concrete;
       scatter(pk.pts, 110, trees, map.water.map((w) => w.pts));
     }
     for (const f of map.furniture) if (f.t === 'tree') trees.push([f.p[0], f.p[1], hash2(f.p[0], f.p[1])]);
@@ -134,7 +145,7 @@ export class City {
       const signs = style?.signs ?? ['#c8261a'];
       const sign = tmp.set(signs[Math.floor(b.seed * 7919) % signs.length]).clone();
       addBuilding(t, b.pts, b.base, b.h, new THREE.Color(b.color), b.shop, new Set(b.front), b.seed,
-        [sign.r, sign.g, sign.b]);
+        [sign.r, sign.g, sign.b], map.floor_h);
       // Black Sintex-style rooftop water tanks on most houses.
       if (b.h < 20 && b.seed > 0.3 && Math.abs(signedArea(b.pts)) > 35) tanks.push([cx, b.base + b.h, cz]);
       this.stats.buildings++;
@@ -166,34 +177,20 @@ export class City {
     const [x0, z0, x1, z1] = this.map.bounds;
     const g = new THREE.PlaneGeometry(x1 - x0 + 600, z1 - z0 + 600);
     g.rotateX(-Math.PI / 2);
-    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: COL.ground, roughness: 1 }));
+    const uv = g.getAttribute('uv');
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, SURF.dirt, 0);
+    const n = g.getAttribute('position').count;
+    g.setAttribute('color', new THREE.Float32BufferAttribute(Array.from({ length: n * 3 }, (_, i) =>
+      [COL.ground.r, COL.ground.g, COL.ground.b][i % 3]), 3));
+    const m = new THREE.Mesh(g, this.mats.flat);
     m.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
     m.receiveShadow = true;
     this.group.add(m);
     this.stats.drawCalls++;
   }
 
-  private addTrees(trees: [number, number, number][]): void {
-    if (!trees.length) return;
-    const trunk = new THREE.CylinderGeometry(0.16, 0.24, 2.6, 6);
-    trunk.translate(0, 1.3, 0);
-    const crown = new THREE.IcosahedronGeometry(2.2, 0);
-    crown.scale(1, 0.8, 1);
-    crown.translate(0, 3.9, 0);
-    const tm = new THREE.InstancedMesh(trunk, new THREE.MeshStandardMaterial({ color: COL.trunk, roughness: 1 }), trees.length);
-    const cm = new THREE.InstancedMesh(crown, new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }), trees.length);
-    const m = new THREE.Matrix4();
-    const c = new THREE.Color();
-    trees.forEach(([x, z, h], i) => {
-      const s = 0.8 + h * 0.7;
-      m.makeRotationY(h * 6.28).scale(new THREE.Vector3(s, s, s)).setPosition(x, 0, z);
-      tm.setMatrixAt(i, m);
-      cm.setMatrixAt(i, m);
-      cm.setColorAt(i, c.copy(COL.crown).lerp(COL.crown2, h));
-    });
-    for (const im of [tm, cm]) {
-      im.castShadow = true;
-      im.receiveShadow = true;
+  private addTrees(trees: TreeSpot[]): void {
+    for (const im of makeTrees(trees)) {
       this.group.add(im);
       this.stats.drawCalls++;
     }
@@ -215,11 +212,18 @@ export class City {
   }
 }
 
-/** Walls (with facade attributes) + flat roof for one footprint. */
+/**
+ * Walls (with facade attributes), flat roof, roof parapet and chajja sunshades for one footprint.
+ * facade.y: 1 = wall with windows, 2 = plain trim (parapet, ledges), 0 = roof.
+ */
 function addBuilding(m: MeshBuilder, poly: P2[], base: number, h: number, col: THREE.Color, shop: boolean,
-                     front: Set<number>, seed: number, sign: number[]): void {
+                     front: Set<number>, seed: number, sign: number[], floorH: number): void {
   const top = base + h;
   const n = poly.length;
+  const area = Math.abs(signedArea(poly));
+  const floors = Math.max(1, Math.round(h / floorH));
+  const parapet = area > 20 ? 0.9 + (seed > 0.7 ? 0.3 : 0) : 0;
+  const trimCol = col.clone().lerp(WHITE_C, 0.12);
   let u = 0;
   for (let i = 0; i < n; i++) {
     const a = poly[i], c = poly[(i + 1) % n];
@@ -232,22 +236,75 @@ function addBuilding(m: MeshBuilder, poly: P2[], base: number, h: number, col: T
       nz = -nz;
     }
     const isFront = front.has(i);
-    const ex = [shop && isFront ? 1 : 0, 1, seed, isFront ? 1 : 0];
-    const p0: [number, number, number] = [a[0], base, a[1]];
-    const p1: [number, number, number] = [c[0], base, c[1]];
-    const p2: [number, number, number] = [c[0], top, c[1]];
-    const p3: [number, number, number] = [a[0], top, a[1]];
+    const isShop = shop && isFront;
+    const ex = [isShop ? 1 : 0, 1, seed, isFront ? 1 : 0];
+    const trim = [0, 2, seed, 0];
     const nn: [number, number, number] = [nx, 0, nz];
-    m.tri(p0, p1, p2, nn, col, [u, 0], [u + len, 0], [u + len, h], ex, sign);
-    m.tri(p0, p2, p3, nn, col, [u, 0], [u + len, h], [u, h], ex, sign);
+    const quad = (x0: number, z0: number, x1: number, z1: number, y0: number, y1: number, nrm: V3, e: number[],
+                  cc: THREE.Color, uOff = 0) => {
+      const L = Math.hypot(x1 - x0, z1 - z0);
+      const p0: V3 = [x0, y0, z0], p1: V3 = [x1, y0, z1], p2: V3 = [x1, y1, z1], p3: V3 = [x0, y1, z0];
+      const v0 = y0 - base, v1 = y1 - base;
+      m.tri(p0, p1, p2, nrm, cc, [u + uOff, v0], [u + uOff + L, v0], [u + uOff + L, v1], e, sign);
+      m.tri(p0, p2, p3, nrm, cc, [u + uOff, v0], [u + uOff + L, v1], [u + uOff, v1], e, sign);
+    };
+    quad(a[0], a[1], c[0], c[1], base, top, nn, ex, col);
+
+    if (parapet) {
+      const ix = -nx * 0.2, iz = -nz * 0.2, py = top + parapet;
+      quad(a[0], a[1], c[0], c[1], top, py, nn, trim, col);                                   // outside
+      quad(a[0] + ix, a[1] + iz, c[0] + ix, c[1] + iz, top, py, [-nx, 0, -nz], trim, trimCol); // inside
+      m.tri([a[0], py, a[1]], [c[0], py, c[1]], [c[0] + ix, py, c[1] + iz], [0, 1, 0], trimCol,
+        [u, h + parapet], [u + len, h + parapet], [u + len, h + parapet], trim, sign);
+      m.tri([a[0], py, a[1]], [c[0] + ix, py, c[1] + iz], [a[0] + ix, py, a[1] + iz], [0, 1, 0], trimCol,
+        [u, h + parapet], [u + len, h + parapet], [u, h + parapet], trim, sign);
+    }
+
+    // Chajja: concrete sunshade over each floor's windows; a deep awning slab over shop shutters.
+    if (len >= 2.0) {
+      for (let f = 0; f < floors; f++) {
+        const shopRow = isShop && f === 0;
+        const y = base + f * floorH + (shopRow ? 0.98 : 0.8) * floorH;
+        if (y > top - 0.15) continue;
+        const d = shopRow ? 0.9 : 0.45, th = shopRow ? 0.14 : 0.1;
+        const ox = nx * d, oz = nz * d;
+        const A: P2 = [a[0] + ox, a[1] + oz], B: P2 = [c[0] + ox, c[1] + oz];
+        quad(A[0], A[1], B[0], B[1], y - th, y, nn, trim, trimCol);                       // front lip
+        m.tri([a[0], y, a[1]], [c[0], y, c[1]], [B[0], y, B[1]], [0, 1, 0], trimCol,
+          [u, y - base], [u + len, y - base], [u + len, y - base], trim, sign);           // top
+        m.tri([a[0], y, a[1]], [B[0], y, B[1]], [A[0], y, A[1]], [0, 1, 0], trimCol,
+          [u, y - base], [u + len, y - base], [u, y - base], trim, sign);
+        m.tri([a[0], y - th, a[1]], [c[0], y - th, c[1]], [B[0], y - th, B[1]], [0, -1, 0], trimCol,
+          [u, 0], [u, 0], [u, 0], trim, sign);                                           // underside
+        m.tri([a[0], y - th, a[1]], [B[0], y - th, B[1]], [A[0], y - th, A[1]], [0, -1, 0], trimCol,
+          [u, 0], [u, 0], [u, 0], trim, sign);
+      }
+    }
     u += len;
   }
   const contour = poly.map(([x, z]) => new THREE.Vector2(x, z));
   const roof = [0, 0, seed, 0];
   for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(contour, [])) {
     m.tri([poly[i][0], top, poly[i][1]], [poly[j][0], top, poly[j][1]], [poly[k][0], top, poly[k][1]],
-      [0, 1, 0], col, [0, 0], [0, 0], [0, 0], roof, sign);
+      [0, 1, 0], col, [poly[i][0], poly[i][1]], [poly[j][0], poly[j][1]], [poly[k][0], poly[k][1]], roof, sign);
   }
+}
+
+type V3 = [number, number, number];
+const WHITE_C = new THREE.Color(1, 1, 1);
+
+function makeWaterMaterial(): THREE.MeshStandardMaterial {
+  const nm = waterNormal();
+  nm.repeat.set(1 / 9, 1 / 9);
+  const mat = new THREE.MeshStandardMaterial({
+    color: COL.water, roughness: 0.08, metalness: 0.1, normalMap: nm, normalScale: new THREE.Vector2(0.35, 0.35),
+  });
+  // Planar uv for the normal map (water polygons have no uv): use world xz.
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+vNormalMapUv = (normalMapTransform * vec3((modelMatrix * vec4(position, 1.0)).xz, 1.0)).xy;`);
+  };
+  return mat;
 }
 
 function dashes(m: MeshBuilder, pts: P2[], y: number): void {

@@ -12,7 +12,7 @@
       box-shadow: 0 2px 10px rgba(0,0,0,.35); border: 3px solid rgba(255,255,255,.85); }
     #credits { position: fixed; left: 0; right: 0; bottom: 0; padding: 3px 8px; font-size: 11px; color: #fff;
       background: rgba(0,0,0,.35); text-align: right; pointer-events: none; }
-    #hint { position: fixed; left: 16px; top: 16px; padding: 6px 10px; border-radius: 6px; font-size: 13px;
+    #hint { position: fixed; left: 68px; top: 20px; padding: 6px 10px; border-radius: 6px; font-size: 13px;
       color: #fff; background: rgba(0,0,0,.4); pointer-events: none; }
     #debug { position: fixed; left: 16px; bottom: 26px; padding: 4px 8px; font: 12px ui-monospace, monospace;
       color: #0f0; background: rgba(0,0,0,.6); }
@@ -25,6 +25,60 @@
     .tbtn.on { background: rgba(232,89,12,.7); }
     #btn-jump { right: 24px; bottom: 40px; }
     #btn-run { right: 100px; bottom: 40px; }
+    /* ---- menu ---- */
+    .menu-btn { position: fixed; left: 16px; top: 16px; z-index: 20; width: 44px; height: 44px; border-radius: 10px;
+      border: 0; background: rgba(0,0,0,.45); display: grid; place-content: center; gap: 4px; cursor: pointer;
+      -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+    .menu-btn span { display: block; width: 20px; height: 2px; border-radius: 2px; background: #fff; }
+    .menu-btn:hover, .menu-btn[aria-expanded="true"] { background: rgba(0,0,0,.65); }
+    .menu-btn:focus-visible, .menu-item:focus-visible, .menu-close:focus-visible, .map-btn:focus-visible
+      { outline: 2px solid #f2992a; outline-offset: 2px; }
+    .menu-drop { position: fixed; left: 16px; top: 66px; z-index: 20; min-width: 200px; padding: 6px;
+      border-radius: 12px; background: rgba(28,24,20,.88); box-shadow: 0 8px 28px rgba(0,0,0,.35);
+      -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+      opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity .15s, transform .15s; }
+    .menu-drop.on { opacity: 1; transform: none; pointer-events: auto; }
+    .menu-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 12px; border: 0;
+      border-radius: 8px; background: none; color: #f3eee6; font: 500 15px system-ui, sans-serif; cursor: pointer; text-align: left; }
+    .menu-item:hover { background: rgba(255,255,255,.1); }
+    .menu-item svg { color: #f2992a; flex: none; }
+    .menu-overlay { position: fixed; inset: 0; z-index: 30; display: none; place-items: center; padding: 16px;
+      background: rgba(20,16,12,.45); }
+    .menu-overlay.on { display: grid; }
+    .menu-panel { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; border-radius: 14px;
+      background: #f7f3ec; color: #2a241e; box-shadow: 0 16px 48px rgba(0,0,0,.4); box-sizing: border-box; }
+    .menu-panel[data-item="map"] { width: min(900px, 100%); }
+    .menu-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px 20px;
+      border-bottom: 1px solid #e4dccf; }
+    .menu-head h2 { margin: 0; font: 650 18px system-ui, sans-serif; }
+    .menu-close { width: 36px; height: 36px; border: 0; border-radius: 8px; background: none; font-size: 26px;
+      line-height: 1; color: #5a5046; cursor: pointer; }
+    .menu-close:hover { background: #ebe4d8; }
+    .menu-body { padding: 18px 20px 20px; }
+    .profile-top { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+    .avatar { flex: none; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
+      background: #d02027; color: #fff; font: 700 28px system-ui, sans-serif; }
+    .field { flex: 1; display: grid; gap: 4px; font-size: 12px; color: #7a6e62; }
+    .name-input { font: 500 17px system-ui, sans-serif; padding: 9px 11px; border: 1px solid #d8cfc1; border-radius: 8px;
+      background: #fff; color: #2a241e; min-width: 0; }
+    .name-input:focus { outline: 2px solid #f2992a; border-color: transparent; }
+    .rows { display: grid; grid-template-columns: auto 1fr; gap: 10px 20px; margin: 0; font-size: 14px; }
+    .rows dt { color: #7a6e62; }
+    .rows dd { margin: 0; font-weight: 500; text-align: right; }
+    .map-canvas { display: block; width: 100%; height: min(62vh, 560px); border-radius: 10px; touch-action: none;
+      cursor: grab; background: #d9cfb8; }
+    .map-canvas:active { cursor: grabbing; }
+    .map-bar { display: flex; gap: 8px; margin-top: 10px; }
+    .map-btn { width: 40px; height: 36px; border: 1px solid #d8cfc1; border-radius: 8px; background: #fff;
+      font-size: 17px; color: #2a241e; cursor: pointer; }
+    .map-btn:hover { background: #f0e9dd; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .stat { padding: 14px; border-radius: 10px; background: #fff; border: 1px solid #ebe3d6; }
+    .stat-v { font: 650 22px system-ui, sans-serif; font-variant-numeric: tabular-nums; color: #2a241e; }
+    .stat-l { margin-top: 2px; font-size: 12px; color: #7a6e62; }
+    .muted { margin: 14px 0 0; font-size: 12px; color: #7a6e62; }
+    .link-btn { border: 0; background: none; padding: 0; color: #b5480a; font: inherit; text-decoration: underline; cursor: pointer; }
+    @media (prefers-reduced-motion: reduce) { .menu-drop { transition: none; } }
     @media (pointer: coarse) {
       .tbtn { display: block; }
       #minimap { width: 120px; height: 120px; }

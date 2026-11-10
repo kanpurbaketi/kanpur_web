@@ -12,6 +12,8 @@ export class Ramu {
   yaw = 0;
   pitch = -0.3;
   enabled = true;
+  /** total jumps (for statistics) */
+  jumps = 0;
   private grounded = true;
   private keys = new Set<string>();
   private touchMove = new THREE.Vector2();
@@ -30,6 +32,17 @@ export class Ramu {
     return this.root.position;
   }
 
+  /** horizontal speed, m/s */
+  get speed(): number {
+    return Math.hypot(this.vel.x, this.vel.z);
+  }
+
+  /** forget held keys (e.g. when a menu takes focus) */
+  releaseKeys(): void {
+    this.keys.clear();
+    this.touchMove.set(0, 0);
+  }
+
   update(dt: number): void {
     const input = new THREE.Vector2();
     if (this.enabled) {
@@ -41,6 +54,7 @@ export class Ramu {
       if (this.jumpQueued && this.grounded) {
         this.vel.y = JUMP;
         this.grounded = false;
+        this.jumps++;
       }
     }
     this.jumpQueued = false;
@@ -176,38 +190,182 @@ export class Ramu {
     });
   }
 
+  /**
+   * Ramu: swept-back black hair, stubble and moustache, red open-collar shirt, gold chain, jeans.
+   * Faces -Z; limbs hang from pivots so they can swing.
+   */
   private buildBody(): void {
-    const skin = '#9e6b47';
-    const part = (geo: THREE.BufferGeometry, size: number[], pos: number[], color: string, parent: THREE.Object3D = this.model) => {
-      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.9 }));
-      m.scale.set(size[0], size[1], size[2]);
-      m.position.set(pos[0], pos[1], pos[2]);
-      m.castShadow = true;
-      parent.add(m);
-      return m;
+    const mat = (color: string, roughness = 0.85) => new THREE.MeshStandardMaterial({ color, roughness });
+    const skin = mat(SKIN, 0.6), shirt = mat('#d02027', 0.8), collar = mat('#b0171d', 0.8);
+    const jeans = mat('#2c3646', 0.9), hair = mat('#0d0c0f', 0.4), sandal = mat('#3a2518', 0.7);
+    const gold = new THREE.MeshStandardMaterial({ color: '#e0b040', roughness: 0.3, metalness: 0.9 });
+    const part = (geo: THREE.BufferGeometry, m: THREE.Material, pos: number[], parent: THREE.Object3D = this.model,
+                  scale?: number[]) => {
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(pos[0], pos[1], pos[2]);
+      if (scale) mesh.scale.set(scale[0], scale[1], scale[2]);
+      mesh.castShadow = true;
+      parent.add(mesh);
+      return mesh;
     };
-    const box = new THREE.BoxGeometry(1, 1, 1);
-    const ball = new THREE.SphereGeometry(0.5, 10, 8);
-    const limb = (x: number, y: number, len: number, w: number, color: string) => {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, y, 0);
-      this.model.add(pivot);
-      const g = box.clone();
-      g.translate(0, -0.5, 0);
-      part(g, [w, len, w], [0, 0, 0], color, pivot);
-      this.limbs.push(pivot);
+    const pivot = (x: number, y: number) => {
+      const g = new THREE.Group();
+      g.position.set(x, y, 0);
+      this.model.add(g);
+      return g;
     };
-    part(box, [0.5, 0.65, 0.28], [0, 1.2, 0], '#f2992a');      // saffron kurta
-    part(box, [0.52, 0.12, 0.3], [0, 0.84, 0], '#f2f2e6');     // kurta hem
-    limb(-0.13, 0.8, 0.8, 0.18, '#ebebdf');                     // pyjama legs
-    limb(0.13, 0.8, 0.8, 0.18, '#ebebdf');
-    limb(-0.33, 1.5, 0.6, 0.14, skin);                          // arms
-    limb(0.33, 1.5, 0.6, 0.14, skin);
-    part(ball, [0.3, 0.34, 0.3], [0, 1.72, 0], skin);           // head
-    part(box, [0.32, 0.1, 0.32], [0, 1.88, 0], '#1a1411');      // hair
-    part(box, [0.62, 0.08, 0.06], [0, 1.48, 0], '#cc1a1a');     // red gamcha
-    part(box, [0.2, 0.06, 0.02], [0, 1.68, -0.15], '#1a1411');  // moustache (faces -Z)
+    const capsule = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 4, 10).translate(0, -len / 2 - r, 0);
+
+    // legs (pivot at the hip): jeans, sandals
+    const legs = [-0.1, 0.1].map((x) => {
+      const p = pivot(x, 0.9);
+      part(capsule(0.078, 0.7), jeans, [0, 0, 0], p);
+      part(new THREE.BoxGeometry(0.11, 0.035, 0.26), sandal, [0, -0.88, -0.04], p);
+      part(new THREE.SphereGeometry(0.05, 8, 6), skin, [0, -0.85, -0.07], p, [1, 0.6, 1.6]); // foot
+      return p;
+    });
+    part(new THREE.CylinderGeometry(0.2, 0.18, 0.16, 14), jeans, [0, 0.88, 0], this.model, [1, 1, 0.7]); // hips
+    // shirt: untucked, slightly flattened torso + shoulders
+    part(new THREE.CylinderGeometry(0.2, 0.235, 0.64, 14), shirt, [0, 1.2, 0], this.model, [1, 1, 0.68]);
+    part(new THREE.SphereGeometry(0.21, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), shirt, [0, 1.5, 0], this.model, [1.06, 0.5, 0.72]);
+    // open collar: a V of skin following the chest, collar flaps either side, gold chain
+    part(openCollar(), new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.6, side: THREE.DoubleSide }), [0, 0, 0]);
+    for (const sx of [-1, 1]) {
+      const c = part(new THREE.BoxGeometry(0.085, 0.014, 0.05), collar, [sx * 0.072, 1.578, -0.1]);
+      c.rotation.set(0.75, sx * -0.35, sx * -0.5);
+    }
+    const chain = part(new THREE.TorusGeometry(0.07, 0.007, 6, 24).rotateX(Math.PI / 2), gold, [0, 1.553, -0.05], this.model, [1, 1, 1.6]);
+    chain.rotation.x = -0.42;
+    // arms (pivot at the shoulder): red half sleeve, bare forearm, hand
+    const arms = [-0.235, 0.235].map((x) => {
+      const p = pivot(x, 1.49);
+      part(capsule(0.057, 0.26), shirt, [0, 0, 0], p);
+      part(capsule(0.048, 0.26), skin, [0, -0.32, 0], p);
+      part(new THREE.SphereGeometry(0.055, 8, 6), skin, [0, -0.66, 0], p, [0.8, 1.1, 1]);
+      return p;
+    });
+    this.limbs.push(legs[0], legs[1], arms[1], arms[0]); // arms swing opposite to the legs
+    // neck, then the head as one group (slightly enlarged so the face reads at gameplay distance)
+    part(new THREE.CylinderGeometry(0.05, 0.06, 0.1, 8), skin, [0, 1.58, 0]);
+    const head = new THREE.Group();
+    head.position.set(0, 1.6, 0);
+    head.scale.setScalar(1.14);
+    this.model.add(head);
+    const faceMat = new THREE.MeshStandardMaterial({ map: faceTexture(), roughness: 0.6 });
+    part(new THREE.SphereGeometry(0.115, 24, 18), faceMat, [0, 0.11, 0], head, [0.95, 1.12, 1]);
+    for (const sx of [-1, 1]) part(new THREE.SphereGeometry(0.025, 8, 6), skin, [sx * 0.108, 0.1, 0.005], head, [0.5, 1, 0.8]);
+    part(new THREE.SphereGeometry(0.019, 8, 6), skin, [0, 0.1, -0.114], head, [0.8, 1.2, 0.8]); // nose
+    // hair: cap tilted back off the forehead, with a full swept-up top and extra volume behind
+    part(new THREE.SphereGeometry(0.124, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.5).rotateX(0.62), hair,
+      [0, 0.128, 0.012], head, [0.99, 1.12, 1.05]);
+    const quiff = part(new THREE.SphereGeometry(0.075, 16, 10), hair, [0.012, 0.228, -0.03], head, [1.45, 0.72, 1.3]);
+    quiff.rotation.set(0.25, 0, 0.12);
+    part(new THREE.SphereGeometry(0.065, 12, 8), hair, [0, 0.2, 0.065], head, [1.55, 0.95, 1.2]);
   }
+}
+
+const SKIN = '#a9714b';
+
+/** Skin-coloured V at the open collar, bent to sit just outside the shirt's chest and shoulder curve. */
+function openCollar(): THREE.BufferGeometry {
+  const rows = [[1.588, -0.103, 0.05], [1.53, -0.152, 0.04], [1.47, -0.162, 0.022], [1.4, -0.156, 0.001]]; // y, z, half width
+  const pos: number[] = [];
+  for (let i = 0; i < rows.length - 1; i++) {
+    const [y0, z0, w0] = rows[i], [y1, z1, w1] = rows[i + 1];
+    pos.push(-w0, y0, z0, w0, y0, z0, w1, y1, z1, -w0, y0, z0, w1, y1, z1, -w1, y1, z1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Face painted for the head sphere (equirectangular; the face is centred at u = 0.75, i.e. -Z). */
+function faceTexture(): THREE.CanvasTexture {
+  const W = 512, H = 256, cx = W * 0.75;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d')!;
+  g.fillStyle = SKIN;
+  g.fillRect(0, 0, W, H);
+  // warm cheeks
+  for (const s of [-1, 1]) {
+    const r = g.createRadialGradient(cx + s * 40, 146, 2, cx + s * 40, 146, 22);
+    r.addColorStop(0, 'rgba(150,70,50,.28)');
+    r.addColorStop(1, 'rgba(150,70,50,0)');
+    g.fillStyle = r;
+    g.fillRect(cx + s * 40 - 24, 122, 48, 48);
+  }
+  // stubble: jaw, chin and upper lip, fading out toward the cheeks
+  const st = g.createLinearGradient(0, 132, 0, 176);
+  st.addColorStop(0, 'rgba(38,32,40,0)');
+  st.addColorStop(1, 'rgba(38,32,40,.4)');
+  g.fillStyle = st;
+  g.beginPath();
+  g.moveTo(cx - 122, 110);
+  g.quadraticCurveTo(cx - 70, 150, cx - 30, 150);
+  g.quadraticCurveTo(cx, 140, cx + 30, 150);
+  g.quadraticCurveTo(cx + 70, 150, cx + 122, 110);
+  g.lineTo(cx + 122, H);
+  g.lineTo(cx - 122, H);
+  g.closePath();
+  g.fill();
+  // eyes
+  for (const s of [-1, 1]) {
+    const ex = cx + s * 27, ey = 127;
+    g.fillStyle = '#f3efe8';
+    g.beginPath();
+    g.ellipse(ex, ey, 11, 5.6, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#2a1a12';
+    g.beginPath();
+    g.arc(ex, ey, 5.2, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#fff';
+    g.fillRect(ex + 1, ey - 3, 2, 2);
+    g.strokeStyle = '#1a1210'; // upper lash line
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(ex - 11, ey - 1);
+    g.quadraticCurveTo(ex, ey - 7, ex + 11, ey - 1);
+    g.stroke();
+    // thick eyebrows, higher at the outer end
+    g.strokeStyle = '#120f10';
+    g.lineWidth = 5.5;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(ex - s * 13, ey - 11);
+    g.quadraticCurveTo(ex, ey - 17, ex + s * 15, ey - 13);
+    g.stroke();
+  }
+  // moustache
+  g.strokeStyle = 'rgba(20,16,18,.9)';
+  g.lineWidth = 5;
+  g.beginPath();
+  g.moveTo(cx - 22, 163);
+  g.quadraticCurveTo(cx, 153, cx + 22, 163);
+  g.stroke();
+  // smile with teeth
+  g.fillStyle = '#f5f1e8';
+  g.strokeStyle = '#6a342a';
+  g.lineWidth = 1.6;
+  g.beginPath();
+  g.moveTo(cx - 20, 168);
+  g.quadraticCurveTo(cx, 171, cx + 20, 168);
+  g.quadraticCurveTo(cx, 186, cx - 20, 168);
+  g.closePath();
+  g.fill();
+  g.stroke();
+  // soul patch
+  g.fillStyle = 'rgba(20,16,18,.7)';
+  g.beginPath();
+  g.ellipse(cx, 189, 5, 3.5, 0, 0, Math.PI * 2);
+  g.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
 }
 
 function moveToward(v: number, target: number, step: number): number {

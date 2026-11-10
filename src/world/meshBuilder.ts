@@ -11,6 +11,9 @@ export class MeshBuilder {
   extra: number[] = []; // vec4 per vertex (facade data), only used when withExtra
   extra2: number[] = []; // vec3 per vertex (sign colour)
 
+  /** surface id written to uv.x when a call passes no uv (see ground.ts SURF) */
+  surf = 0;
+
   constructor(private withExtra = false) {}
 
   get empty(): boolean {
@@ -23,6 +26,7 @@ export class MeshBuilder {
     const abx = b[0] - a[0], aby = b[1] - a[1], abz = b[2] - a[2];
     const acx = c[0] - a[0], acy = c[1] - a[1], acz = c[2] - a[2];
     const cx = aby * acz - abz * acy, cy = abz * acx - abx * acz, cz = abx * acy - aby * acx;
+    if (ua === Z2) ua = ub = uc = [this.surf, 0];
     if (cx * n[0] + cy * n[1] + cz * n[2] < 0) {
       [b, c] = [c, b];
       [ub, uc] = [uc, ub];
@@ -57,9 +61,12 @@ export class MeshBuilder {
   ribbon(pts: [number, number][], width: number, y: number, color: THREE.Color = WHITE): void {
     if (width <= 0 || pts.length < 2) return;
     const [L, R] = offsetLines(pts, width / 2);
+    const s = this.surf, l = [s, -1], r = [s, 1]; // uv.y: -1 left edge .. +1 right edge
     for (let i = 0; i < pts.length - 1; i++) {
-      this.quadUp([L[i][0], y, L[i][1]], [R[i][0], y, R[i][1]], [R[i + 1][0], y, R[i + 1][1]],
-        [L[i + 1][0], y, L[i + 1][1]], color);
+      const a: V3 = [L[i][0], y, L[i][1]], b: V3 = [R[i][0], y, R[i][1]];
+      const c: V3 = [R[i + 1][0], y, R[i + 1][1]], d: V3 = [L[i + 1][0], y, L[i + 1][1]];
+      this.tri(a, b, c, UP, color, l, r, r);
+      this.tri(a, c, d, UP, color, l, r, l);
     }
   }
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { walkAlong } from '../city';
+import { makeGroundMaterial } from '../ground';
 import { MeshBuilder, offsetLines } from '../meshBuilder';
 import { MapData, P2, signedArea } from '../types';
 
@@ -18,7 +19,7 @@ export class Landmarks {
     for (const p of map.parks) this.parkEdge(mb, p.pts, p.kind);
     const st = map.pois.find((p) => p.kind === 'stop' && p.name === 'Moti Jheel');
     if (st) this.metroStation(mb, map, st.p, st.name, st.name_hi);
-    const mesh = new THREE.Mesh(mb.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }));
+    const mesh = new THREE.Mesh(mb.build(), makeGroundMaterial()); // weathered concrete / stone
     mesh.castShadow = mesh.receiveShadow = true;
     this.group.add(mesh);
   }

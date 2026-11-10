@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Ramu — Moti Jheel</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #d6d3c4; font-family: system-ui, sans-serif; }
+    canvas { display: block; touch-action: none; }
+    #status { position: fixed; inset: 0; display: grid; place-items: center; font-size: 18px; color: #333; }
+    #minimap { position: fixed; right: 16px; top: 16px; width: 180px; height: 180px; border-radius: 50%;
+      box-shadow: 0 2px 10px rgba(0,0,0,.35); border: 3px solid rgba(255,255,255,.85); }
+    #credits { position: fixed; left: 0; right: 0; bottom: 0; padding: 3px 8px; font-size: 11px; color: #fff;
+      background: rgba(0,0,0,.35); text-align: right; pointer-events: none; }
+    #hint { position: fixed; left: 16px; top: 16px; padding: 6px 10px; border-radius: 6px; font-size: 13px;
+      color: #fff; background: rgba(0,0,0,.4); pointer-events: none; }
+    #debug { position: fixed; left: 16px; bottom: 26px; padding: 4px 8px; font: 12px ui-monospace, monospace;
+      color: #0f0; background: rgba(0,0,0,.6); }
+    #stick { position: fixed; display: none; width: 120px; height: 120px; border-radius: 50%;
+      background: rgba(255,255,255,.18); border: 2px solid rgba(255,255,255,.5); pointer-events: none; }
+    #knob { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%;
+      background: rgba(255,255,255,.6); }
+    .tbtn { position: fixed; display: none; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.7);
+      background: rgba(0,0,0,.3); color: #fff; font-weight: 600; font-size: 13px; }
+    .tbtn.on { background: rgba(232,89,12,.7); }
+    #btn-jump { right: 24px; bottom: 40px; }
+    #btn-run { right: 100px; bottom: 40px; }
+    @media (pointer: coarse) {
+      .tbtn { display: block; }
+      #minimap { width: 120px; height: 120px; }
+      #hint { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="status">Loading Moti Jheel…</div>
+  <canvas id="minimap"></canvas>
+  <div id="hint">Click to look · WASD move · Shift run · Space jump · Esc release mouse</div>
+  <div id="debug"></div>
+  <div id="stick"><div id="knob"></div></div>
+  <button class="tbtn" id="btn-run">RUN</button>
+  <button class="tbtn" id="btn-jump">JUMP</button>
+  <div id="credits"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

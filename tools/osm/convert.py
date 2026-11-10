@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
-"""Convert raw Overpass JSON into game-ready chunk files.
+"""Merge OSM + Overture (+ Mapillary) raw data into one web-ready map.json.
 
-Usage: python3 tools/osm/convert.py --area swaroop_nagar
-Input : data/osm/raw/<area>.json
-Output: game/data/map/<area>/index.json, chunk_<cx>_<cz>.json, roads_graph.json
+Usage: python3 tools/osm/convert.py --area moti_jheel
+Input : data/raw/<area>.osm.json, data/raw/<area>.overture.json (optional), data/raw/<area>.mapillary.json (optional)
+Output: public/data/<area>/map.json
 
-Coordinates: local meters around the bbox center. Godot axes: +X east, -Z north, Y up.
-Kanpur OSM building coverage is sparse, so buildings are procedurally added along
-streets ("infill") wherever they don't overlap roads, parks, water or mapped buildings.
+Coordinates: local meters around the bbox center. +X east, +Z south, Y up (three.js friendly).
+No procedural infill: every building is a real footprint (OSM first, then Overture/ML footprints).
+Heights: OSM tags -> Overture height/floors -> estimate (tagged hsrc="est").
 """
 import argparse
+import hashlib
 import json
 import math
 import os
-import random
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CHUNK = 250.0
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from geom import Grid, bbox_of, centroid, point_in_poly, polys_overlap, seg_point_dist, signed_area  # noqa: E402
 
-# Full road width (m) per highway class. None = not rendered.
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+FLOOR_H = 3.2
+
+# Full carriageway width (m) per class when OSM has no lanes tag. Tuned to Kanpur streets.
 ROAD_WIDTH = {
-    "motorway": 16, "trunk": 14, "primary": 12, "secondary": 11, "tertiary": 9,
-    "motorway_link": 7, "trunk_link": 7, "primary_link": 7, "secondary_link": 7, "tertiary_link": 7,
-    "unclassified": 6.5, "residential": 6, "living_street": 5, "service": 4.5,
+    "motorway": 16, "trunk": 14, "primary": 12, "secondary": 10, "tertiary": 8,
+    "motorway_link": 7, "trunk_link": 7, "primary_link": 7, "secondary_link": 7, "tertiary_link": 6.5,
+    "unclassified": 6, "residential": 5.5, "living_street": 4.5, "service": 4,
     "pedestrian": 4, "footway": 2, "path": 1.8, "steps": 2, "cycleway": 2, "track": 3.5,
 }
 DRIVABLE = {
@@ -31,160 +34,117 @@ DRIVABLE = {
     "primary_link", "secondary_link", "tertiary_link", "unclassified", "residential",
     "living_street", "service",
 }
-INFILL_ON = {"trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "living_street"}
-# Kanpur-ish facade palette (pastels, sandstone, whitewash).
-WALL_COLORS = [
-    "#e8d7b9", "#f1e3c6", "#e7b9a3", "#f2c6c2", "#cfe0e8", "#f4efe2", "#e9d27f",
-    "#c9b49a", "#d8c3a5", "#eaa979", "#b9d4b0", "#f0f0ea", "#d9a6b8", "#c7c3e0",
-]
+MAJOR = {"trunk", "primary", "secondary", "tertiary", "secondary_link", "trunk_link", "primary_link"}
+SIDEWALK_DEFAULT = {"trunk": "both", "primary": "both", "secondary": "both", "tertiary": "both"}
 
 
-# ---------------------------------------------------------------- geometry helpers
-def signed_area(poly):
-    a = 0.0
-    for i in range(len(poly)):
-        x1, z1 = poly[i]
-        x2, z2 = poly[(i + 1) % len(poly)]
-        a += x1 * z2 - x2 * z1
-    return a / 2.0
+def stable_rand(*keys):
+    """Deterministic 0..1 from keys (same output every run, independent of processing order)."""
+    h = hashlib.md5(("|".join(str(k) for k in keys)).encode()).hexdigest()
+    return int(h[:8], 16) / 0xFFFFFFFF
 
 
-def centroid(poly):
-    xs = sum(p[0] for p in poly) / len(poly)
-    zs = sum(p[1] for p in poly) / len(poly)
-    return xs, zs
+def num(v):
+    try:
+        return float(str(v).split()[0].replace(",", "."))
+    except (ValueError, IndexError):
+        return None
 
 
-def point_in_poly(pt, poly):
-    x, z = pt
-    inside = False
-    j = len(poly) - 1
-    for i in range(len(poly)):
-        xi, zi = poly[i]
-        xj, zj = poly[j]
-        if (zi > z) != (zj > z) and x < (xj - xi) * (z - zi) / (zj - zi + 1e-12) + xi:
-            inside = not inside
-        j = i
-    return inside
-
-
-def seg_point_dist(a, b, p):
-    ax, az = a
-    bx, bz = b
-    px, pz = p
-    dx, dz = bx - ax, bz - az
-    l2 = dx * dx + dz * dz
-    t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((px - ax) * dx + (pz - az) * dz) / l2))
-    cx, cz = ax + t * dx, az + t * dz
-    return math.hypot(px - cx, pz - cz)
-
-
-def segs_intersect(p1, p2, p3, p4):
-    def orient(a, b, c):
-        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
-    d1, d2 = orient(p3, p4, p1), orient(p3, p4, p2)
-    d3, d4 = orient(p1, p2, p3), orient(p1, p2, p4)
-    return (d1 > 0) != (d2 > 0) and (d3 > 0) != (d4 > 0)
-
-
-def seg_poly_dist(a, b, poly):
-    """Distance from segment ab to polygon (0 if they touch/overlap)."""
-    if point_in_poly(a, poly) or point_in_poly(b, poly):
-        return 0.0
-    best = 1e9
-    n = len(poly)
-    for i in range(n):
-        c, d = poly[i], poly[(i + 1) % n]
-        if segs_intersect(a, b, c, d):
-            return 0.0
-        best = min(best, seg_point_dist(a, b, c), seg_point_dist(c, d, a), seg_point_dist(c, d, b))
-    return best
-
-
-def polys_overlap(p, q):
-    """Polygon overlap test (works for simple polygons via edge crossing + containment)."""
-    for i in range(len(p)):
-        a, b = p[i], p[(i + 1) % len(p)]
-        for j in range(len(q)):
-            if segs_intersect(a, b, q[j], q[(j + 1) % len(q)]):
-                return True
-    return point_in_poly(p[0], q) or point_in_poly(q[0], p)
-
-
-def bbox_of(poly, pad=0.0):
-    xs = [p[0] for p in poly]
-    zs = [p[1] for p in poly]
-    return (min(xs) - pad, min(zs) - pad, max(xs) + pad, max(zs) + pad)
-
-
-class Grid:
-    """Uniform spatial hash of items keyed by bbox."""
-
-    def __init__(self, cell=40.0):
-        self.cell = cell
-        self.cells = {}
-
-    def _keys(self, bb):
-        c = self.cell
-        for gx in range(int(math.floor(bb[0] / c)), int(math.floor(bb[2] / c)) + 1):
-            for gz in range(int(math.floor(bb[1] / c)), int(math.floor(bb[3] / c)) + 1):
-                yield gx, gz
-
-    def add(self, bb, item):
-        for k in self._keys(bb):
-            self.cells.setdefault(k, []).append(item)
-
-    def query(self, bb):
-        seen = set()
-        for k in self._keys(bb):
-            for it in self.cells.get(k, ()):
-                if id(it) not in seen:
-                    seen.add(id(it))
-                    yield it
-
-
-# ---------------------------------------------------------------- conversion
-def parse_height(tags, rng):
-    h = None
-    if "height" in tags:
-        try:
-            h = float(tags["height"].split()[0])
-        except ValueError:
-            pass
-    if h is None and "building:levels" in tags:
-        try:
-            h = float(tags["building:levels"]) * 3.2
-        except ValueError:
-            pass
-    if h is None:
-        h = rng.choice([2, 2, 3, 3, 3, 4]) * 3.2
+def osm_height(t):
+    h = num(t["height"]) if "height" in t else None
+    if h is None and "building:levels" in t:
+        lv = num(t["building:levels"])
+        h = lv * FLOOR_H if lv else None
     base = 0.0
-    if "building:min_level" in tags or "building:min_levels" in tags:
-        try:
-            base = float(tags.get("building:min_level") or tags.get("building:min_levels")) * 3.2
-        except ValueError:
-            pass
-    return round(h, 2), round(base, 2)
+    ml = t.get("building:min_level") or t.get("building:min_levels")
+    if ml and num(ml):
+        base = num(ml) * FLOOR_H
+    return h, base
+
+
+def estimate_floors(area_m2, near_major, key):
+    """Kanpur residential colonies: mostly 2-3 floors; big footprints on main roads go higher."""
+    r = stable_rand("floors", key)
+    if area_m2 < 25:
+        return 1
+    if area_m2 < 60:
+        return 1 if r < 0.35 else 2
+    if area_m2 < 200:
+        opts = [2, 2, 3, 3, 3, 4] if not near_major else [2, 3, 3, 4, 4, 5]
+    elif area_m2 < 600:
+        opts = [2, 3, 3, 4] if not near_major else [3, 4, 4, 5]
+    else:
+        opts = [2, 3, 4, 5]
+    return opts[int(r * len(opts)) % len(opts)]
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--area", required=True)
-    ap.add_argument("--seed", type=int, default=1857)  # Kanpur's 1857 history
-    ap.add_argument("--no-infill", action="store_true")
     args = ap.parse_args()
 
     areas = json.load(open(os.path.join(ROOT, "tools", "osm", "areas.json")))
     area = areas[args.area]
+    styles = json.load(open(os.path.join(ROOT, "tools", "osm", "street_styles.json")))
     s, w, n, e = area["bbox"]
     lat0, lon0 = (s + n) / 2, (w + e) / 2
     kx = math.cos(math.radians(lat0)) * 111320.0
     kz = 110540.0
 
     def proj(lat, lon):
-        return (round((lon - lon0) * kx, 2), round(-(lat - lat0) * kz, 2))
+        return [round((lon - lon0) * kx, 2), round(-(lat - lat0) * kz, 2)]
 
-    raw = json.load(open(os.path.join(ROOT, "data", "osm", "raw", args.area + ".json")))
+    minx, maxz = proj(s, w)
+    maxx, minz = proj(n, e)
+    bounds = [minx, minz, maxx, maxz]
+
+    CLIP = 80.0  # keep a margin of street beyond the play area
+
+    def clip_line(pts, pad=CLIP):
+        """Clip a polyline to the padded bbox; returns a list of pieces."""
+        x0, z0, x1, z1 = bounds[0] - pad, bounds[1] - pad, bounds[2] + pad, bounds[3] + pad
+
+        def clip_seg(a, b):
+            t0, t1 = 0.0, 1.0
+            dx, dz = b[0] - a[0], b[1] - a[1]
+            for p_, q_ in ((-dx, a[0] - x0), (dx, x1 - a[0]), (-dz, a[1] - z0), (dz, z1 - a[1])):
+                if p_ == 0:
+                    if q_ < 0:
+                        return None
+                    continue
+                t = q_ / p_
+                if p_ < 0:
+                    t0 = max(t0, t)
+                else:
+                    t1 = min(t1, t)
+                if t0 > t1:
+                    return None
+            return ([round(a[0] + dx * t0, 2), round(a[1] + dz * t0, 2)],
+                    [round(a[0] + dx * t1, 2), round(a[1] + dz * t1, 2)])
+
+        pieces, cur = [], []
+        for a, b in zip(pts, pts[1:]):
+            c = clip_seg(a, b)
+            if c is None:
+                if len(cur) >= 2:
+                    pieces.append(cur)
+                cur = []
+                continue
+            if not cur or cur[-1] != c[0]:
+                if len(cur) >= 2:
+                    pieces.append(cur)
+                cur = [c[0]]
+            cur.append(c[1])
+        if len(cur) >= 2:
+            pieces.append(cur)
+        return pieces
+
+    def inside(p, pad=0.0):
+        return bounds[0] - pad <= p[0] <= bounds[2] + pad and bounds[1] - pad <= p[1] <= bounds[3] + pad
+
+    raw_dir = os.path.join(ROOT, "data", "raw")
+    raw = json.load(open(os.path.join(raw_dir, args.area + ".osm.json")))
     nodes, ways, rels = {}, {}, []
     for el in raw["elements"]:
         if el["type"] == "node":
@@ -197,20 +157,16 @@ def main():
     def way_pts(way):
         return [proj(nodes[i]["lat"], nodes[i]["lon"]) for i in way["nodes"] if i in nodes]
 
-    rng = random.Random(args.seed)
-    roads, buildings, water, parks, rails, pois = [], [], [], [], [], []
-    graph_nodes, graph_edges = {}, []
+    def ring(pts):
+        if len(pts) >= 4 and pts[0] == pts[-1]:
+            pts = pts[:-1]
+        return pts if len(pts) >= 3 and abs(signed_area(pts)) >= 4 else None
 
-    def add_area(poly, target, extra):
-        if len(poly) >= 4 and poly[0] == poly[-1]:
-            poly = poly[:-1]
-        if len(poly) < 3 or abs(signed_area(poly)) < 4:
-            return
-        d = {"pts": poly}
-        d.update(extra)
-        target.append(d)
+    roads, rails, water, parks, barriers, power_lines, platforms, landuse = [], [], [], [], [], [], [], []
+    osm_buildings, furniture, pois = [], [], []
 
-    for way in ways.values():
+
+    for wid, way in ways.items():
         t = way.get("tags", {})
         pts = way_pts(way)
         if len(pts) < 2:
@@ -219,201 +175,246 @@ def main():
             hw = t["highway"]
             if hw not in ROAD_WIDTH or t.get("tunnel") in ("yes", "building_passage") or t.get("area") == "yes":
                 continue
+            lanes = num(t.get("lanes")) if t.get("lanes") else None
             width = ROAD_WIDTH[hw]
-            if "lanes" in t and hw in DRIVABLE:
-                try:
-                    width = max(width, float(t["lanes"]) * 3.2)
-                except ValueError:
-                    pass
-            roads.append({"pts": pts, "w": width, "cls": hw, "name": t.get("name", ""),
-                          "oneway": t.get("oneway") == "yes", "bridge": t.get("bridge") == "yes"})
-            if hw in DRIVABLE:
-                ids = [i for i in way["nodes"] if i in nodes]
-                for i in ids:
-                    graph_nodes[i] = proj(nodes[i]["lat"], nodes[i]["lon"])
-                for a, b in zip(ids, ids[1:]):
-                    graph_edges.append([a, b, hw, 1 if t.get("oneway") == "yes" else 0])
+            if "width" in t and num(t["width"]):
+                width = num(t["width"])
+            elif lanes and hw in DRIVABLE:
+                width = max(width * 0.8, lanes * 3.2)
+            divider = t.get("dual_carriageway") == "yes" or t.get("divider") not in (None, "no")
+            sidewalk = t.get("sidewalk") or t.get("sidewalk:both") or SIDEWALK_DEFAULT.get(hw, "")
+            for piece in clip_line(pts):
+                roads.append({"id": wid, "pts": piece, "w": round(width, 2), "cls": hw,
+                              "name": t.get("name", ""), "oneway": t.get("oneway") == "yes", "lanes": lanes or 0,
+                              "bridge": t.get("bridge") not in (None, "no"),
+                              "layer": int(num(t.get("layer", 0)) or 0),
+                              "divider": divider, "sidewalk": sidewalk, "surface": t.get("surface", "")})
         elif "building" in t:
-            h, base = parse_height(t, rng)
-            add_area(pts, buildings, {"h": h, "base": base, "name": t.get("name", ""),
-                                      "color": rng.choice(WALL_COLORS), "src": "osm"})
+            r = ring(pts)
+            if r:
+                h, base = osm_height(t)
+                osm_buildings.append({"pts": r, "h": h, "base": base, "name": t.get("name", ""),
+                                      "src": "osm", "kind": t["building"],
+                                      "colour": t.get("building:colour", ""), "roof": t.get("roof:shape", "")})
         elif t.get("natural") == "water" or "water" in t or t.get("landuse") in ("reservoir", "basin"):
-            add_area(pts, water, {"name": t.get("name", "")})
+            r = ring(pts)
+            if r:
+                water.append({"pts": r, "name": t.get("name", "")})
         elif t.get("leisure") in ("park", "garden", "playground", "pitch", "stadium") or \
                 t.get("landuse") in ("grass", "recreation_ground", "forest", "meadow"):
-            kind = t.get("leisure") or t.get("landuse")
-            add_area(pts, parks, {"name": t.get("name", ""), "kind": kind})
-        elif t.get("railway") == "rail" and t.get("bridge") != "yes" and t.get("tunnel") != "yes":
-            rails.append({"pts": pts})
+            r = ring(pts)
+            if r:
+                parks.append({"pts": r, "name": t.get("name", ""), "kind": t.get("leisure") or t.get("landuse")})
+        elif t.get("railway") in ("rail", "subway", "light_rail") and t.get("tunnel") != "yes":
+            for piece in clip_line(pts):
+                rails.append({"pts": piece, "kind": t["railway"], "layer": int(num(t.get("layer", 0)) or 0),
+                          "bridge": t.get("bridge") not in (None, "no"), "name": t.get("name", "")})
+        elif t.get("railway") == "platform" or t.get("public_transport") == "platform":
+            platforms.append({"pts": pts, "name": t.get("name", "")})
+        elif "barrier" in t:
+            for piece in clip_line(pts):
+                barriers.append({"pts": piece, "kind": t["barrier"]})
+        elif t.get("power") in ("line", "minor_line"):
+            for piece in clip_line(pts):
+                power_lines.append({"pts": piece, "kind": t["power"]})
+        elif "landuse" in t or "amenity" in t:
+            r = ring(pts)
+            if r:
+                landuse.append({"pts": r, "kind": t.get("landuse") or t.get("amenity"), "name": t.get("name", "")})
 
-    # Multipolygon relations: use closed outer ways.
     for rel in rels:
         t = rel.get("tags", {})
         for m in rel.get("members", []):
             if m["type"] != "way" or m.get("role") != "outer" or m["ref"] not in ways:
                 continue
-            pts = way_pts(ways[m["ref"]])
+            r = ring(way_pts(ways[m["ref"]]))
+            if not r:
+                continue
             if "building" in t:
-                h, base = parse_height(t, rng)
-                add_area(pts, buildings, {"h": h, "base": base, "name": t.get("name", ""),
-                                          "color": rng.choice(WALL_COLORS), "src": "osm"})
+                h, base = osm_height(t)
+                osm_buildings.append({"pts": r, "h": h, "base": base, "name": t.get("name", ""), "src": "osm",
+                                      "kind": t["building"], "colour": t.get("building:colour", ""), "roof": ""})
             elif t.get("natural") == "water":
-                add_area(pts, water, {"name": t.get("name", "")})
+                water.append({"pts": r, "name": t.get("name", "")})
             elif t.get("leisure") in ("park", "garden"):
-                add_area(pts, parks, {"name": t.get("name", ""), "kind": t.get("leisure")})
+                parks.append({"pts": r, "name": t.get("name", ""), "kind": t.get("leisure")})
 
+    FURN = {("highway", "street_lamp"): "lamp", ("highway", "traffic_signals"): "signal",
+            ("highway", "bus_stop"): "bus_stop", ("highway", "crossing"): "crossing",
+            ("natural", "tree"): "tree", ("power", "pole"): "pole", ("power", "tower"): "tower",
+            ("barrier", "gate"): "gate", ("railway", "subway_entrance"): "metro_entrance"}
     for nd in nodes.values():
         t = nd.get("tags", {})
-        if t.get("name") and (("amenity" in t) or ("shop" in t) or ("tourism" in t) or t.get("railway") == "station"):
-            x, z = proj(nd["lat"], nd["lon"])
-            kind = t.get("amenity") or t.get("shop") or t.get("tourism") or "station"
-            pois.append({"pos": [x, z], "name": t["name"], "name_hi": t.get("name:hi", ""), "kind": kind})
+        if not t:
+            continue
+        p = proj(nd["lat"], nd["lon"])
+        if not inside(p, CLIP):
+            continue
+        for (k, v), kind in FURN.items():
+            if t.get(k) == v:
+                furniture.append({"t": kind, "p": p, "src": "osm"})
+        if t.get("name") and ("amenity" in t or "shop" in t or "tourism" in t or "railway" in t):
+            pois.append({"p": p, "name": t["name"], "name_hi": t.get("name:hi", ""),
+                         "kind": t.get("amenity") or t.get("shop") or t.get("tourism") or t.get("railway")})
 
-    # Name the largest water body near the Moti Jheel metro station "Moti Jheel" (lake is unnamed in OSM).
+    # Name unnamed water (Moti Jheel is unnamed in OSM).
     for name, (lat, lon), radius in area.get("water_names", []):
         px, pz = proj(lat, lon)
-        best, best_a = None, 0
-        for wb in water:
-            cx, cz = centroid(wb["pts"])
-            a = abs(signed_area(wb["pts"]))
-            if not wb["name"] and math.hypot(cx - px, cz - pz) < radius and a > best_a:
-                best, best_a = wb, a
+        best = max((wb for wb in water if not wb["name"] and
+                    math.hypot(centroid(wb["pts"])[0] - px, centroid(wb["pts"])[1] - pz) < radius),
+                   key=lambda wb: abs(signed_area(wb["pts"])), default=None)
         if best:
             best["name"] = name
 
-    # ------------------------------------------------------------ procedural infill
-    infill = []
-    if not args.no_infill:
-        road_grid = Grid()
-        for r in roads:
-            for a, b in zip(r["pts"], r["pts"][1:]):
-                seg = (a, b, r["w"] / 2.0)
-                road_grid.add(bbox_of([a, b], r["w"] / 2.0), seg)
-        block_grid = Grid()
-        for coll in (water, parks, buildings):
-            for f in coll:
-                block_grid.add(bbox_of(f["pts"]), f["pts"])
-        if rails:
-            for r in rails:
-                for a, b in zip(r["pts"], r["pts"][1:]):
-                    road_grid.add(bbox_of([a, b], 4), (a, b, 4.0))
+    # ---------------------------------------------------------------- buildings: OSM + Overture
+    bgrid = Grid(30.0)
+    buildings = []
+    for b in osm_buildings:
+        buildings.append(b)
+        bgrid.add(bbox_of(b["pts"]), b["pts"])
 
-        def ok(poly):
-            bb = bbox_of(poly, 1.0)
-            for a, b, hw in road_grid.query(bbox_of(poly, 12)):
-                if seg_poly_dist(a, b, poly) < hw + 1.2:
-                    return False
-            for other in block_grid.query(bb):
-                if polys_overlap(poly, other):
-                    return False
-            return True
-
-        for r in roads:
-            if r["cls"] not in INFILL_ON or r["bridge"]:
-                continue
-            setback = r["w"] / 2.0 + 1.8
-            for a, b in zip(r["pts"], r["pts"][1:]):
-                dx, dz = b[0] - a[0], b[1] - a[1]
-                L = math.hypot(dx, dz)
-                if L < 8:
-                    continue
-                ux, uz = dx / L, dz / L
-                for side in (-1, 1):
-                    nx, nz = -uz * side, ux * side
-                    s_pos = rng.uniform(2, 5)
-                    while s_pos < L - 4:
-                        front = rng.uniform(7, 12)
-                        depth = rng.uniform(9, 16)
-                        if s_pos + front > L - 1:
-                            break
-                        ox = a[0] + ux * s_pos + nx * setback
-                        oz = a[1] + uz * s_pos + nz * setback
-                        poly = [
-                            (ox, oz),
-                            (ox + ux * front, oz + uz * front),
-                            (ox + ux * front + nx * depth, oz + uz * front + nz * depth),
-                            (ox + nx * depth, oz + nz * depth),
-                        ]
-                        poly = [(round(x, 2), round(z, 2)) for x, z in poly]
-                        if rng.random() < 0.9 and ok(poly):
-                            floors = rng.choices([1, 2, 3, 4, 5], weights=[1, 4, 5, 3, 1])[0]
-                            shop = r["cls"] in ("trunk", "primary", "secondary", "tertiary") and rng.random() < 0.7
-                            bd = {"pts": poly, "h": round(floors * 3.2, 2), "base": 0.0, "name": "",
-                                  "color": rng.choice(WALL_COLORS), "src": "gen", "shop": shop}
-                            infill.append(bd)
-                            block_grid.add(bbox_of(poly), poly)
-                        s_pos += front + rng.uniform(0.0, 1.5)
-        buildings.extend(infill)
-
-    # ------------------------------------------------------------ chunking
-    chunks = {}
-
-    def chunk_of(x, z):
-        return int(math.floor(x / CHUNK)), int(math.floor(z / CHUNK))
-
-    def bucket(key):
-        if key not in chunks:
-            chunks[key] = {"roads": [], "buildings": [], "water": [], "parks": [], "rails": [], "pois": []}
-        return chunks[key]
-
-    def split_line(line, coll_name, extra):
-        pts = line["pts"]
-        cur, cur_key = [pts[0]], None
-        for a, b in zip(pts, pts[1:]):
-            k = chunk_of((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-            if cur_key is not None and k != cur_key:
-                bucket(cur_key)[coll_name].append(dict(extra, pts=cur))
-                cur = [a]
-            cur_key = k
-            cur.append(b)
-        if cur_key is not None and len(cur) >= 2:
-            bucket(cur_key)[coll_name].append(dict(extra, pts=cur))
-
+    ov_path = os.path.join(raw_dir, args.area + ".overture.json")
+    n_ov, n_ov_dup, n_ov_road = 0, 0, 0
+    road_grid = Grid(30.0)
     for r in roads:
-        split_line(r, "roads", {k: v for k, v in r.items() if k != "pts"})
-    for r in rails:
-        split_line(r, "rails", {})
-    for coll_name, coll in (("buildings", buildings), ("water", water), ("parks", parks)):
-        for f in coll:
-            bucket(chunk_of(*centroid(f["pts"])))[coll_name].append(f)
-    for p in pois:
-        bucket(chunk_of(*p["pos"]))["pois"].append(p)
+        if r["bridge"] or r["layer"] > 0:
+            continue
+        for a, b in zip(r["pts"], r["pts"][1:]):
+            road_grid.add(bbox_of([a, b], r["w"] / 2), (a, b, r["w"] / 2, r))
 
-    out_dir = os.path.join(ROOT, "game", "data", "map", args.area)
-    os.makedirs(out_dir, exist_ok=True)
-    for old in os.listdir(out_dir):
-        if old.endswith(".json"):
-            os.remove(os.path.join(out_dir, old))
-    for (cx, cz), data in chunks.items():
-        with open(os.path.join(out_dir, "chunk_%d_%d.json" % (cx, cz)), "w") as f:
-            json.dump(data, f, separators=(",", ":"))
+    if os.path.exists(ov_path):
+        ov = json.load(open(ov_path))
+        for ob in ov["buildings"]:
+            pts = ring([proj(lat, lon) for lon, lat in ob["pts"]])
+            if not pts or not inside(centroid(pts), 30):
+                continue
+            if ob["source"] == "OpenStreetMap" and any(polys_overlap(pts, q) for q in bgrid.query(bbox_of(pts))):
+                n_ov_dup += 1
+                continue
+            if any(polys_overlap(pts, q) for q in bgrid.query(bbox_of(pts))):
+                n_ov_dup += 1
+                continue
+            c = centroid(pts)
+            if any(seg_point_dist(a, b, c) < hw for a, b, hw, _ in road_grid.query(bbox_of([c], 2))):
+                n_ov_road += 1   # footprint centered on a road: misdetection or stale OSM road
+                continue
+            h = ob["height"] if ob["height"] and ob["height"] > 2 else None
+            hs = "overture" if h else None
+            if not h and ob["floors"]:
+                h, hs = ob["floors"] * FLOOR_H, "overture_floors"
+            buildings.append({"pts": pts, "h": h, "base": 0.0, "name": "", "src": "ov:" + (ob["source"] or "?"),
+                              "kind": ob.get("cls") or "", "colour": "", "roof": ob.get("roof") or "",
+                              "_hs": hs})
+            bgrid.add(bbox_of(pts), pts)
+            n_ov += 1
+    else:
+        print("WARNING: no Overture file; only OSM buildings (run fetch_overture.py)")
 
-    xs = [p[0] for r in roads for p in r["pts"]] or [0]
-    zs = [p[1] for r in roads for p in r["pts"]] or [0]
-    index = {
-        "area": args.area, "title": area.get("title", args.area), "chunk_size": CHUNK,
-        "origin_latlon": [lat0, lon0], "meters_per_deg": [kx, kz],
-        "bounds": [min(xs), min(zs), max(xs), max(zs)],
-        "chunks": sorted([[cx, cz] for cx, cz in chunks]),
-        "landmarks": {name: list(proj(lat, lon)) for name, (lat, lon) in area.get("landmarks", {}).items()},
-        "attribution": "Map data © OpenStreetMap contributors (ODbL)",
+    # Frontage, style and height for every building.
+    def style_for(road):
+        if road is None:
+            return styles["roads"]["default"]
+        return styles["roads"].get(str(road["id"])) or styles["roads"].get("cls:" + road["cls"]) or \
+            styles["roads"]["default"]
+
+    hcount = {}
+    for i, b in enumerate(buildings):
+        pts = b["pts"]
+        if signed_area(pts) > 0:      # consistent winding (clockwise in x/z screen space)
+            pts.reverse()
+        c = centroid(pts)
+        key = "%.1f,%.1f" % (c[0], c[1])
+        area_m2 = abs(signed_area(pts))
+        # nearest road (within 25 m) and the edges that face a road
+        nearest, nd = None, 1e9
+        front = []
+        cand = list(road_grid.query(bbox_of(pts, 25)))
+        for a, bb, hw, r in cand:
+            d = seg_point_dist(a, bb, c) - hw
+            if d < nd:
+                nd, nearest = d, r
+        for k in range(len(pts)):
+            p, q = pts[k], pts[(k + 1) % len(pts)]
+            L = math.hypot(q[0] - p[0], q[1] - p[1])
+            if L < 2.5:
+                continue
+            mx, mz = (p[0] + q[0]) / 2, (p[1] + q[1]) / 2
+            nx, nz = (q[1] - p[1]) / L, -(q[0] - p[0]) / L    # outward normal for this winding
+            if point_in_poly((mx + nx * 0.5, mz + nz * 0.5), pts):
+                nx, nz = -nx, -nz
+            probe = (mx + nx * 6, mz + nz * 6)
+            for a, bb, hw, r in cand:
+                if r["cls"] in DRIVABLE and seg_point_dist(a, bb, probe) < hw + 5:
+                    front.append(k)
+                    break
+        near_major = nearest is not None and nearest["cls"] in MAJOR and nd < 12
+        st_name = style_for(nearest if nd < 25 else None)
+        st = styles["styles"][st_name]
+        if b["h"]:
+            hs = b.pop("_hs", None) or "osm"
+        else:
+            b.pop("_hs", None)
+            floors = estimate_floors(area_m2, near_major, key)
+            b["h"], hs = floors * FLOOR_H, "est"
+        b["h"] = round(b["h"], 2)
+        b["hsrc"] = hs
+        hcount[hs] = hcount.get(hs, 0) + 1
+        b["style"] = st_name
+        b["color"] = b.pop("colour") or st["palette"][int(stable_rand("col", key) * len(st["palette"])) % len(st["palette"])]
+        b["front"] = front
+        b["shop"] = bool(front) and stable_rand("shop", key) < st["shop_share"]
+        b["seed"] = round(stable_rand("seed", key), 4)
+
+    # ---------------------------------------------------------------- Mapillary
+    mly_path = os.path.join(raw_dir, args.area + ".mapillary.json")
+    photos = []
+    if os.path.exists(mly_path):
+        mly = json.load(open(mly_path))
+        MAP = {"object--support--utility-pole": "pole", "object--street-light": "lamp",
+               "object--traffic-light": "signal", "nature--tree": "tree", "object--bench": "bench",
+               "object--trash-can": "bin", "object--fire-hydrant": "hydrant"}
+        for f in mly["features"]:
+            kind = next((v for k, v in MAP.items() if f["value"].startswith(k)), None)
+            if kind is None and f["value"].startswith("object--sign"):
+                kind = "sign"
+            if kind:
+                p = proj(f["lat"], f["lon"])
+                if inside(p):
+                    furniture.append({"t": kind, "p": p, "src": "mapillary"})
+        for im in mly["images"]:
+            if im.get("thumb"):
+                photos.append({"id": im["id"], "p": proj(im["lat"], im["lon"]), "heading": im["heading"],
+                               "lat": im["lat"], "lon": im["lon"]})
+
+    # ---------------------------------------------------------------- write
+    out = {
+        "area": args.area, "title": area.get("title", args.area),
+        "origin_latlon": [lat0, lon0], "meters_per_deg": [kx, kz], "bounds": bounds, "floor_h": FLOOR_H,
+        "roads": roads, "buildings": buildings, "water": water, "parks": parks, "rails": rails,
+        "platforms": platforms, "barriers": barriers, "power_lines": power_lines, "landuse": landuse,
+        "furniture": furniture, "pois": pois, "photos": photos,
+        "landmarks": {k: proj(lat, lon) for k, (lat, lon) in area.get("landmarks", {}).items()},
+        "styles": styles["styles"],
+        "attribution": "© OpenStreetMap contributors (ODbL) · Overture Maps Foundation · Mapillary (CC-BY-SA)",
     }
-    with open(os.path.join(out_dir, "index.json"), "w") as f:
-        json.dump(index, f, indent=1)
+    out_dir = os.path.join(ROOT, "public", "data", args.area)
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, "map.json")
+    with open(path, "w") as f:
+        json.dump(out, f, separators=(",", ":"))
 
-    used = {}
-    for a, b, _, _ in graph_edges:
-        used[a] = graph_nodes[a]
-        used[b] = graph_nodes[b]
-    with open(os.path.join(out_dir, "roads_graph.json"), "w") as f:
-        json.dump({"nodes": {str(k): v for k, v in used.items()}, "edges": graph_edges}, f, separators=(",", ":"))
-
-    print("roads %d, buildings %d (osm %d + infill %d), water %d, parks %d, rails %d, pois %d, chunks %d"
-          % (len(roads), len(buildings), len(buildings) - len(infill), len(infill), len(water), len(parks),
-             len(rails), len(pois), len(chunks)))
-    print("water names:", [wb["name"] for wb in water if wb["name"]])
-    print("->", out_dir)
+    fc = {}
+    for x in furniture:
+        fc[x["t"]] = fc.get(x["t"], 0) + 1
+    print("roads %d (named %d), rails %d, water %d %s, parks %d" % (
+        len(roads), sum(1 for r in roads if r["name"]), len(rails), len(water),
+        [x["name"] for x in water if x["name"]], len(parks)))
+    print("buildings %d: osm %d, overture %d (skipped: %d dup, %d on roads)" % (
+        len(buildings), len(osm_buildings), n_ov, n_ov_dup, n_ov_road))
+    print("height sources", hcount, "| shops", sum(1 for b in buildings if b["shop"]))
+    print("furniture", fc, "| photos", len(photos), "| pois", len(pois))
+    print("-> %s (%.1f KB)" % (path, os.path.getsize(path) / 1024))
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

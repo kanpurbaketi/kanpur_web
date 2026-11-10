@@ -1,0 +1,32 @@
+{
+  "note": "Street look table. 'roads' maps an OSM way id (or road class as 'cls:<class>') to a style name. Filled in from Mapillary review in W5; 'covered': false means the style is borrowed, not seen.",
+  "styles": {
+    "main_road": {
+      "covered": false,
+      "palette": ["#e8d7b9", "#f1e3c6", "#e7b9a3", "#cfe0e8", "#f4efe2", "#e9d27f", "#d8c3a5", "#eaa979"],
+      "shop_share": 0.8,
+      "shutters": ["#7d8288", "#5f7f9a", "#9a6a4a"],
+      "signs": ["#c8261a", "#1e5bb8", "#f2c21b", "#1f8a4c", "#ffffff"],
+      "balcony_share": 0.4,
+      "tree_every_m": 30
+    },
+    "colony_lane": {
+      "covered": false,
+      "palette": ["#f2c6c2", "#cfe0e8", "#f4efe2", "#b9d4b0", "#e9d27f", "#d9a6b8", "#c7c3e0", "#f0f0ea"],
+      "shop_share": 0.08,
+      "shutters": ["#7d8288"],
+      "signs": ["#c8261a", "#1e5bb8"],
+      "balcony_share": 0.6,
+      "boundary_wall": true,
+      "tree_every_m": 18
+    }
+  },
+  "roads": {
+    "cls:trunk": "main_road",
+    "cls:primary": "main_road",
+    "cls:secondary": "main_road",
+    "cls:secondary_link": "main_road",
+    "cls:tertiary": "main_road",
+    "default": "colony_lane"
+  }
+}

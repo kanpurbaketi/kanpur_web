@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Fetch OpenStreetMap data for a named area via the Overpass API.
 
-Usage: python3 tools/osm/fetch_osm.py --area swaroop_nagar
-Output: data/osm/raw/<area>.json   (OSM data © OpenStreetMap contributors, ODbL)
+Usage: python3 tools/osm/fetch_osm.py --area moti_jheel
+Output: data/raw/<area>.osm.json   (OSM data © OpenStreetMap contributors, ODbL)
 """
 import argparse
 import json
@@ -32,10 +32,20 @@ QUERY = """
   way["leisure"~"park|garden|playground|pitch|stadium"]({b});
   relation["leisure"~"park|garden"]({b});
   way["landuse"~"grass|recreation_ground|forest|meadow"]({b});
-  way["railway"="rail"]({b});
-  node["amenity"]["name"]({b});
-  node["shop"]["name"]({b});
-  node["tourism"]["name"]({b});
+  way["railway"~"rail|subway|light_rail|platform"]({b});
+  way["public_transport"="platform"]({b});
+  way["barrier"]({b});
+  way["power"~"line|minor_line"]({b});
+  way["natural"="tree_row"]({b});
+  way["amenity"]({b});
+  way["landuse"]({b});
+  node["highway"~"street_lamp|traffic_signals|crossing|bus_stop"]({b});
+  node["natural"="tree"]({b});
+  node["power"~"pole|tower"]({b});
+  node["railway"~"station|subway_entrance"]({b});
+  node["amenity"]({b});
+  node["shop"]({b});
+  node["tourism"]({b});
 );
 (._;>;);
 out body;
@@ -45,7 +55,7 @@ out body;
 def _post(url, data):
     """POST via urllib; fall back to curl (macOS system Python's LibreSSL fails some TLS handshakes)."""
     try:
-        req = urllib.request.Request(url, data=data, headers={"User-Agent": "ramu-kanpur-game/0.1"})
+        req = urllib.request.Request(url, data=data, headers={"User-Agent": "kanpur-web-game/0.1"})
         with urllib.request.urlopen(req, timeout=240) as r:
             return r.read()
     except Exception as ex:
@@ -53,7 +63,7 @@ def _post(url, data):
             raise
         print("  urllib failed (%s), retrying with curl" % ex)
         return subprocess.run(
-            ["curl", "-sS", "--fail", "--compressed", "--max-time", "400", "-A", "ramu-kanpur-game/0.1",
+            ["curl", "-sS", "--fail", "--compressed", "--max-time", "400", "-A", "kanpur-web-game/0.1",
              "--data-binary", "@-", url],
             input=data, capture_output=True, check=True).stdout
 
@@ -81,9 +91,9 @@ def main():
             print("  failed:", ex)
     else:
         sys.exit("All Overpass endpoints failed: %s" % last_err)
-    out_dir = os.path.join(ROOT, "data", "osm", "raw")
+    out_dir = os.path.join(ROOT, "data", "raw")
     os.makedirs(out_dir, exist_ok=True)
-    out = os.path.join(out_dir, args.area + ".json")
+    out = os.path.join(out_dir, args.area + ".osm.json")
     with open(out, "w") as f:
         json.dump(parsed, f)
     kinds = {}

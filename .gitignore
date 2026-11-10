@@ -6,3 +6,4 @@ reference/mapillary/
 __pycache__/
 .DS_Store
 .env
+shots/

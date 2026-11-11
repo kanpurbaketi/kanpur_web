@@ -12,6 +12,7 @@ import { Menu } from './ui/menu';
 import { City } from './world/city';
 import { Landmarks } from './world/landmarks';
 import { Pedestrians } from './world/pedestrians';
+import { makeStalls, Traffic } from './world/props';
 import { makeOccupancy, StreetDetail } from './world/streetDetail';
 import { treeUniforms } from './world/trees';
 import { MapData, project } from './world/types';
@@ -22,6 +23,7 @@ import { MapData, project } from './world/types';
    ?at=lat,lon,heading    camera at eye height at a real spot, heading in compass degrees (Mapillary photo spots)
    ?spawn=lat,lon         start Ramu at a real spot
    ?debug                 FPS / draw-call overlay
+   ?traffic=0             no vehicles
    ?peds=90               number of pedestrians kept around the player, overriding the admin setting (0 = none)
    ?fov=20                camera field of view in degrees (small = zoomed in, for character close-ups)
    ?ao=0 / ?ao=1          force ambient occlusion off / on (default: on for mouse devices, off for touch)
@@ -80,7 +82,8 @@ async function main() {
   const t0 = performance.now();
   const city = new City(map);
   scene.add(city.group);
-  const detail = new StreetDetail(map, makeOccupancy(map));
+  const occupied = makeOccupancy(map);
+  const detail = new StreetDetail(map, occupied);
   scene.add(detail.group);
   const world = new CollisionWorld(map);
   for (const [x, z] of city.pillars) world.addPost(x, z, 0.9);
@@ -127,6 +130,16 @@ async function main() {
     if (d < bd) [bd, best] = [d, p];
   }
   ramu.position.set(best[0], 0, best[1]);
+
+  // Blender-built props: traffic (buses, autos, e-rickshaws) and panipuri stalls. ?traffic=0 turns traffic off.
+  const traffic = params.get('traffic') === '0' ? null : await Traffic.create(map, desktop);
+  if (traffic) scene.add(traffic.group);
+  const solid: [number, number, number][] = [...detail.obstacles, ...landmarks.posts,
+    ...city.pillars.map(([x, z]) => [x, z, 0.9] as [number, number, number])];
+  const stalls = await makeStalls(map, occupied, solid, best);
+  scene.add(stalls.mesh);
+  for (const [x, z, r] of stalls.posts) world.addPost(x, z, r);
+  console.log('props', { stalls: stalls.posts.length, traffic: !!traffic });
   ramu.yaw = Math.atan2(best[0] - m[0], best[1] - m[1]); // camera looks toward the metro
 
   // Fixed debug cameras.
@@ -201,8 +214,10 @@ async function main() {
     if (!paused) {
       camera.getWorldDirection(lookDir);
       const l = Math.hypot(lookDir.x, lookDir.z) || 1;
-      if (fixed) peds.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l);
-      else peds.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, focus.x, focus.z);
+      const who: [number, number] = fixed ? [Infinity, Infinity] : [focus.x, focus.z];
+      peds.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
+      traffic?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
+      if (traffic && !fixed) [ramu.position.x, ramu.position.z] = traffic.pushOut(ramu.position.x, ramu.position.z, 0.35);
     }
     sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
     if (!fixed) hud.update(ramu.position.x, ramu.position.z, ramu.yaw);

@@ -52,9 +52,10 @@ export class StreetDetail {
         if (r.sidewalk !== 'left') kerb.slab(R, 2.2, 0, 0.16, C('#a39d92'));
         kerb.surf = SURF.concrete;
       }
-      // Dual carriageway: median on the right edge (India drives on the left).
+      // Dual carriageway: median on the right edge (India drives on the left). offsetLines()[0] is the right
+      // of the direction of travel in map coordinates (x east, z south).
       if (r.oneway && major) {
-        const R = offsetLines(r.pts, hw + 0.6)[1];
+        const R = offsetLines(r.pts, hw + 0.6)[0];
         kerb.slab(R, 1.2, 0, 0.3, C('#c6c0b3'));
         walkAlong(R, 4.5, (x, z) => kerb.box(x, 0.3, z, 0.12, 0.25, 0.12, C('#e8e3d6')), 1.5); // painted kerb blocks
       }
@@ -77,7 +78,7 @@ export class StreetDetail {
 
       // Lamps on main roads (on the median for dual carriageways).
       if (major) {
-        const line = r.oneway ? offsetLines(r.pts, hw + 0.6)[1] : offsetLines(r.pts, hw + 1.4)[1 - (r.id % 2)];
+        const line = r.oneway ? offsetLines(r.pts, hw + 0.6)[0] : offsetLines(r.pts, hw + 1.4)[1 - (r.id % 2)];
         walkAlong(line, 32, (x, z) => {
           if (!occupied(x, z) && !nearReal(lamps, x, z, 10)) lamps.push([x, z, 0]);
         }, 12);

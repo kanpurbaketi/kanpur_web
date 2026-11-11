@@ -7,3 +7,6 @@ __pycache__/
 .DS_Store
 .env
 shots/
+
+# reference photos for modelling (third-party images, not for publishing)
+assets/

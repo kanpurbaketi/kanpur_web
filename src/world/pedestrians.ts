@@ -98,7 +98,7 @@ export class Pedestrians {
       if (r.bridge) continue;
       const walk = r.sidewalk === 'both' || r.sidewalk === 'yes';
       // on the footpath where there is one, otherwise along the edge of the road
-      const off = walk ? r.w / 2 + 1.0 : Math.max(0.5, r.w / 2 - 0.7);
+      const off = walk ? r.w / 2 + 1.0 : Math.max(0.5, r.w / 2 - 0.4);
       const y = walk ? SIDEWALK_Y : 0.05;
       for (let i = 0; i < r.pts.length - 1; i++) {
         const a = nodeAt(r.pts[i][0], r.pts[i][1]), b = nodeAt(r.pts[i + 1][0], r.pts[i + 1][1]);

@@ -20,6 +20,9 @@ PREVIEW = argv[argv.index('--preview') + 1] if '--preview' in argv else None
 HEIGHT = 1.52
 TEX = 2048
 FPS = 30
+SKIN_LIFT = 0.55       # <1 lightens the skin (gamma on skin pixels); 1 = as generated
+BODY_LIFT = 0.86       # <1 lightens everything a little
+ANIMS = os.path.join(ROOT, 'assets', 'ramu_teen', 'anims')   # Mixamo FBX clips go here (see import_mixamo_clips)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.fbx(filepath=SRC)
@@ -52,7 +55,33 @@ print('RIG height', round(max(v.z for v in vs) - lo, 3), 'feet z', round(lo, 3))
 
 # ---- material: one base-colour texture ---------------------------------------------------------------------
 img = bpy.data.images[0]
-img.scale(TEX, TEX)
+img.colorspace_settings.name = 'Non-Color'          # edit the stored (sRGB-encoded) values as they are
+import numpy as np
+W0, H0 = img.size
+px = np.array(img.pixels[:], dtype=np.float32).reshape(H0, W0, 4)
+f = max(1, W0 // TEX)                                # box-filter down to TEX x TEX
+px = px.reshape(H0 // f, f, W0 // f, f, 4).mean(axis=(1, 3)).reshape(-1, 4)
+r, g, b = px[:, 0], px[:, 1], px[:, 2]
+# skin: warm orange-brown (green about 0.55-0.8 of red, blue clearly lower); the khaki satchel is yellower, the shirt bluer
+skin = np.clip((r - b - 0.05) / 0.12, 0, 1) * np.clip((0.82 - g / np.maximum(r, 1e-3)) / 0.08, 0, 1) * (r > g) * (g > b)
+rgb = px[:, :3].copy()
+lifted = np.power(rgb, BODY_LIFT)
+fair = np.power(rgb, SKIN_LIFT) * np.array([1.06, 1.02, 0.97])      # lighter and a touch warmer
+px[:, :3] = np.clip(lifted * (1 - skin[:, None]) + fair * skin[:, None], 0, 1)
+w = skin > 0.5
+print('RIG skin pixels', int(w.sum()), 'mean before', rgb[w].mean(axis=0).round(3), 'after', px[w, :3].mean(axis=0).round(3))
+# write the edited pixels to a file and load that: the exporter re-reads images from their files
+import tempfile
+edited = bpy.data.images.new('ramu_tex_edit', TEX, TEX, alpha=False)
+edited.colorspace_settings.name = 'Non-Color'
+edited.pixels.foreach_set(px.ravel())
+tmp = os.path.join(tempfile.gettempdir(), 'ramu_tex_edit.png')
+edited.filepath_raw = tmp
+edited.file_format = 'PNG'
+edited.save()
+img = bpy.data.images.load(tmp)
+img.name = 'ramu_tex'
+img.colorspace_settings.name = 'sRGB'
 img.pack()
 mat = mesh.data.materials[0]
 mat.use_nodes = True
@@ -221,11 +250,95 @@ def jump(t):
 
 make_action('idle', 90, idle)
 make_action('walk', 30, walk)
-make_action('jog', 21, jog)
 make_action('run', 15, run)
 make_action('jump', 36, jump)
 bpy.ops.object.mode_set(mode='OBJECT')
 arm.animation_data.action = bpy.data.actions['idle']
+
+# ---- Mixamo clips: bake any FBX in assets/ramu_teen/anims onto this skeleton ----------------------------------
+def clip_name(stem):
+    s = stem.lower()
+    has = lambda *w: any(x in s for x in w)
+    if has('crouch', 'sneak'):
+        return 'crouch_walk' if has('walk', 'move') else 'crouch'
+    for key, name in (('punch', 'punch'), ('jump', 'jump'), ('run', 'run'), ('walk', 'walk'), ('idle', 'idle'), ('kick', 'kick')):
+        if key in s:
+            return name
+    return ''.join(ch if ch.isalnum() else '_' for ch in s).strip('_')
+
+
+def import_mixamo_clips():
+    import glob
+    files = sorted(glob.glob(os.path.join(ANIMS, '*.fbx')))
+    if not files:
+        print('RIG no Mixamo clips in', ANIMS, '(procedural clips only)')
+        return
+    ours_hips = arm.data.bones['mixamorig:Hips'].head_local.length
+    sc = bpy.context.scene
+    for f in files:
+        name = clip_name(os.path.splitext(os.path.basename(f))[0])
+        before = set(bpy.data.objects)
+        bpy.ops.import_scene.fbx(filepath=f)
+        new = set(bpy.data.objects) - before
+        src = next((o for o in new if o.type == 'ARMATURE'), None)
+        if src is None or not src.animation_data or not src.animation_data.action:
+            print('RIG skip (no armature/action):', f)
+            for o in new: bpy.data.objects.remove(o, do_unlink=True)
+            continue
+        act = src.animation_data.action
+        # bones may come as "mixamorig:X", "mixamorig1:X" or bare "X": match on the part after the colon
+        mp = {b.name.split(':')[-1]: b.name for b in src.pose.bones}
+        theirs_hips = next(b for b in src.data.bones if b.name.endswith('Hips')).head_local.length
+        ratio = ours_hips / max(theirs_hips, 1e-6)
+        f0, f1 = int(round(act.frame_range[0])), int(round(act.frame_range[1]))
+        old = bpy.data.actions.get(name)
+        if old: bpy.data.actions.remove(old)
+        new_act = bpy.data.actions.new(name)
+        new_act.use_fake_user = True
+        arm.animation_data.action = new_act
+        samples = []
+        for fr in range(f0, f1 + 1):
+            sc.frame_set(fr)
+            samples.append({b.name.split(':')[-1]: b.matrix_basis.copy() for b in src.pose.bones})
+        # root motion: if the clip travels (not "in place"), keep only the vertical part of the hips movement
+        hips_rest = REST_M['Hips'].to_3x3()
+        drift = 0.0
+        if samples:
+            ds = [hips_rest @ (m['Hips'].translation * ratio) for m in samples]
+            drift = max(max(d.x for d in ds) - min(d.x for d in ds), max(d.y for d in ds) - min(d.y for d in ds))
+        for i, m in enumerate(samples):
+            for pb in P:
+                short = pb.name.split(':')[-1]
+                if short not in m:
+                    continue
+                mb = m[short]
+                pb.rotation_quaternion = mb.to_quaternion()
+                if short == 'Hips':
+                    loc = mb.translation * ratio
+                    if drift > 0.25:
+                        d = hips_rest @ loc
+                        loc = hips_rest.inverted() @ Vector((0, 0, d.z))
+                    pb.location = loc
+                else:
+                    pb.location = (0, 0, 0)
+            key_all(1 + i)
+        new_act.frame_range = (1, 1 + max(1, f1 - f0))
+        print(f'RIG clip {name}: {f1 - f0 + 1} frames from {os.path.basename(f)}' + (' (root motion removed)' if drift > 0.25 else ''))
+        for o in new:
+            bpy.data.objects.remove(o, do_unlink=True)
+        for a in list(bpy.data.actions):
+            if '|' in a.name:                       # the importer's own action, already baked into `name`
+                bpy.data.actions.remove(a)
+
+
+bpy.context.view_layer.objects.active = arm
+bpy.ops.object.mode_set(mode='POSE')
+import_mixamo_clips()
+bpy.context.view_layer.objects.active = arm
+bpy.ops.object.mode_set(mode='OBJECT')
+arm.animation_data.action = bpy.data.actions['idle']
+sc0 = bpy.context.scene
+sc0.frame_set(1)
 
 # ---- preview renders (side view and front view of a few frames) --------------------------------------------
 def preview():
@@ -240,9 +353,11 @@ def preview():
     sc.collection.objects.link(cam)
     cam.data.type = 'ORTHO'; cam.data.ortho_scale = 2.0
     sc.camera = cam
-    jobs = [('idle', [1]), ('walk', [1, 8, 16, 23]), ('jog', [1, 6, 11, 16]), ('run', [1, 5, 9, 13]), ('jump', [1, 8, 16, 26])]
-    for name, frames in jobs:
-        arm.animation_data.action = bpy.data.actions[name]
+    for act in sorted(bpy.data.actions, key=lambda a: a.name):
+        name = act.name
+        lo, hi = int(act.frame_range[0]), int(act.frame_range[1])
+        frames = sorted({lo, lo + (hi - lo) // 3, lo + 2 * (hi - lo) // 3, hi})
+        arm.animation_data.action = act
         for f in frames:
             sc.frame_set(f)
             for tag, loc, rot_ in (('s', (6, 0, 0.8), (math.pi / 2, 0, math.pi / 2)), ('f', (0, -6, 0.8), (math.pi / 2, 0, 0))):

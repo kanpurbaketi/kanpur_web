@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CollisionWorld } from './collide';
 
-const WALK = 4.0, RUN = 8.5, ACCEL = 12, JUMP = 5, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
+const WALK = 2.2, RUN = 5.6, CROUCH = 1.2, ACCEL = 12, JUMP = 5, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
 const CAM_DIST = 3.2, EYE = 1.35;
 
 /** Ramu: third-person walk / run / jump with an orbit camera. Port of kanpur/game/scripts/player/ramu.gd. */
@@ -24,6 +24,8 @@ export class Ramu {
   private actions: Record<string, THREE.AnimationAction> = {};
   private current: THREE.AnimationAction | null = null;
   private wasGrounded = true;
+  private punchQueued = false;
+  private punching = false;
 
   constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement) {
     this.buildBody();
@@ -61,11 +63,20 @@ export class Ramu {
       }
     }
     this.jumpQueued = false;
+    const crouching = this.enabled && (this.keys.has('KeyC') || this.keys.has('ControlLeft'));
+    if (this.punchQueued && this.enabled && this.grounded && !this.punching && this.actions.punch) {
+      this.punching = true;
+      const a = this.actions.punch;
+      a.reset();
+      this.play('punch', 0.08);
+    }
+    this.punchQueued = false;
     if (input.lengthSq() > 1) input.normalize();
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     const dir = new THREE.Vector3(input.x * cos + input.y * sin, 0, -input.x * sin + input.y * cos);
     const running = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchRun;
-    const speed = running ? RUN : WALK;
+    let speed = crouching ? CROUCH : running ? RUN : WALK;
+    if (this.punching) speed *= 0.15;
     const step = ACCEL * speed * dt;
     this.vel.x = moveToward(this.vel.x, dir.x * speed, step);
     this.vel.z = moveToward(this.vel.z, dir.z * speed, step);
@@ -90,7 +101,7 @@ export class Ramu {
       d = Math.atan2(Math.sin(d), Math.cos(d));
       this.model.rotation.y += d * Math.min(1, TURN * dt);
     }
-    this.animate(dt, hs);
+    this.animate(dt, hs, crouching);
 
     this.updateCamera();
   }
@@ -110,11 +121,15 @@ export class Ramu {
     addEventListener('keydown', (e) => {
       this.keys.add(e.code);
       if (e.code === 'Space') this.jumpQueued = true;
+      if (e.code === 'KeyF' && !e.repeat) this.punchQueued = true;
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
     dom.addEventListener('click', () => {
       if (matchMedia('(pointer: fine)').matches) dom.requestPointerLock?.();
+    });
+    addEventListener('mousedown', (e) => {
+      if (e.button === 0 && document.pointerLockElement === dom) this.punchQueued = true;   // click to punch once the mouse is captured
     });
     addEventListener('mousemove', (e) => {
       if (document.pointerLockElement !== dom) return;
@@ -185,6 +200,10 @@ export class Ramu {
       runBtn.classList.toggle('on', this.touchRun);
       e.preventDefault();
     });
+    document.getElementById('btn-punch')?.addEventListener('touchstart', (e) => {
+      this.punchQueued = true;
+      e.preventDefault();
+    });
     document.getElementById('btn-jump')!.addEventListener('touchstart', (e) => {
       this.jumpQueued = true;
       e.preventDefault();
@@ -205,7 +224,7 @@ export class Ramu {
         const mat = m.material as THREE.MeshStandardMaterial;
         mat.roughness = 0.82;
         mat.metalness = 0;
-        if (mat.map) mat.map.anisotropy = 8;
+        if (mat.map) { mat.map.anisotropy = 8; mat.emissiveMap = mat.map; mat.emissive.setScalar(1); mat.emissiveIntensity = 0.1; }   // lifts the shade a little so he reads at night too
       });
       gltf.scene.rotation.y = Math.PI;
       this.model.add(gltf.scene);
@@ -213,9 +232,10 @@ export class Ramu {
       for (const clip of gltf.animations) {
         const name = clip.name.replace(/^.*\|/, '');
         const a = this.mixer.clipAction(clip);
-        if (name === 'jump') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+        if (name === 'jump' || name === 'punch') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
         this.actions[name] = a;
       }
+      this.mixer.addEventListener('finished', (e) => { if (e.action === this.actions.punch) this.punching = false; });
       this.play('idle', 0);
     }).catch((e) => console.error('Ramu model failed to load', e));
   }
@@ -233,18 +253,26 @@ export class Ramu {
   }
 
   /** Pick the clip from what Ramu is doing and set its playback speed to match the ground speed. */
-  private animate(dt: number, hs: number): void {
+  private animate(dt: number, hs: number, crouching: boolean): void {
     if (!this.mixer) return;
-    if (!this.grounded) {
+    const A = this.actions;
+    const set = (name: string, fallback: string, scale: number): void => {
+      const act = this.play(A[name] ? name : fallback);
+      if (act) act.timeScale = scale;
+    };
+    if (this.punching) {
+      this.play('punch', 0.08);
+    } else if (!this.grounded) {
       if (this.wasGrounded) { const j = this.play('jump', 0.08); if (j) { j.reset().play(); j.timeScale = 1.15; } }
+    } else if (crouching) {
+      if (hs < 0.25) set('crouch', 'idle', 1);
+      else set('crouch_walk', 'crouch', Math.max(0.6, hs / 0.9));
     } else if (hs < 0.25) {
-      this.play('idle');
-    } else if (hs < 2.6) {
-      this.play('walk')!.timeScale = hs / 1.5;
-    } else if (hs < 6.0) {
-      this.play('jog')!.timeScale = hs / 3.3;
+      set('idle', 'idle', 1);
+    } else if (hs < 3.4) {
+      set('walk', 'walk', hs / 1.35);
     } else {
-      this.play('run')!.timeScale = hs / 6.8;
+      set('run', 'run', hs / 4.2);
     }
     this.wasGrounded = this.grounded;
     this.mixer.update(dt);

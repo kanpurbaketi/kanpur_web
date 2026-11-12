@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CollisionWorld } from './collide';
 import { Controls } from '../game/controls';
+import { NIGHT } from '../world/night';
 
 const WALK = 2.2, RUN = 5.6, CROUCH = 1.2, ACCEL = 12, JUMP = 5, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
 const CAM_DIST = 3.2, EYE = 1.35;
@@ -230,15 +231,22 @@ export class Ramu {
       gltf.scene.traverse((o) => {
         const m = o as THREE.SkinnedMesh;
         if (!m.isMesh) return;
-        m.castShadow = true;
+        m.castShadow = false;                    // no dark shadow blob under / around him
+        m.userData.noAO = true;                  // and no ambient-occlusion halo from the post pass
         m.frustumCulled = false;                 // the skinned bounds do not follow the animation
         const mat = m.material as THREE.MeshStandardMaterial;
         mat.roughness = 0.82;
         mat.metalness = 0;
-        if (mat.map) { mat.map.anisotropy = 8; mat.emissiveMap = mat.map; mat.emissive.setScalar(1); mat.emissiveIntensity = 0.1; }   // lifts the shade a little so he reads at night too
+        if (mat.map) { mat.map.anisotropy = 8; mat.emissiveMap = mat.map; mat.emissive.setScalar(1); mat.emissiveIntensity = NIGHT ? 0.2 : 0.1; }   // lifts the shade a little so he reads at night too
       });
       gltf.scene.rotation.y = Math.PI;
       this.model.add(gltf.scene);
+      if (NIGHT) {
+        // a soft cool light just above him, so he does not vanish into the dark street
+        const glow = new THREE.PointLight('#d8e4ff', 9, 9, 2);
+        glow.position.set(0, 2.4, 0.6);
+        this.root.add(glow);
+      }
       this.mixer = new THREE.AnimationMixer(gltf.scene);
       for (const clip of gltf.animations) {
         const name = clip.name.replace(/^.*\|/, '');

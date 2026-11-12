@@ -18,13 +18,13 @@ import { treeUniforms } from './world/trees';
 import { MapData, project } from './world/types';
 import { LightPool, NIGHT, updateGlow } from './world/night';
 import { Mela } from './world/mela';
-import { MELA } from './world/melaSite';
+import { TEAR } from './world/melaSite';
 
 /*
  Debug URL params:
    ?cam=x,y,z,yaw,pitch   fixed camera (meters, radians), player hidden
    ?at=lat,lon,heading    camera at eye height at a real spot, heading in compass degrees (Mapillary photo spots)
-   ?spawn=lat,lon         start Ramu at a real spot (?spawn=mela: at the gate of the mela)
+   ?spawn=lat,lon         start Ramu at a real spot (?spawn=mela: outside the torn place in the mela's wall)
    ?time=day              afternoon instead of the default night
    ?debug                 FPS / draw-call overlay
    ?traffic=0             no vehicles
@@ -99,6 +99,7 @@ async function main() {
   const mela = new Mela(map, NIGHT ? lightPool : null, desktop);
   scene.add(mela.group);
   for (const [x, z, r] of mela.posts) world.addPost(x, z, r);
+  for (const ring of mela.walls) world.addWall(ring, 3.4);
   const landmarks = new Landmarks(map);
   scene.add(landmarks.group);
   for (const [x, z, r] of landmarks.posts) world.addPost(x, z, r);
@@ -135,7 +136,7 @@ async function main() {
     const [lat, lon] = params.get('spawn')!.split(',').map(Number);
     spawn = project(map, lat, lon);
   }
-  if (params.get('spawn') === 'mela') spawn = [MELA.cx, MELA.gateZ + 14];   // at the gate of the mela
+  if (params.get('spawn') === 'mela') spawn = [TEAR.x - 7, TEAR.z];   // in the park, outside the torn place in the cloth wall
   let best = spawn, bd = Infinity;
   for (const p of city.roadPoints) {
     const d = Math.hypot(p[0] - spawn[0], p[1] - spawn[1]);
@@ -153,7 +154,7 @@ async function main() {
   scene.add(stalls.mesh);
   for (const [x, z, r] of stalls.posts) world.addPost(x, z, r);
   console.log('props', { stalls: stalls.posts.length, traffic: !!traffic });
-  ramu.yaw = params.get('spawn') === 'mela' ? 0 : Math.atan2(best[0] - m[0], best[1] - m[1]); // camera looks toward the metro (or into the mela)
+  ramu.yaw = params.get('spawn') === 'mela' ? -Math.PI / 2 : Math.atan2(best[0] - m[0], best[1] - m[1]); // camera looks toward the metro (or into the mela)
 
   // Fixed debug cameras.
   let fixed = false;

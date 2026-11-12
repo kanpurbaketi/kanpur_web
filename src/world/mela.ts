@@ -4,7 +4,7 @@ import { drapeGeo, flatUv, footGeo, forearmGeo, handGeo, headGeo, longHairGeo, s
   torsoGeo, upperArmGeo, BODY } from './body';
 import { glowUniforms, halos, LightPool } from './night';
 import { faceTexture, Pedestrians } from './pedestrians';
-import { MELA } from './melaSite';
+import { MELA, TEAR, WALL_LOOP } from './melaSite';
 import { MapData } from './types';
 
 /*
@@ -500,12 +500,53 @@ function person(st: PersonStyle): THREE.BufferGeometry {
   return g;
 }
 
+/** Woven cloth for the boundary: 0 maroon-and-gold shamiana stripes, 1 faded blue tarpaulin, 2 old printed blanket. */
+function clothTexture(kind: number): THREE.CanvasTexture {
+  const S = 256, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  if (kind === 0) {
+    const cols = ['#7e1a1d', '#e0a93a', '#17406f', '#e0a93a', '#7e1a1d', '#f1e6c8'];
+    for (let i = 0; i < 8; i++) { g.fillStyle = cols[i % cols.length]; g.fillRect(i * 32, 0, 32, S); }
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    for (let i = 0; i < 8; i++) g.fillRect(i * 32 + 14, 0, 4, S);
+  } else if (kind === 1) {
+    g.fillStyle = '#2f5f97';
+    g.fillRect(0, 0, S, S);
+    g.fillStyle = 'rgba(255,255,255,0.55)';
+    g.fillRect(0, 0, S, 3); g.fillRect(0, S / 2, S, 2); g.fillRect(0, S - 3, S, 3);
+    g.fillStyle = '#c9ced4';
+    for (const x of [8, 128, 248]) for (const y of [8, S - 8]) { g.beginPath(); g.arc(x, y, 5, 0, Math.PI * 2); g.fill(); }
+  } else {
+    g.fillStyle = '#f0e4c0';
+    g.fillRect(0, 0, S, S);
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+      g.fillStyle = (x + y) % 2 ? '#a3342b' : '#2e6b4f';
+      g.fillRect(x * 64 + 4, y * 64 + 4, 56, 56);
+      g.fillStyle = '#f2c14e';
+      g.beginPath(); g.arc(x * 64 + 32, y * 64 + 32, 9, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#f0e4c0';
+      g.beginPath(); g.arc(x * 64 + 32, y * 64 + 32, 4, 0, Math.PI * 2); g.fill();
+    }
+  }
+  // weave, dirt and old creases
+  for (let y = 0; y < S; y += 2) { g.fillStyle = `rgba(0,0,0,${0.04 + (y % 8) * 0.004})`; g.fillRect(0, y, S, 1); }
+  for (let i = 0; i < 160; i++) { g.fillStyle = `rgba(60,45,30,${0.03 + rnd(i) * 0.07})`; g.fillRect(rnd(i + 3) * S, rnd(i + 9) * S, 3 + rnd(i + 1) * 30, 1 + rnd(i + 5) * 3); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  return t;
+}
+
 // ---- the mela -------------------------------------------------------------------------------------
 
 export class Mela {
   readonly group = new THREE.Group();
   /** solid circles for collision: [x, z, r] */
   readonly posts: [number, number, number][] = [];
+  /** collision rings for the boundary cloth (thin quads; none across the tear) */
+  readonly walls: [number, number][][] = [];
   readonly crowd: Pedestrians;
   private rides: Ride[] = [];
   private t = 0;
@@ -521,6 +562,7 @@ export class Mela {
     this.buildStalls(lights);
     this.buildGate(lights);
     this.buildMasts(lights);
+    this.buildWalls(lights);
 
     this.crowd = new Pedestrians(this.aisles(map), desktop ? 90 : 45, true);
     this.crowd.setCount(desktop ? 90 : 45);
@@ -790,6 +832,126 @@ export class Mela {
       lights?.add(x, 10, z, '#fff0d0', 320, 40);
     }
     this.group.add(new THREE.Mesh(g.build(), litMat()), bulbs.object(1.0));
+  }
+
+  // ---- boundary: long cloth walls on bamboo poles, with one torn place to slip in through -------------
+
+  private buildWalls(lights: LightPool | null): void {
+    const H = 3.4, SPAN = 3.0;
+    const kinds: THREE.BufferGeometry[][] = [[], [], []];
+    const poles = new Geo();
+    const jag = (i: number) => rnd(i * 12.9898 + 4.1);
+
+    /** Cloth between two poles; `strips` gives the lowest y of the cloth for each 0.25 m strip (torn edges), else a full panel. */
+    const cloth = (ax: number, az: number, dx: number, dz: number, len: number, kind: number, seed: number,
+                   bottom?: (xl: number) => number): void => {
+      const rot = Math.atan2(-dz, dx);
+      const M = new THREE.Matrix4().makeRotationY(rot).setPosition(ax, 0, az);
+      const strips = Math.max(4, Math.round(len / 0.25)), rows = 6;
+      const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+      for (let i = 0; i <= strips; i++) {
+        const xl = (i / strips) * len;
+        const tt = xl / len;
+        const b = bottom ? bottom(xl) : 0.15 + jag(seed + i) * 0.06;
+        const sag = Math.sin(tt * Math.PI) * 0.16;                  // top edge hangs between the poles
+        const top = H - sag;
+        for (let r = 0; r <= rows; r++) {
+          const f = r / rows, y = b + (top - b) * f;
+          const billow = 0.09 * Math.sin(xl * 1.7 + seed) * (0.4 + 0.6 * f) + 0.07 * Math.sin(xl * 0.6 + y * 1.3 + seed * 2.0);
+          pos.push(xl, y, billow);
+          uv.push(xl / 1.5, y / 1.5);
+        }
+      }
+      for (let i = 0; i < strips; i++) for (let r = 0; r < rows; r++) {
+        const a = i * (rows + 1) + r, bq = a + 1, c = a + rows + 1, d = c + 1;
+        idx.push(a, c, bq, bq, c, d);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      g.applyMatrix4(M);
+      kinds[kind].push(g);
+    };
+
+    const L = WALL_LOOP;
+    let seed = 0;
+    for (let e = 0; e < L.length; e++) {
+      const a = L[e], b = L[(e + 1) % L.length];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / len, dz = (b[1] - a[1]) / len;
+      // does the torn place lie on this edge? (distance along the edge to the tear)
+      const onEdge = Math.abs((TEAR.x - a[0]) * dz - (TEAR.z - a[1]) * dx) < 0.5 && (TEAR.x - a[0]) * dx + (TEAR.z - a[1]) * dz > 0 &&
+        (TEAR.x - a[0]) * dx + (TEAR.z - a[1]) * dz < len;
+      const st = onEdge ? (TEAR.x - a[0]) * dx + (TEAR.z - a[1]) * dz : -1;
+      const spans: { s0: number; s1: number; torn: boolean }[] = onEdge
+        ? [{ s0: 0, s1: st - 3, torn: false }, { s0: st - 3, s1: st + 3, torn: true }, { s0: st + 3, s1: len, torn: false }]
+        : [{ s0: 0, s1: len, torn: false }];
+      for (const sp of spans) {
+        const n = Math.max(1, Math.round((sp.s1 - sp.s0) / SPAN)), w = (sp.s1 - sp.s0) / n;
+        const P = (s: number): [number, number] => [a[0] + dx * s, a[1] + dz * s];
+        if (sp.torn) {
+          // one 6 m piece of cloth with a ragged opening in the middle: the lower edge climbs to a ragged lip, a few strips dangle
+          const c = 3;
+          const bottom = (xl: number) => {
+            const d = Math.abs(xl - c), j = jag(Math.round(xl * 4) + 77);
+            if (d < 1.05) return 2.55 + j * 0.45;
+            if (d < 2.1) return 0.15 + (2.6 - 0.15) * (1 - (d - 1.05) / 1.05) + (j - 0.5) * 0.5;
+            return 0.15 + jag(Math.round(xl * 4)) * 0.06;
+          };
+          const [px, pz] = P(sp.s0);
+          cloth(px, pz, dx, dz, 6, 2, 900 + e, bottom);
+          for (let k = 0; k < 7; k++) {                       // torn threads hanging into the opening
+            const xl = c - 1.0 + (k / 6) * 2.0 + (jag(k + 5) - 0.5) * 0.2;
+            const low = 1.5 + jag(k + 31) * 0.8;
+            const [tx, tz] = P(sp.s0 + xl);
+            const g = new THREE.PlaneGeometry(0.09 + jag(k) * 0.07, 2.65 - low, 1, 3);
+            g.translate(0, low + (2.65 - low) / 2, 0.03);
+            g.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.atan2(-dz, dx)).setPosition(tx, 0, tz));
+            kinds[2].push(g);
+          }
+          // collision: the two solid stretches either side of the 2 m gap
+          this.wallQuad([P(sp.s0), P(sp.s0 + c - 1.0)], dx, dz);
+          this.wallQuad([P(sp.s0 + c + 1.0), P(sp.s1)], dx, dz);
+          for (const s of [sp.s0, sp.s1]) { const [qx, qz] = P(s); poles.rod(new THREE.Vector3(qx, 0, qz), new THREE.Vector3(qx, H + 0.4, qz), 0.055, '#8a6a3a'); }
+          // two poles bracing the opening
+          for (const off of [-1.45, 1.45]) { const [qx, qz] = P(sp.s0 + c + off); poles.rod(new THREE.Vector3(qx, 0, qz), new THREE.Vector3(qx + dz * 0.15, H - 0.2, qz - dx * 0.15), 0.045, '#8a6a3a'); }
+          continue;
+        }
+        for (let k = 0; k < n; k++) {
+          const [px, pz] = P(sp.s0 + k * w);
+          cloth(px, pz, dx, dz, w + 0.04, (seed++ * 7 + e) % 3, seed * 3.7);
+          poles.rod(new THREE.Vector3(px, 0, pz), new THREE.Vector3(px, H + 0.4, pz), 0.055, '#8a6a3a');
+        }
+        const [ex, ez] = P(sp.s1);
+        poles.rod(new THREE.Vector3(ex, 0, ez), new THREE.Vector3(ex, H + 0.4, ez), 0.055, '#8a6a3a');
+        this.wallQuad([P(sp.s0), P(sp.s1)], dx, dz);
+      }
+    }
+    const mats = [clothTexture(0), clothTexture(1), clothTexture(2)].map((map) =>
+      new THREE.MeshStandardMaterial({ map, roughness: 0.95, side: THREE.DoubleSide, emissive: new THREE.Color('#ffffff'), emissiveMap: map, emissiveIntensity: 0.16 }));
+    kinds.forEach((list, i) => {
+      if (!list.length) return;
+      const merged = mergeGeometries(list.map((g) => { const x = g.index ? g.toNonIndexed() : g; x.deleteAttribute('normal'); x.computeVertexNormals(); return x; }))!;
+      const m = new THREE.Mesh(merged, mats[i]);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      this.group.add(m);
+    });
+    this.group.add(new THREE.Mesh(poles.build(), litMat({ metalness: 0, roughness: 0.9 })));
+    // the torn place: a warm glow leaks out through it, a trodden path leads to it from the park
+    lights?.add(TEAR.x + 4, 2.2, TEAR.z, '#ffbf7a', 150, 20);
+    const path = new Geo();
+    path.box(TEAR.x - 6, 0.06, TEAR.z, 12, 0.02, 3.2, '#8a7a60');
+    this.group.add(new THREE.Mesh(path.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 })));
+  }
+
+  /** Thin collision slab along a wall stretch (ends given as map points). */
+  private wallQuad(ends: [number, number][], dx: number, dz: number): void {
+    const [a, b] = ends;
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.3) return;
+    const nx = -dz * 0.12, nz = dx * 0.12;
+    this.walls.push([[a[0] + nx, a[1] + nz], [b[0] + nx, b[1] + nz], [b[0] - nx, b[1] - nz], [a[0] - nx, a[1] - nz]]);
   }
 
   /** aisles of the mela as a street graph for the strolling crowd */

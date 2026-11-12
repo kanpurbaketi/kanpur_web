@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CollisionWorld } from './collide';
 
 const WALK = 4.0, RUN = 8.5, ACCEL = 12, JUMP = 5, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
-const CAM_DIST = 3.2, EYE = 1.3;
+const CAM_DIST = 3.2, EYE = 1.35;
 
 /** Ramu: third-person walk / run / jump with an orbit camera. Port of kanpur/game/scripts/player/ramu.gd. */
 export class Ramu {
@@ -20,8 +20,10 @@ export class Ramu {
   private touchMove = new THREE.Vector2();
   private touchRun = false;
   private jumpQueued = false;
-  private limb: { thigh: THREE.Object3D[]; shin: THREE.Object3D[]; arm: THREE.Object3D[]; fore: THREE.Object3D[] } | null = null;
-  private stride = 0;
+  private mixer: THREE.AnimationMixer | null = null;
+  private actions: Record<string, THREE.AnimationAction> = {};
+  private current: THREE.AnimationAction | null = null;
+  private wasGrounded = true;
 
   constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement) {
     this.buildBody();
@@ -88,11 +90,7 @@ export class Ramu {
       d = Math.atan2(Math.sin(d), Math.cos(d));
       this.model.rotation.y += d * Math.min(1, TURN * dt);
     }
-    this.stride += hs * dt * 2.2;
-    if (this.limb) {
-      const g = gait(this.stride, Math.min(1, hs / WALK));
-      for (const k of ['thigh', 'shin', 'arm', 'fore'] as const) this.limb[k].forEach((o, i) => (o.rotation.x = g[k][i]));
-    }
+    this.animate(dt, hs);
 
     this.updateCamera();
   }
@@ -194,43 +192,63 @@ export class Ramu {
   }
 
   /**
-   * Ramu, modelled in Blender to match assets/ramu-3d.png (tools/blender/build_ramu.py -> public/models/ramu.glb).
-   * One textured material; limbs are separate nodes with pivots at hip / knee / shoulder / elbow, so they can swing.
-   * The model faces +Z in the file, the game faces -Z, hence the half turn.
+   * Ramu: the generated teen model with a Mixamo skeleton (tools/blender/build_ramu_rig.py -> public/models/ramu_rig.glb),
+   * with idle / walk / jog / run / jump clips. The file faces +Z, the game faces -Z, hence the half turn.
    */
   private buildBody(): void {
-    const tex = new THREE.TextureLoader().load('models/ramu_atlas.png');
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.flipY = false;
-    tex.anisotropy = 8;
-    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85 });
-    new GLTFLoader().loadAsync('models/ramu.glb').then((gltf) => {
-      const node = (n: string) => gltf.scene.getObjectByName(n)!;
+    new GLTFLoader().loadAsync('models/ramu_rig.glb').then((gltf) => {
       gltf.scene.traverse((o) => {
-        const m = o as THREE.Mesh;
+        const m = o as THREE.SkinnedMesh;
         if (!m.isMesh) return;
-        m.material = mat;
         m.castShadow = true;
+        m.frustumCulled = false;                 // the skinned bounds do not follow the animation
+        const mat = m.material as THREE.MeshStandardMaterial;
+        mat.roughness = 0.82;
+        mat.metalness = 0;
+        if (mat.map) mat.map.anisotropy = 8;
       });
       gltf.scene.rotation.y = Math.PI;
-      this.limb = {
-        thigh: [node('thigh_L'), node('thigh_R')], shin: [node('shin_L'), node('shin_R')],
-        arm: [node('arm_L'), node('arm_R')], fore: [node('fore_L'), node('fore_R')],
-      };
       this.model.add(gltf.scene);
+      this.mixer = new THREE.AnimationMixer(gltf.scene);
+      for (const clip of gltf.animations) {
+        const name = clip.name.replace(/^.*\|/, '');
+        const a = this.mixer.clipAction(clip);
+        if (name === 'jump') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+        this.actions[name] = a;
+      }
+      this.play('idle', 0);
     }).catch((e) => console.error('Ramu model failed to load', e));
   }
-}
 
-/** Swing angles (radians) for each limb at a point in the stride; pure so it is easy to tune. */
-function gait(stride: number, amount: number) {
-  const swing = Math.sin(stride) * amount * 0.6, vel = Math.cos(stride) * amount;
-  // model faces +Z, so a negative x rotation swings forward; knees bend while a leg comes through
-  const knee = (side: number) => Math.max(0, -side * vel) * 0.9;
-  return {
-    thigh: [swing, -swing], shin: [knee(1), knee(-1)],
-    arm: [-swing * 0.8, swing * 0.8], fore: [-0.12 - amount * 0.3, -0.12 - amount * 0.3],
-  };
+  /** Crossfade to a clip (no-op if it is already the current one). */
+  private play(name: string, fade = 0.18): THREE.AnimationAction | null {
+    const next = this.actions[name];
+    if (!next) return null;
+    if (this.current !== next) {
+      next.reset().setEffectiveWeight(1).play();
+      if (this.current) this.current.crossFadeTo(next, fade, false);
+      this.current = next;
+    }
+    return next;
+  }
+
+  /** Pick the clip from what Ramu is doing and set its playback speed to match the ground speed. */
+  private animate(dt: number, hs: number): void {
+    if (!this.mixer) return;
+    if (!this.grounded) {
+      if (this.wasGrounded) { const j = this.play('jump', 0.08); if (j) { j.reset().play(); j.timeScale = 1.15; } }
+    } else if (hs < 0.25) {
+      this.play('idle');
+    } else if (hs < 2.6) {
+      this.play('walk')!.timeScale = hs / 1.5;
+    } else if (hs < 6.0) {
+      this.play('jog')!.timeScale = hs / 3.3;
+    } else {
+      this.play('run')!.timeScale = hs / 6.8;
+    }
+    this.wasGrounded = this.grounded;
+    this.mixer.update(dt);
+  }
 }
 
 function moveToward(v: number, target: number, step: number): number {

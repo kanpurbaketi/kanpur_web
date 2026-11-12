@@ -28,9 +28,11 @@ export class Ramu {
   private wasGrounded = true;
   private punchQueued = false;
   private punching = false;
+  private blob: THREE.Mesh | null = null;
 
   constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement, private controls: Controls) {
     this.buildBody();
+    this.buildBlob();
     this.root.add(this.model);
     this.bindInput(dom);
   }
@@ -105,6 +107,7 @@ export class Ramu {
       this.model.rotation.y += d * Math.min(1, TURN * dt);
     }
     this.animate(dt, hs, crouching);
+    this.updateBlob();
 
     this.updateCamera();
   }
@@ -257,6 +260,38 @@ export class Ramu {
       this.mixer.addEventListener('finished', (e) => { if (e.action === this.actions.punch) this.punching = false; });
       this.play('idle', 0);
     }).catch((e) => console.error('Ramu model failed to load', e));
+  }
+
+  /** A faint, soft contact shadow under his feet (the real shadow map is off for him: it read as a dark halo). */
+  private buildBlob(): void {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d')!;
+    const r = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+    r.addColorStop(0, 'rgba(0,0,0,0.55)');
+    r.addColorStop(0.55, 'rgba(0,0,0,0.28)');
+    r.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = r;
+    g.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.15, 1.0).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.8, polygonOffset: true, polygonOffsetFactor: -2 }),
+    );
+    m.userData.noAO = true;
+    m.renderOrder = 1;
+    this.blob = m;
+    this.root.add(m);
+  }
+
+  /** stays on the ground (just above the footpath) while he jumps, and fades as he rises */
+  private updateBlob(): void {
+    if (!this.blob) return;
+    const h = this.root.position.y;
+    this.blob.position.y = 0.17 - h;
+    const k = Math.max(0, 1 - h * 0.45);
+    this.blob.scale.setScalar(0.7 + 0.3 * k);
+    (this.blob.material as THREE.MeshBasicMaterial).opacity = 0.8 * k;
   }
 
   /** Crossfade to a clip (no-op if it is already the current one). */

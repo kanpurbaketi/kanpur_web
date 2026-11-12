@@ -16,12 +16,16 @@ import { makeStalls, Traffic } from './world/props';
 import { makeOccupancy, StreetDetail } from './world/streetDetail';
 import { treeUniforms } from './world/trees';
 import { MapData, project } from './world/types';
+import { LightPool, NIGHT, updateGlow } from './world/night';
+import { Mela } from './world/mela';
+import { MELA } from './world/melaSite';
 
 /*
  Debug URL params:
    ?cam=x,y,z,yaw,pitch   fixed camera (meters, radians), player hidden
    ?at=lat,lon,heading    camera at eye height at a real spot, heading in compass degrees (Mapillary photo spots)
-   ?spawn=lat,lon         start Ramu at a real spot
+   ?spawn=lat,lon         start Ramu at a real spot (?spawn=mela: at the gate of the mela)
+   ?time=day              afternoon instead of the default night
    ?debug                 FPS / draw-call overlay
    ?traffic=0             no vehicles
    ?peds=90               number of pedestrians kept around the player, overriding the admin setting (0 = none)
@@ -50,10 +54,12 @@ async function main() {
   const useAO = params.has('ao') ? params.get('ao') !== '0' : desktop;
 
   const scene = new THREE.Scene();
-  const SUN_DIR = new THREE.Vector3(-0.45, 0.62, 0.5).normalize(); // afternoon, sun to the south-west
-  const haze = new THREE.Color('#cfc8b6');   // Kanpur afternoon haze: dusty, warm
+  // ?time=day for the afternoon; the default is a clear night with a high moon
+  const SUN_DIR = (NIGHT ? new THREE.Vector3(0.35, 0.75, -0.45) : new THREE.Vector3(-0.45, 0.62, 0.5)).normalize();
+  const haze = new THREE.Color(NIGHT ? '#1a2036' : '#cfc8b6');   // night: dusty blue-grey sky glow; day: warm haze
+  if (NIGHT) renderer.toneMappingExposure = 1.35;
   scene.background = haze;
-  scene.fog = new THREE.FogExp2(haze, 0.0021);
+  scene.fog = new THREE.FogExp2(haze, NIGHT ? 0.0024 : 0.0021);
   const sky = skyDome(SUN_DIR, haze);
   scene.add(sky);
 
@@ -66,11 +72,11 @@ async function main() {
   ground.position.y = -2;
   skyScene.add(ground);
   scene.environment = pmrem.fromScene(skyScene, 0, 1, 3000).texture;
-  scene.environmentIntensity = 0.75;
+  scene.environmentIntensity = NIGHT ? 0.5 : 0.75;
 
   const camera = new THREE.PerspectiveCamera(Number(params.get('fov')) || 70, innerWidth / innerHeight, 0.1, 2500);
-  scene.add(new THREE.HemisphereLight('#cfdcea', '#7a6a52', 0.35));
-  const sun = new THREE.DirectionalLight('#ffe9c7', 3.2);
+  scene.add(NIGHT ? new THREE.HemisphereLight('#5a6fa8', '#2a2430', 0.55) : new THREE.HemisphereLight('#cfdcea', '#7a6a52', 0.35));
+  const sun = new THREE.DirectionalLight(NIGHT ? '#9fb4ff' : '#ffe9c7', NIGHT ? 0.9 : 3.2);   // the moon, at night
   sun.castShadow = true;
   sun.shadow.mapSize.set(desktop ? 4096 : 2048, desktop ? 4096 : 2048);
   Object.assign(sun.shadow.camera, { left: -100, right: 100, top: 100, bottom: -100, near: 1, far: 450 });
@@ -85,9 +91,14 @@ async function main() {
   const occupied = makeOccupancy(map);
   const detail = new StreetDetail(map, occupied);
   scene.add(detail.group);
+  const lightPool = new LightPool(scene, 8);
+  if (NIGHT) for (const [x, z] of detail.lamps) lightPool.add(x, 8.2, z, '#ffd9a0', 170, 32);
   const world = new CollisionWorld(map);
   for (const [x, z] of city.pillars) world.addPost(x, z, 0.9);
   for (const [x, z, r] of detail.obstacles) world.addPost(x, z, r);
+  const mela = new Mela(map, NIGHT ? lightPool : null, desktop);
+  scene.add(mela.group);
+  for (const [x, z, r] of mela.posts) world.addPost(x, z, r);
   const landmarks = new Landmarks(map);
   scene.add(landmarks.group);
   for (const [x, z, r] of landmarks.posts) world.addPost(x, z, r);
@@ -120,15 +131,17 @@ async function main() {
   // Spawn: near the Moti Jheel metro on the nearest road point.
   const m = map.landmarks.moti_jheel_metro ?? [0, 0];
   let spawn: [number, number] = [m[0] + 6, m[1] + 45]; // just south of the station, facing it
-  if (params.get('spawn')) {
+  if (params.get('spawn') && params.get('spawn') !== 'mela') {
     const [lat, lon] = params.get('spawn')!.split(',').map(Number);
     spawn = project(map, lat, lon);
   }
+  if (params.get('spawn') === 'mela') spawn = [MELA.cx, MELA.gateZ + 14];   // at the gate of the mela
   let best = spawn, bd = Infinity;
   for (const p of city.roadPoints) {
     const d = Math.hypot(p[0] - spawn[0], p[1] - spawn[1]);
     if (d < bd) [bd, best] = [d, p];
   }
+  if (params.get('spawn') === 'mela') best = spawn;
   ramu.position.set(best[0], 0, best[1]);
 
   // Blender-built props: traffic (buses, autos, e-rickshaws) and panipuri stalls. ?traffic=0 turns traffic off.
@@ -140,7 +153,7 @@ async function main() {
   scene.add(stalls.mesh);
   for (const [x, z, r] of stalls.posts) world.addPost(x, z, r);
   console.log('props', { stalls: stalls.posts.length, traffic: !!traffic });
-  ramu.yaw = Math.atan2(best[0] - m[0], best[1] - m[1]); // camera looks toward the metro
+  ramu.yaw = params.get('spawn') === 'mela' ? 0 : Math.atan2(best[0] - m[0], best[1] - m[1]); // camera looks toward the metro (or into the mela)
 
   // Fixed debug cameras.
   let fixed = false;
@@ -216,6 +229,7 @@ async function main() {
       const l = Math.hypot(lookDir.x, lookDir.z) || 1;
       const who: [number, number] = fixed ? [Infinity, Infinity] : [focus.x, focus.z];
       peds.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
+      mela.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
       traffic?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
       if (traffic && !fixed) [ramu.position.x, ramu.position.z] = traffic.pushOut(ramu.position.x, ramu.position.z, 0.35);
     }
@@ -224,6 +238,8 @@ async function main() {
     renderer.info.reset();
     treeUniforms.time.value += dt;
     sky.position.copy(camera.position);
+    updateGlow(dt, camera, innerHeight * renderer.getPixelRatio());
+    if (NIGHT) lightPool.update(focus.x, focus.z);
     if (composer) composer.render(dt);
     else renderer.render(scene, camera);
     (window as unknown as { __ready: boolean }).__ready = true;
@@ -241,15 +257,17 @@ async function main() {
 
 /** Inverted sphere: hazy blue zenith, warm dusty horizon, soft glow around the sun. Matches the fog colour at the horizon. */
 function skyDome(sunDir: THREE.Vector3, haze: THREE.Color): THREE.Mesh {
+  const night = NIGHT;
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
     uniforms: {
       sun: { value: sunDir.clone() },
-      zenith: { value: new THREE.Color('#7f9fc0') },
+      zenith: { value: new THREE.Color(night ? '#04070f' : '#7f9fc0') },
       horizon: { value: haze.clone() },
-      glow: { value: new THREE.Color('#fff0d0') },
+      glow: { value: new THREE.Color(night ? '#cdd8ff' : '#fff0d0') },
+      night: { value: night ? 1 : 0 },
     },
     vertexShader: `varying vec3 vDir;
 void main() {
@@ -258,6 +276,7 @@ void main() {
   gl_Position.z = gl_Position.w; // always at the far plane
 }`,
     fragmentShader: `uniform vec3 sun, zenith, horizon, glow;
+uniform float night;
 varying vec3 vDir;
 void main() {
   vec3 d = normalize(vDir);
@@ -265,6 +284,13 @@ void main() {
   vec3 col = mix(horizon, zenith, pow(up, 0.45));
   float s = max(dot(d, sun), 0.0);
   col += glow * (pow(s, 8.0) * 0.25 + pow(s, 300.0) * 1.5);
+  if (night > 0.5 && d.y > 0.0) {
+    vec3 g = floor(d * 420.0);
+    float h = fract(sin(dot(g, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+    col += vec3(1.0, 0.95, 0.9) * step(0.9975, h) * (0.35 + 0.65 * h) * smoothstep(0.02, 0.35, d.y);   // stars
+    col += vec3(1.0, 0.8, 0.6) * 0.12 * pow(1.0 - up, 6.0);                                             // city glow at the horizon
+    col += glow * smoothstep(0.9993, 0.9997, s);                                                         // moon
+  }
   if (d.y < 0.0) col = horizon;
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>

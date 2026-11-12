@@ -4,10 +4,12 @@ import { makeGroundMaterial, SURF } from './ground';
 import { MeshBuilder, offsetLines } from './meshBuilder';
 import { makeTrees } from './trees';
 import { DRIVABLE, hash2, MapData, P2, pointInPoly } from './types';
+import { halos, NIGHT } from './night';
 
 const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'secondary_link', 'trunk_link', 'primary_link']);
 const POLE_H = 8.0;
 const C = (h: string) => new THREE.Color(h);
+const WHITE = new THREE.Color(1, 1, 1);
 
 /**
  * Street furniture and road detail:
@@ -20,6 +22,8 @@ export class StreetDetail {
   readonly group = new THREE.Group();
   /** extra solid obstacles for collision: [x, z, radius] */
   readonly obstacles: [number, number, number][] = [];
+  /** street lamp positions (x, z), so the night lighting can light them */
+  readonly lamps: [number, number][] = [];
   drawCalls = 0;
 
   constructor(map: MapData, occupied: (x: number, z: number) => boolean) {
@@ -99,6 +103,7 @@ export class StreetDetail {
     this.addMesh(kerb.build(), makeGroundMaterial(), true);
     this.addPoles(poles);
     this.addLamps(lamps);
+    for (const [x, z] of lamps) this.lamps.push([x, z]);
     this.addTrees(trees);
     const wg = new THREE.BufferGeometry();
     wg.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));
@@ -147,10 +152,19 @@ export class StreetDetail {
     const mb = new MeshBuilder();
     mb.box(0, 0, 0, 0.16, 9, 0.16, C('#9aa0a4'));
     mb.box(0.9, 8.8, 0, 1.8, 0.1, 0.1, C('#9aa0a4'));
-    mb.box(1.7, 8.6, 0, 0.6, 0.18, 0.3, C('#e9e4c8'));
     mb.box(-0.9, 8.8, 0, 1.8, 0.1, 0.1, C('#9aa0a4'));
-    mb.box(-1.7, 8.6, 0, 0.6, 0.18, 0.3, C('#e9e4c8'));
     this.instanced(mb.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.3 }), list);
+    // the lamp heads glow at night (and are just pale housings by day)
+    const hb = new MeshBuilder();
+    hb.box(1.7, 8.6, 0, 0.6, 0.18, 0.3, WHITE);
+    hb.box(-1.7, 8.6, 0, 0.6, 0.18, 0.3, WHITE);
+    this.instanced(hb.build(), new THREE.MeshBasicMaterial({ color: NIGHT ? '#fff1c8' : '#e9e4c8', toneMapped: !NIGHT }), list);
+    if (NIGHT && list.length) {
+      const hp = halos(list.flatMap(([x, z]) => [-1.7, 1.7].map((dx) => ({
+        x: x + dx, y: 8.55, z, color: new THREE.Color('#ffc880'), size: 3.2,
+      }))), 0.9);
+      this.group.add(hp);
+    }
   }
 
   private addTrees(list: [number, number, number][]): void {

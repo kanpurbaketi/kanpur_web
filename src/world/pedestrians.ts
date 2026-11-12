@@ -45,7 +45,8 @@ export class Pedestrians {
   private active = 0;
   private parts: Record<'thigh' | 'shin' | 'torso' | 'skirt' | 'drape' | 'sleeve' | 'forearm' | 'hand' | 'head' | 'hair' | 'longHair' | 'feet', THREE.InstancedMesh>;
 
-  constructor(map: MapData, readonly capacity: number) {
+  /** `local`: a fixed crowd on a small street graph (the mela): people stay on it and never get recycled around the player */
+  constructor(map: MapData, readonly capacity: number, private local = false) {
     const count = capacity;
     this.buildGraph(map);
     const face = faceTexture();
@@ -162,6 +163,7 @@ export class Pedestrians {
     for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
       if (!n.links.length) continue;
+      if (this.local) { cands.push(i); continue; }
       const dx = n.x - fx, dz = n.z - fz, d = Math.hypot(dx, dz);
       if (d < min || d > max) continue;
       // close ones only where the camera is not looking, so nobody pops into view
@@ -173,7 +175,7 @@ export class Pedestrians {
     const links = this.nodes[p.a].links;
     this.setLink(p, links[Math.floor(Math.random() * links.length)]);
     p.t = Math.random() * p.len;
-    p.wait = Math.random() < 0.14 ? 8 + Math.random() * 40 : 0; // some people just stand around
+    p.wait = Math.random() < (this.local ? 0.35 : 0.14) ? 8 + Math.random() * 40 : 0; // some people just stand around
     const [x, y, z, h] = this.target(p);
     p.x = x; p.y = y; p.z = z;
     p.heading = p.wait ? h + Math.PI / 2 + (Math.random() - 0.5) : h;
@@ -209,7 +211,7 @@ export class Pedestrians {
         this.place(p, fx, fz, 6, SPAWN_MAX, 0, 0);
         p.fresh = false;
       }
-      if (Math.hypot(p.x - fx, p.z - fz) > DESPAWN) this.place(p, fx, fz, SPAWN_MIN, SPAWN_MAX, dirX, dirZ);
+      if (!this.local && Math.hypot(p.x - fx, p.z - fz) > DESPAWN) this.place(p, fx, fz, SPAWN_MIN, SPAWN_MAX, dirX, dirZ);
       const blocked = Math.hypot(p.x - px, p.z - pz) < 0.9;
       let walking = false;
       if (p.wait > 0) p.wait -= dt;
@@ -299,7 +301,7 @@ function geometries() {
  * Face for the head loft, painted in greys so the per-person skin colour tints it (multiply).
  * The face sits at u = 0.75; the corner at (0.02, 0.98) must stay white (the nose, ears and neck sample it).
  */
-function faceTexture(): THREE.CanvasTexture {
+export function faceTexture(): THREE.CanvasTexture {
   const W = 512, H = 256, cx = W * 0.75;
   const c = document.createElement('canvas');
   c.width = W;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { noiseTexture, signAtlas } from './textures';
+import { nightUniform } from './night';
 
 /**
  * Procedural Kanpur facade on top of MeshStandardMaterial (keeps lights, shadows, fog).
@@ -18,6 +19,7 @@ export function makeFacadeMaterial(floorH: number): THREE.MeshStandardMaterial {
     sh.uniforms.floorH = { value: floorH };
     sh.uniforms.noiseTex = { value: noiseTexture() };
     sh.uniforms.signTex = { value: signAtlas() };
+    sh.uniforms.uNight = nightUniform;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
 attribute vec4 facade;
@@ -37,12 +39,14 @@ vFUv = uv;`);
 uniform float floorH;
 uniform sampler2D noiseTex;
 uniform sampler2D signTex;
+uniform float uNight;
 flat varying vec4 vFx;
 flat varying vec4 vFacade;
 flat varying vec3 vSign;
 varying vec2 vFUv;
 float fhash(float n) { return fract(sin(n) * 43758.5453); }
-float fRough = 0.92;`)
+float fRough = 0.92;
+vec3 fEmit = vec3(0.0);`)
       .replace('#include <color_fragment>', `#include <color_fragment>
 {
   vec3 col = diffuseColor.rgb;
@@ -151,10 +155,11 @@ float fRough = 0.92;`)
         // open: dark interior with a lit back wall and shelf lines
         vec3 inside = vec3(0.05, 0.045, 0.04) + vec3(0.12, 0.09, 0.05) * smoothstep(0.1, 0.6, fv) * mix(0.5, step(0.5, fract(fv * 6.0)), fine);
         col = mix(shut, inside, open);
+        fEmit = vec3(1.0, 0.7, 0.35) * 0.7 * open * step(0.45, fhash(cell * 5.0 + seed)) * (0.5 + fv);   // lit shop interior
         fRough = mix(0.5, 0.95, open);
       } else if (fv > 0.74 && fv < 0.97) {
         // flex signboard: one of the printed strips per 7 m of frontage
-        if (suU > 0.0 && suU < 1.0) col = signTexel * (0.8 + 0.22 * pn.r);
+        if (suU > 0.0 && suU < 1.0) { col = signTexel * (0.8 + 0.22 * pn.r); fEmit = signTexel * 0.85; }
         else col = vSign * 0.5;
       }
     } else if (vFacade.w > 0.5 && fl < 0.5) {
@@ -186,6 +191,12 @@ float fRough = 0.92;`)
         // glass: dim interior, faint sky reflection toward the top of the pane
         col = mix(vec3(0.03, 0.035, 0.04), vec3(0.22, 0.26, 0.3), smoothstep(0.35, 0.73, fv) * 0.5);
         fRough = 0.15;
+        // evening: some rooms lit (warm bulbs, a few blue tube lights / TVs)
+        float lit = fhash(cell * 11.0 + fl * 5.0 + seed * 9.0);
+        if (lit < 0.42) {
+          vec3 room = lit < 0.05 ? vec3(0.55, 0.7, 1.0) : mix(vec3(1.0, 0.62, 0.28), vec3(1.0, 0.82, 0.5), fract(lit * 40.0));
+          fEmit = room * (0.25 + 0.35 * smoothstep(0.35, 0.73, fv));
+        }
         if (abs(fu - 0.5) < 0.012 || (h > 0.6 && abs(fv - 0.6) < 0.012)) col = vec3(0.2, 0.17, 0.14); // mullion, transom
       }
       if (!frame && h >= 0.35 && fract(fu * 12.0) < 0.12) col = mix(col, vec3(0.08), fineX);   // window grille
@@ -205,7 +216,9 @@ float fRough = 0.92;`)
   diffuseColor.rgb = col;
 }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-roughnessFactor = fRough;`);
+roughnessFactor = fRough;`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+totalEmissiveRadiance += fEmit * uNight;`);
   };
   return mat;
 }

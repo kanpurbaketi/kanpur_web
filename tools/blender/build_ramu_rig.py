@@ -20,8 +20,8 @@ PREVIEW = argv[argv.index('--preview') + 1] if '--preview' in argv else None
 HEIGHT = 1.52
 TEX = 2048
 FPS = 30
-SKIN_LIFT = 0.55       # <1 lightens the skin (gamma on skin pixels); 1 = as generated
-BODY_LIFT = 0.86       # <1 lightens everything a little
+SKIN_LIFT = 0.76       # <1 lightens the skin (gamma on skin pixels); 1 = as generated
+BODY_LIFT = 0.92       # <1 lightens everything a little
 ANIMS = os.path.join(ROOT, 'assets', 'ramu_teen', 'anims')   # Mixamo FBX clips go here (see import_mixamo_clips)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)

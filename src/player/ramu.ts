@@ -263,7 +263,8 @@ export class Ramu {
     if (this.punching) {
       this.play('punch', 0.08);
     } else if (!this.grounded) {
-      if (this.wasGrounded) { const j = this.play('jump', 0.08); if (j) { j.reset().play(); j.timeScale = 1.15; } }
+      // the jump clip is ~2.2 s with a wind-up; the game's jump is ~1 s, hence the double speed
+      if (this.wasGrounded) { const j = this.play('jump', 0.08); if (j) { j.reset().play(); j.timeScale = 2.0; } }
     } else if (crouching) {
       if (hs < 0.25) set('crouch', 'idle', 1);
       else set('crouch_walk', 'crouch', Math.max(0.6, hs / 0.9));
@@ -272,7 +273,7 @@ export class Ramu {
     } else if (hs < 3.4) {
       set('walk', 'walk', hs / 1.35);
     } else {
-      set('run', 'run', hs / 4.2);
+      set('run', 'run', hs / 5.0);
     }
     this.wasGrounded = this.grounded;
     this.mixer.update(dt);

@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CollisionWorld } from './collide';
 
 const WALK = 4.0, RUN = 8.5, ACCEL = 12, JUMP = 5, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
-const CAM_DIST = 4.5, EYE = 1.6;
+const CAM_DIST = 3.2, EYE = 1.3;
 
 /** Ramu: third-person walk / run / jump with an orbit camera. Port of kanpur/game/scripts/player/ramu.gd. */
 export class Ramu {
@@ -19,7 +20,7 @@ export class Ramu {
   private touchMove = new THREE.Vector2();
   private touchRun = false;
   private jumpQueued = false;
-  private limbs: THREE.Object3D[] = [];
+  private limb: { thigh: THREE.Object3D[]; shin: THREE.Object3D[]; arm: THREE.Object3D[]; fore: THREE.Object3D[] } | null = null;
   private stride = 0;
 
   constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement) {
@@ -88,8 +89,10 @@ export class Ramu {
       this.model.rotation.y += d * Math.min(1, TURN * dt);
     }
     this.stride += hs * dt * 2.2;
-    const swing = Math.sin(this.stride) * Math.min(1, hs / WALK) * 0.6;
-    this.limbs.forEach((l, i) => (l.rotation.x = (i % 2 ? 1 : -1) * swing));
+    if (this.limb) {
+      const g = gait(this.stride, Math.min(1, hs / WALK));
+      for (const k of ['thigh', 'shin', 'arm', 'fore'] as const) this.limb[k].forEach((o, i) => (o.rotation.x = g[k][i]));
+    }
 
     this.updateCamera();
   }
@@ -191,181 +194,43 @@ export class Ramu {
   }
 
   /**
-   * Ramu: swept-back black hair, stubble and moustache, red open-collar shirt, gold chain, jeans.
-   * Faces -Z; limbs hang from pivots so they can swing.
+   * Ramu, modelled in Blender to match assets/ramu-3d.png (tools/blender/build_ramu.py -> public/models/ramu.glb).
+   * One textured material; limbs are separate nodes with pivots at hip / knee / shoulder / elbow, so they can swing.
+   * The model faces +Z in the file, the game faces -Z, hence the half turn.
    */
   private buildBody(): void {
-    const mat = (color: string, roughness = 0.85) => new THREE.MeshStandardMaterial({ color, roughness });
-    const skin = mat(SKIN, 0.6), shirt = mat('#d02027', 0.8), collar = mat('#b0171d', 0.8);
-    const jeans = mat('#2c3646', 0.9), hair = mat('#0d0c0f', 0.4), sandal = mat('#3a2518', 0.7);
-    const gold = new THREE.MeshStandardMaterial({ color: '#e0b040', roughness: 0.3, metalness: 0.9 });
-    const part = (geo: THREE.BufferGeometry, m: THREE.Material, pos: number[], parent: THREE.Object3D = this.model,
-                  scale?: number[]) => {
-      const mesh = new THREE.Mesh(geo, m);
-      mesh.position.set(pos[0], pos[1], pos[2]);
-      if (scale) mesh.scale.set(scale[0], scale[1], scale[2]);
-      mesh.castShadow = true;
-      parent.add(mesh);
-      return mesh;
-    };
-    const pivot = (x: number, y: number) => {
-      const g = new THREE.Group();
-      g.position.set(x, y, 0);
-      this.model.add(g);
-      return g;
-    };
-    const capsule = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 4, 10).translate(0, -len / 2 - r, 0);
-
-    // legs (pivot at the hip): jeans, sandals
-    const legs = [-0.1, 0.1].map((x) => {
-      const p = pivot(x, 0.9);
-      part(capsule(0.078, 0.7), jeans, [0, 0, 0], p);
-      part(new THREE.BoxGeometry(0.11, 0.035, 0.26), sandal, [0, -0.88, -0.04], p);
-      part(new THREE.SphereGeometry(0.05, 8, 6), skin, [0, -0.85, -0.07], p, [1, 0.6, 1.6]); // foot
-      return p;
-    });
-    part(new THREE.CylinderGeometry(0.2, 0.18, 0.16, 14), jeans, [0, 0.88, 0], this.model, [1, 1, 0.7]); // hips
-    // shirt: untucked, slightly flattened torso + shoulders
-    part(new THREE.CylinderGeometry(0.2, 0.235, 0.64, 14), shirt, [0, 1.2, 0], this.model, [1, 1, 0.68]);
-    part(new THREE.SphereGeometry(0.21, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), shirt, [0, 1.5, 0], this.model, [1.06, 0.5, 0.72]);
-    // open collar: a V of skin following the chest, collar flaps either side, gold chain
-    part(openCollar(), new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.6, side: THREE.DoubleSide }), [0, 0, 0]);
-    for (const sx of [-1, 1]) {
-      const c = part(new THREE.BoxGeometry(0.085, 0.014, 0.05), collar, [sx * 0.072, 1.578, -0.1]);
-      c.rotation.set(0.75, sx * -0.35, sx * -0.5);
-    }
-    const chain = part(new THREE.TorusGeometry(0.07, 0.007, 6, 24).rotateX(Math.PI / 2), gold, [0, 1.553, -0.05], this.model, [1, 1, 1.6]);
-    chain.rotation.x = -0.42;
-    // arms (pivot at the shoulder): red half sleeve, bare forearm, hand
-    const arms = [-0.235, 0.235].map((x) => {
-      const p = pivot(x, 1.49);
-      part(capsule(0.057, 0.26), shirt, [0, 0, 0], p);
-      part(capsule(0.048, 0.26), skin, [0, -0.32, 0], p);
-      part(new THREE.SphereGeometry(0.055, 8, 6), skin, [0, -0.66, 0], p, [0.8, 1.1, 1]);
-      return p;
-    });
-    this.limbs.push(legs[0], legs[1], arms[1], arms[0]); // arms swing opposite to the legs
-    // neck, then the head as one group (slightly enlarged so the face reads at gameplay distance)
-    part(new THREE.CylinderGeometry(0.05, 0.06, 0.1, 8), skin, [0, 1.58, 0]);
-    const head = new THREE.Group();
-    head.position.set(0, 1.6, 0);
-    head.scale.setScalar(1.14);
-    this.model.add(head);
-    const faceMat = new THREE.MeshStandardMaterial({ map: faceTexture(), roughness: 0.6 });
-    part(new THREE.SphereGeometry(0.115, 24, 18), faceMat, [0, 0.11, 0], head, [0.95, 1.12, 1]);
-    for (const sx of [-1, 1]) part(new THREE.SphereGeometry(0.025, 8, 6), skin, [sx * 0.108, 0.1, 0.005], head, [0.5, 1, 0.8]);
-    part(new THREE.SphereGeometry(0.019, 8, 6), skin, [0, 0.1, -0.114], head, [0.8, 1.2, 0.8]); // nose
-    // hair: cap tilted back off the forehead, with a full swept-up top and extra volume behind
-    part(new THREE.SphereGeometry(0.124, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.5).rotateX(0.62), hair,
-      [0, 0.128, 0.012], head, [0.99, 1.12, 1.05]);
-    const quiff = part(new THREE.SphereGeometry(0.075, 16, 10), hair, [0.012, 0.228, -0.03], head, [1.45, 0.72, 1.3]);
-    quiff.rotation.set(0.25, 0, 0.12);
-    part(new THREE.SphereGeometry(0.065, 12, 8), hair, [0, 0.2, 0.065], head, [1.55, 0.95, 1.2]);
+    const tex = new THREE.TextureLoader().load('models/ramu_atlas.png');
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.flipY = false;
+    tex.anisotropy = 8;
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85 });
+    new GLTFLoader().loadAsync('models/ramu.glb').then((gltf) => {
+      const node = (n: string) => gltf.scene.getObjectByName(n)!;
+      gltf.scene.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        m.material = mat;
+        m.castShadow = true;
+      });
+      gltf.scene.rotation.y = Math.PI;
+      this.limb = {
+        thigh: [node('thigh_L'), node('thigh_R')], shin: [node('shin_L'), node('shin_R')],
+        arm: [node('arm_L'), node('arm_R')], fore: [node('fore_L'), node('fore_R')],
+      };
+      this.model.add(gltf.scene);
+    }).catch((e) => console.error('Ramu model failed to load', e));
   }
 }
 
-const SKIN = '#a9714b';
-
-/** Skin-coloured V at the open collar, bent to sit just outside the shirt's chest and shoulder curve. */
-function openCollar(): THREE.BufferGeometry {
-  const rows = [[1.588, -0.103, 0.05], [1.53, -0.152, 0.04], [1.47, -0.162, 0.022], [1.4, -0.156, 0.001]]; // y, z, half width
-  const pos: number[] = [];
-  for (let i = 0; i < rows.length - 1; i++) {
-    const [y0, z0, w0] = rows[i], [y1, z1, w1] = rows[i + 1];
-    pos.push(-w0, y0, z0, w0, y0, z0, w1, y1, z1, -w0, y0, z0, w1, y1, z1, -w1, y1, z1);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.computeVertexNormals();
-  return g;
-}
-
-/** Face painted for the head sphere (equirectangular; the face is centred at u = 0.75, i.e. -Z). */
-function faceTexture(): THREE.CanvasTexture {
-  const W = 512, H = 256, cx = W * 0.75;
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = H;
-  const g = c.getContext('2d')!;
-  g.fillStyle = SKIN;
-  g.fillRect(0, 0, W, H);
-  // warm cheeks
-  for (const s of [-1, 1]) {
-    const r = g.createRadialGradient(cx + s * 40, 146, 2, cx + s * 40, 146, 22);
-    r.addColorStop(0, 'rgba(150,70,50,.28)');
-    r.addColorStop(1, 'rgba(150,70,50,0)');
-    g.fillStyle = r;
-    g.fillRect(cx + s * 40 - 24, 122, 48, 48);
-  }
-  // stubble: jaw, chin and upper lip, fading out toward the cheeks
-  const st = g.createLinearGradient(0, 132, 0, 176);
-  st.addColorStop(0, 'rgba(38,32,40,0)');
-  st.addColorStop(1, 'rgba(38,32,40,.4)');
-  g.fillStyle = st;
-  g.beginPath();
-  g.moveTo(cx - 122, 110);
-  g.quadraticCurveTo(cx - 70, 150, cx - 30, 150);
-  g.quadraticCurveTo(cx, 140, cx + 30, 150);
-  g.quadraticCurveTo(cx + 70, 150, cx + 122, 110);
-  g.lineTo(cx + 122, H);
-  g.lineTo(cx - 122, H);
-  g.closePath();
-  g.fill();
-  // eyes
-  for (const s of [-1, 1]) {
-    const ex = cx + s * 27, ey = 127;
-    g.fillStyle = '#f3efe8';
-    g.beginPath();
-    g.ellipse(ex, ey, 11, 5.6, 0, 0, Math.PI * 2);
-    g.fill();
-    g.fillStyle = '#2a1a12';
-    g.beginPath();
-    g.arc(ex, ey, 5.2, 0, Math.PI * 2);
-    g.fill();
-    g.fillStyle = '#fff';
-    g.fillRect(ex + 1, ey - 3, 2, 2);
-    g.strokeStyle = '#1a1210'; // upper lash line
-    g.lineWidth = 2;
-    g.beginPath();
-    g.moveTo(ex - 11, ey - 1);
-    g.quadraticCurveTo(ex, ey - 7, ex + 11, ey - 1);
-    g.stroke();
-    // thick eyebrows, higher at the outer end
-    g.strokeStyle = '#120f10';
-    g.lineWidth = 5.5;
-    g.lineCap = 'round';
-    g.beginPath();
-    g.moveTo(ex - s * 13, ey - 11);
-    g.quadraticCurveTo(ex, ey - 17, ex + s * 15, ey - 13);
-    g.stroke();
-  }
-  // moustache
-  g.strokeStyle = 'rgba(20,16,18,.9)';
-  g.lineWidth = 5;
-  g.beginPath();
-  g.moveTo(cx - 22, 163);
-  g.quadraticCurveTo(cx, 153, cx + 22, 163);
-  g.stroke();
-  // smile with teeth
-  g.fillStyle = '#f5f1e8';
-  g.strokeStyle = '#6a342a';
-  g.lineWidth = 1.6;
-  g.beginPath();
-  g.moveTo(cx - 20, 168);
-  g.quadraticCurveTo(cx, 171, cx + 20, 168);
-  g.quadraticCurveTo(cx, 186, cx - 20, 168);
-  g.closePath();
-  g.fill();
-  g.stroke();
-  // soul patch
-  g.fillStyle = 'rgba(20,16,18,.7)';
-  g.beginPath();
-  g.ellipse(cx, 189, 5, 3.5, 0, 0, Math.PI * 2);
-  g.fill();
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
+/** Swing angles (radians) for each limb at a point in the stride; pure so it is easy to tune. */
+function gait(stride: number, amount: number) {
+  const swing = Math.sin(stride) * amount * 0.6, vel = Math.cos(stride) * amount;
+  // model faces +Z, so a negative x rotation swings forward; knees bend while a leg comes through
+  const knee = (side: number) => Math.max(0, -side * vel) * 0.9;
+  return {
+    thigh: [swing, -swing], shin: [knee(1), knee(-1)],
+    arm: [-swing * 0.8, swing * 0.8], fore: [-0.12 - amount * 0.3, -0.12 - amount * 0.3],
+  };
 }
 
 function moveToward(v: number, target: number, step: number): number {

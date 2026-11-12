@@ -1,13 +1,16 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MapData } from './types';
+import {
+  BODY, torsoGeo, thighGeo, shinGeo, footGeo, upperArmGeo, forearmGeo, handGeo, skirtGeo, headGeo, HEAD,
+  shortHairGeo, longHairGeo, drapeGeo,
+} from './body';
 
 /*
  Random pedestrians.
  A fixed pool of people is kept around the player: they walk the street network (footpath where a road
  has one, otherwise the edge of the carriageway), pick a random turn at each junction, pause now and then,
  and some just stand around. Anyone left far behind is moved to a street ahead / out of sight.
- Rendering: one InstancedMesh per body part (9 draw calls for everybody), per-person colours and height.
+ Rendering: one InstancedMesh per body part (a dozen draw calls for everybody), per-person colours and height.
 */
 
 const SPAWN_MIN = 60, SPAWN_MAX = 170, DESPAWN = 195; // metres from the player
@@ -40,14 +43,16 @@ export class Pedestrians {
   private nodes: Node[] = [];
   private peds: Ped[] = [];
   private active = 0;
-  private parts: Record<'leg' | 'torso' | 'skirt' | 'sleeve' | 'forearm' | 'head' | 'hair' | 'longHair' | 'feet', THREE.InstancedMesh>;
+  private parts: Record<'thigh' | 'shin' | 'torso' | 'skirt' | 'drape' | 'sleeve' | 'forearm' | 'hand' | 'head' | 'hair' | 'longHair' | 'feet', THREE.InstancedMesh>;
 
   constructor(map: MapData, readonly capacity: number) {
     const count = capacity;
     this.buildGraph(map);
-    const mat = (roughness: number) => new THREE.MeshStandardMaterial({ roughness });
-    const im = (g: THREE.BufferGeometry, n: number, rough = 0.85) => {
-      const m = new THREE.InstancedMesh(g, mat(rough), n);
+    const face = faceTexture();
+    const mat = (roughness: number, extra: THREE.MeshStandardMaterialParameters = {}) =>
+      new THREE.MeshStandardMaterial({ roughness, ...extra });
+    const im = (g: THREE.BufferGeometry, n: number, rough = 0.85, extra: THREE.MeshStandardMaterialParameters = {}) => {
+      const m = new THREE.InstancedMesh(g, mat(rough, extra), n);
       m.castShadow = true;
       m.receiveShadow = true;
       m.frustumCulled = false; // instances move around the whole map
@@ -57,9 +62,10 @@ export class Pedestrians {
     };
     const G = geometries();
     this.parts = {
-      leg: im(G.leg, count * 2), torso: im(G.torso, count), skirt: im(G.skirt, count),
-      sleeve: im(G.sleeve, count * 2), forearm: im(G.forearm, count * 2, 0.6),
-      head: im(G.head, count, 0.6), hair: im(G.hair, count, 0.45), longHair: im(G.longHair, count, 0.45),
+      thigh: im(G.thigh, count * 2, 0.9), shin: im(G.shin, count * 2, 0.9), torso: im(G.torso, count),
+      skirt: im(G.skirt, count, 0.9, { side: THREE.DoubleSide }), drape: im(G.drape, count, 0.8, { side: THREE.DoubleSide }),
+      sleeve: im(G.sleeve, count * 2), forearm: im(G.forearm, count * 2, 0.65), hand: im(G.hand, count * 2, 0.6),
+      head: im(G.head, count, 0.6, { map: face }), hair: im(G.hair, count, 0.45), longHair: im(G.longHair, count, 0.45),
       feet: im(G.feet, count * 2, 0.7),
     };
     for (let i = 0; i < count; i++) this.peds.push(this.makePerson(i));
@@ -77,8 +83,8 @@ export class Pedestrians {
     for (let i = this.active; i < n; i++) this.peds[i].fresh = true;
     this.active = n;
     const P = this.parts;
-    for (const m of [P.torso, P.skirt, P.head, P.hair, P.longHair]) m.count = n;
-    for (const m of [P.leg, P.sleeve, P.forearm, P.feet]) m.count = n * 2;
+    for (const m of [P.torso, P.skirt, P.drape, P.head, P.hair, P.longHair]) m.count = n;
+    for (const m of [P.thigh, P.shin, P.sleeve, P.forearm, P.hand, P.feet]) m.count = n * 2;
   }
 
   /** Street network: one node per distinct road vertex, links along the roads. */
@@ -128,19 +134,23 @@ export class Pedestrians {
     const pick = (list: string[]) => c.set(list[Math.floor(Math.random() * list.length)]).clone();
     const skin = pick(SKIN), hair = pick(HAIR.slice(0, child || woman ? 4 : 6));
     const top = pick(kind === 0 ? SHIRTS : kind === 1 ? KURTAS : BRIGHT);
+    const accent = pick(BRIGHT); // sari blouse / dupatta
     const bottom = kind === 0 ? pick(TROUSERS) : kind === 1 ? pick(['#ece8dc', '#e0dccf', '#d9d4c4'])
       : kind === 2 ? (Math.random() < 0.5 ? top.clone().multiplyScalar(0.7) : pick(['#e8e3d6', '#2f2f35', '#d9b44a'])) : top;
     const longSleeve = kind === 1 || (kind === 0 && Math.random() < 0.35);
     const P = this.parts;
-    P.torso.setColorAt(i, top);
+    P.torso.setColorAt(i, kind === 3 ? accent : top);
     P.skirt.setColorAt(i, top);
+    P.drape.setColorAt(i, kind === 3 ? top : accent);
     P.head.setColorAt(i, skin);
     P.hair.setColorAt(i, hair);
     P.longHair.setColorAt(i, hair);
     for (const k of [i * 2, i * 2 + 1]) {
-      P.leg.setColorAt(k, bottom);
-      P.sleeve.setColorAt(k, top);
+      P.thigh.setColorAt(k, bottom);
+      P.shin.setColorAt(k, bottom);
+      P.sleeve.setColorAt(k, kind === 3 ? accent : top);
       P.forearm.setColorAt(k, longSleeve ? top : skin);
+      P.hand.setColorAt(k, skin);
       P.feet.setColorAt(k, skin.clone().multiplyScalar(0.55)); // sandals / dusty feet
     }
     return p;
@@ -237,21 +247,32 @@ export class Pedestrians {
       const swing = Math.sin(p.phase) * 0.55 * p.moving;
       const bob = Math.abs(Math.cos(p.phase)) * 0.025 * p.moving;
       ROOT.compose(V.set(p.x, p.y + bob * p.scale, p.z), Q.setFromAxisAngle(UP, p.heading), S.setScalar(p.scale));
+      const woman = p.kind >= 2;
       P.torso.setMatrixAt(i, ROOT);
       P.head.setMatrixAt(i, ROOT);
-      P.hair.setMatrixAt(i, ROOT);
-      P.longHair.setMatrixAt(i, p.kind >= 2 ? ROOT : ZERO);
-      if (p.skirt) P.skirt.setMatrixAt(i, M.copy(ROOT).multiply(L.makeTranslation(0, 0.94, 0)).scale(V.set(1, p.skirt, 1)));
+      P.hair.setMatrixAt(i, woman ? ZERO : ROOT);
+      P.longHair.setMatrixAt(i, woman ? ROOT : ZERO);
+      P.drape.setMatrixAt(i, woman ? ROOT : ZERO);
+      if (p.skirt) P.skirt.setMatrixAt(i, M.copy(ROOT).multiply(L.makeTranslation(0, BODY.hipY + 0.04, 0)).scale(V.set(1, p.skirt, 1)));
       else P.skirt.setMatrixAt(i, ZERO);
       const legSwing = p.kind === 3 ? swing * 0.45 : swing; // short steps in a sari
       for (const s of [0, 1]) {
-        const sx = s ? 0.1 : -0.1, sign = s ? 1 : -1;
-        M.copy(ROOT).multiply(L.makeTranslation(sx, 0.9, 0)).multiply(R.makeRotationX(legSwing * sign));
-        P.leg.setMatrixAt(i * 2 + s, M);
-        P.feet.setMatrixAt(i * 2 + s, M);
-        M.copy(ROOT).multiply(L.makeTranslation(sx * 2.35, 1.49, 0)).multiply(R.makeRotationX(-swing * 0.75 * sign));
-        P.sleeve.setMatrixAt(i * 2 + s, M);
-        P.forearm.setMatrixAt(i * 2 + s, M);
+        const sign = s ? 1 : -1, k = i * 2 + s;
+        // leg: thigh swings from the hip, the knee flexes as the leg comes through
+        M.copy(ROOT).multiply(L.makeTranslation(sign * BODY.hipX, BODY.hipY, 0)).multiply(R.makeRotationX(legSwing * sign));
+        P.thigh.setMatrixAt(k, M);
+        const knee = 0.9 * Math.max(0, sign * Math.cos(p.phase)) * p.moving * (p.kind === 3 ? 0.45 : 1);
+        M.multiply(L.makeTranslation(0, -BODY.thigh, 0)).multiply(R.makeRotationX(-knee));
+        P.shin.setMatrixAt(k, M);
+        P.feet.setMatrixAt(k, M);
+        // arm: swings opposite to the leg, elbow bent a little more as the hand comes forward
+        const armA = -swing * 0.75 * sign;
+        M.copy(ROOT).multiply(L.makeTranslation(sign * BODY.shoulderX, BODY.shoulderY, 0)).multiply(R.makeRotationX(armA));
+        P.sleeve.setMatrixAt(k, M);
+        const flex = 0.18 + 0.55 * Math.max(0, armA / 0.42) * p.moving;
+        M.multiply(L.makeTranslation(0, -BODY.upperArm, 0)).multiply(R.makeRotationX(flex));
+        P.forearm.setMatrixAt(k, M);
+        P.hand.setMatrixAt(k, M);
       }
     }
     for (const m of Object.values(P)) {
@@ -268,26 +289,74 @@ const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
 /** Body parts in model space: 1.8 m tall at scale 1, facing -Z, limbs hanging from their pivot at the origin. */
 function geometries() {
-  const hang = (r: number, len: number, y = 0) => new THREE.CapsuleGeometry(r, len, 2, 6).translate(0, -len / 2 - r + y, 0);
-  const merge = (list: THREE.BufferGeometry[]) => mergeGeometries(list.map((g) => (g.index ? g.toNonIndexed() : g)))!;
-  const torso = merge([
-    new THREE.CylinderGeometry(0.19, 0.22, 0.62, 8).translate(0, 1.21, 0),
-    new THREE.SphereGeometry(0.2, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1.06, 0.5, 1).translate(0, 1.5, 0),
-  ]).scale(1, 1, 0.68);
-  const head = merge([
-    new THREE.SphereGeometry(0.115, 10, 8).scale(0.95, 1.12, 1).translate(0, 1.72, 0),
-    new THREE.CylinderGeometry(0.05, 0.06, 0.1, 8).translate(0, 1.58, 0),
-    new THREE.SphereGeometry(0.02, 6, 4).translate(0, 1.71, -0.113), // nose, so the facing direction reads
-  ]);
-  const hair = new THREE.SphereGeometry(0.123, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.52).rotateX(0.55)
-    .scale(1, 1.12, 1.05).translate(0, 1.735, 0.012);
-  const longHair = merge([
-    new THREE.CapsuleGeometry(0.05, 0.3, 2, 6).scale(1.5, 1, 0.7).translate(0, 1.5, 0.1), // plait / hair down the back
-    new THREE.SphereGeometry(0.06, 8, 6).translate(0, 1.7, 0.1),
-  ]);
-  // kurta / sari below the waist: unit height hanging from y = 0, flaring slightly
-  const skirt = new THREE.CylinderGeometry(0.2, 0.25, 1, 10, 1, true).translate(0, -0.5, 0).scale(1, 1, 0.74);
-  const forearm = merge([hang(0.045, 0.26, -0.32), new THREE.SphereGeometry(0.05, 6, 5).scale(0.8, 1.1, 1).translate(0, -0.66, 0)]);
-  const feet = new THREE.BoxGeometry(0.1, 0.05, 0.24).translate(0, -0.875, -0.04);
-  return { leg: hang(0.075, 0.7), torso, skirt, sleeve: hang(0.056, 0.26), forearm, head, hair, longHair, feet };
+  return {
+    thigh: thighGeo(), shin: shinGeo(), feet: footGeo(), torso: torsoGeo(), skirt: skirtGeo(), drape: drapeGeo(),
+    sleeve: upperArmGeo(), forearm: forearmGeo(), hand: handGeo(), head: headGeo(), hair: shortHairGeo(), longHair: longHairGeo(),
+  };
+}
+
+/**
+ * Face for the head loft, painted in greys so the per-person skin colour tints it (multiply).
+ * The face sits at u = 0.75; the corner at (0.02, 0.98) must stay white (the nose, ears and neck sample it).
+ */
+function faceTexture(): THREE.CanvasTexture {
+  const W = 512, H = 256, cx = W * 0.75;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, W, H);
+  const y = (worldY: number) => (1 - (worldY - HEAD.y0) / (HEAD.y1 - HEAD.y0)) * H;
+  const blob = (x: number, py: number, rx: number, ry: number, rgba: string, fade = 0) => {
+    g.save();
+    g.translate(x, py);
+    g.scale(rx, ry);
+    const r = g.createRadialGradient(0, 0, fade, 0, 0, 1);
+    r.addColorStop(0, rgba);
+    r.addColorStop(1, rgba.replace(/[\d.]+\)$/, '0)'));
+    g.fillStyle = r;
+    g.beginPath();
+    g.arc(0, 0, 1, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  };
+  for (const s of [-1, 1]) {
+    const ex = cx + s * 30, ey = y(1.68);
+    blob(ex, ey + 1, 22, 11, 'rgba(90,60,50,.35)');              // eye socket shadow
+    g.fillStyle = 'rgba(25,18,16,.95)';                           // eye
+    g.beginPath();
+    g.ellipse(ex, ey, 11, 4.6, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = 'rgba(30,20,16,.9)';                          // upper lid
+    g.lineWidth = 2;
+    g.beginPath();
+    g.ellipse(ex, ey - 0.5, 12, 5.4, 0, Math.PI * 1.05, Math.PI * 1.95);
+    g.stroke();
+    g.strokeStyle = 'rgba(25,18,15,.8)';                          // brow
+    g.lineWidth = 4.5;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(ex - s * 14, y(1.704));
+    g.quadraticCurveTo(ex, y(1.715), ex + s * 15, y(1.699));
+    g.stroke();
+    blob(cx + s * 38, y(1.625), 22, 18, 'rgba(160,90,80,.3)');   // cheek
+  }
+  blob(cx, y(1.64), 7, 12, 'rgba(110,70,60,.28)');                // nose shadow
+  g.fillStyle = 'rgba(95,40,38,.85)';                             // lips
+  g.beginPath();
+  g.ellipse(cx, y(1.597), 18, 4.5, 0, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = 'rgba(40,15,15,.9)';
+  g.lineWidth = 1.6;
+  g.beginPath();
+  g.moveTo(cx - 17, y(1.597));
+  g.lineTo(cx + 17, y(1.597));
+  g.stroke();
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, 14, 14);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
 }

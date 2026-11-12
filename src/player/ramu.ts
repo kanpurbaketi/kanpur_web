@@ -3,10 +3,10 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CollisionWorld } from './collide';
 import { Controls } from '../game/controls';
 import { NIGHT } from '../world/night';
-import { PlayerPrefs, skinParams } from '../game/playerPrefs';
+import { loadSettings, onSettingsChange, Settings } from '../game/settings';
+import { skinParams } from '../game/skin';
 
-const PUNCH_SPEED = 2.4;   // the Mixamo cross punch is ~2 s; this makes it a quick jab
-const WALK = 2.2, RUN = 5.6, CROUCH = 1.2, ACCEL = 12, JUMP = 5, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
+const CROUCH = 1.2, ACCEL = 12, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
 const CAM_DIST = 3.2, EYE = 1.35;
 
 /** Ramu: third-person walk / run / jump with an orbit camera. Port of kanpur/game/scripts/player/ramu.gd. */
@@ -30,10 +30,13 @@ export class Ramu {
   private wasGrounded = true;
   private punchQueued = false;
   private punching = false;
+  /** admin settings (walk / run / jump / punch speeds, skin tone); updated live from the admin tab */
+  private cfg: Settings = loadSettings();
   private blob: THREE.Mesh | null = null;
   private skin = { gamma: { value: 1 }, tint: { value: new THREE.Color(1, 1, 1) }, glow: { value: NIGHT ? 0.2 : 0.1 } };
 
-  constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement, private controls: Controls, private prefs: PlayerPrefs) {
+  constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement, private controls: Controls) {
+    onSettingsChange((s) => (this.cfg = s));
     this.buildBody();
     this.buildBlob();
     this.root.add(this.model);
@@ -65,7 +68,7 @@ export class Ramu {
       if (c.held('right', this.keys)) input.x += 1;
       input.add(this.touchMove);
       if (this.jumpQueued && this.grounded) {
-        this.vel.y = JUMP;
+        this.vel.y = this.cfg.jumpSpeed;
         this.grounded = false;
         this.jumps++;
       }
@@ -76,7 +79,7 @@ export class Ramu {
       this.punching = true;
       const a = this.actions.punch;
       a.reset();
-      a.timeScale = PUNCH_SPEED;
+      a.timeScale = this.cfg.punchSpeed;
       this.play('punch', 0.05);
     }
     this.punchQueued = false;
@@ -84,7 +87,7 @@ export class Ramu {
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     const dir = new THREE.Vector3(input.x * cos + input.y * sin, 0, -input.x * sin + input.y * cos);
     const running = this.controls.held('run', this.keys) || this.touchRun;
-    let speed = crouching ? CROUCH : running ? RUN : WALK;
+    let speed = crouching ? CROUCH : running ? this.cfg.runSpeed : this.cfg.walkSpeed;
     if (this.punching) speed *= 0.15;
     const step = ACCEL * speed * dt;
     this.vel.x = moveToward(this.vel.x, dir.x * speed, step);
@@ -301,17 +304,17 @@ export class Ramu {
 
   /**
    * Skin tone is applied live in the shader: pixels that look like skin (warm orange-brown; the shirt is blue and the satchel
-   * yellower) get a gamma lift set by Settings > Skin tone. A faint self-glow, from the already toned colour, keeps him
+   * yellower) get a gamma lift set by the admin page's skin tone. A faint self-glow, from the already toned colour, keeps him
    * readable in shade.
    */
   private tuneSkin(mat: THREE.MeshStandardMaterial): void {
     const apply = () => {
-      const { gamma, tint } = skinParams(this.prefs.skinTone);
+      const { gamma, tint } = skinParams(this.cfg.skinTone / 100);
       this.skin.gamma.value = gamma;
       this.skin.tint.value.setRGB(tint[0], tint[1], tint[2]);
     };
     apply();
-    this.prefs.onChange(apply);
+    onSettingsChange(apply);
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uSkinGamma = this.skin.gamma;
       sh.uniforms.uSkinTint = this.skin.tint;
@@ -364,7 +367,7 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
       else set('crouch_walk', 'crouch', Math.max(0.6, hs / 0.9));
     } else if (hs < 0.25) {
       set('idle', 'idle', 1);
-    } else if (hs < 3.4) {
+    } else if (hs < (this.cfg.walkSpeed + this.cfg.runSpeed) / 2) {
       set('walk', 'walk', hs / 1.35);
     } else {
       set('run', 'run', hs / 5.0);

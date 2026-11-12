@@ -1,19 +1,17 @@
 import { Stats } from '../game/stats';
 import { ACTIONS, Action, Controls, DEFAULTS, label } from '../game/controls';
-import { DEFAULT_SKIN, PlayerPrefs, skinSwatch } from '../game/playerPrefs';
 import { MapData, P2, centroid } from '../world/types';
 import { Hud, PX_PER_M } from './hud';
 
 const PROFILE_KEY = 'kanpur.profile.v1';
-type Item = 'profile' | 'map' | 'stats' | 'controls' | 'settings';
-const TITLES: Record<Item, string> = { profile: 'Profile', map: 'Map', stats: 'Statistics', controls: 'Controls', settings: 'Settings' };
+type Item = 'profile' | 'map' | 'stats' | 'controls';
+const TITLES: Record<Item, string> = { profile: 'Profile', map: 'Map', stats: 'Statistics', controls: 'Controls' };
 
 export interface MenuDeps {
   map: MapData;
   hud: Hud;
   stats: Stats;
   controls: Controls;
-  prefs: PlayerPrefs;
   player: () => { x: number; z: number; yaw: number };
   /** called when a panel opens / closes, so the game can pause */
   onPause: (paused: boolean) => void;
@@ -96,7 +94,6 @@ export class Menu {
     if (it === 'profile') this.renderProfile();
     else if (it === 'map') this.renderMap();
     else if (it === 'controls') this.renderControls();
-    else if (it === 'settings') this.renderSettings();
     else this.renderStats();
   }
 
@@ -276,45 +273,6 @@ export class Menu {
     g.fillText(bar >= 1000 ? `${bar / 1000} km` : `${bar} m`, 12, H - 26);
   }
 
-  // ---------- Settings ----------
-  private renderSettings(): void {
-    const prefs = this.d.prefs;
-    const swatch = el('span', 'skin-swatch');
-    const slider = el('input', 'skin-slider') as HTMLInputElement;
-    slider.type = 'range';
-    slider.min = '0';
-    slider.max = '100';
-    slider.step = '1';
-    slider.value = String(Math.round(prefs.skinTone * 100));
-    slider.setAttribute('aria-label', 'Skin tone, deep to fair');
-    const value = el('span', 'skin-value');
-    const sync = () => {
-      swatch.style.background = skinSwatch(prefs.skinTone);
-      value.textContent = `${Math.round(prefs.skinTone * 100)}`;
-    };
-    slider.addEventListener('input', () => {
-      prefs.skinTone = Number(slider.value) / 100;
-      sync();
-    });
-    sync();
-    const ends = el('div', 'skin-ends');
-    ends.append(text('span', 'Deep'), text('span', 'Fair'));
-    const field = el('div', 'skin-field');
-    const top = el('div', 'skin-top');
-    top.append(text('span', 'Ramu’s skin tone', 'skin-label'), swatch, value);
-    field.append(top, slider, ends);
-    const reset = el('button', 'link-btn');
-    reset.textContent = 'Reset to default';
-    reset.addEventListener('click', () => {
-      prefs.skinTone = DEFAULT_SKIN;
-      slider.value = String(Math.round(DEFAULT_SKIN * 100));
-      sync();
-    });
-    const note = text('p', 'Applies to Ramu’s skin only, straight away. Saved in this browser.', 'muted');
-    note.append(' ', reset);
-    this.body.append(field, note);
-  }
-
   // ---------- Controls ----------
   /** The key bindings: current keys (click one, then press the new key), the defaults for reference, a reset button. */
   private renderControls(): void {
@@ -487,6 +445,5 @@ const ICONS: Record<Item, string> = {
   profile: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>'),
   map: svg('<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/>'),
   stats: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
-  settings: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   controls: svg('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>'),
 };

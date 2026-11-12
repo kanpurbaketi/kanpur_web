@@ -3,7 +3,9 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CollisionWorld } from './collide';
 import { Controls } from '../game/controls';
 import { NIGHT } from '../world/night';
+import { PlayerPrefs, skinParams } from '../game/playerPrefs';
 
+const PUNCH_SPEED = 2.4;   // the Mixamo cross punch is ~2 s; this makes it a quick jab
 const WALK = 2.2, RUN = 5.6, CROUCH = 1.2, ACCEL = 12, JUMP = 5, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
 const CAM_DIST = 3.2, EYE = 1.35;
 
@@ -29,8 +31,9 @@ export class Ramu {
   private punchQueued = false;
   private punching = false;
   private blob: THREE.Mesh | null = null;
+  private skin = { gamma: { value: 1 }, tint: { value: new THREE.Color(1, 1, 1) }, glow: { value: NIGHT ? 0.2 : 0.1 } };
 
-  constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement, private controls: Controls) {
+  constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement, private controls: Controls, private prefs: PlayerPrefs) {
     this.buildBody();
     this.buildBlob();
     this.root.add(this.model);
@@ -73,7 +76,8 @@ export class Ramu {
       this.punching = true;
       const a = this.actions.punch;
       a.reset();
-      this.play('punch', 0.08);
+      a.timeScale = PUNCH_SPEED;
+      this.play('punch', 0.05);
     }
     this.punchQueued = false;
     if (input.lengthSq() > 1) input.normalize();
@@ -240,7 +244,8 @@ export class Ramu {
         const mat = m.material as THREE.MeshStandardMaterial;
         mat.roughness = 0.82;
         mat.metalness = 0;
-        if (mat.map) { mat.map.anisotropy = 8; mat.emissiveMap = mat.map; mat.emissive.setScalar(1); mat.emissiveIntensity = NIGHT ? 0.2 : 0.1; }   // lifts the shade a little so he reads at night too
+        if (mat.map) mat.map.anisotropy = 8;
+        this.tuneSkin(mat);
       });
       gltf.scene.rotation.y = Math.PI;
       this.model.add(gltf.scene);
@@ -294,6 +299,41 @@ export class Ramu {
     (this.blob.material as THREE.MeshBasicMaterial).opacity = 0.8 * k;
   }
 
+  /**
+   * Skin tone is applied live in the shader: pixels that look like skin (warm orange-brown; the shirt is blue and the satchel
+   * yellower) get a gamma lift set by Settings > Skin tone. A faint self-glow, from the already toned colour, keeps him
+   * readable in shade.
+   */
+  private tuneSkin(mat: THREE.MeshStandardMaterial): void {
+    const apply = () => {
+      const { gamma, tint } = skinParams(this.prefs.skinTone);
+      this.skin.gamma.value = gamma;
+      this.skin.tint.value.setRGB(tint[0], tint[1], tint[2]);
+    };
+    apply();
+    this.prefs.onChange(apply);
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uSkinGamma = this.skin.gamma;
+      sh.uniforms.uSkinTint = this.skin.tint;
+      sh.uniforms.uGlow = this.skin.glow;
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+uniform float uSkinGamma;
+uniform vec3 uSkinTint;
+uniform float uGlow;`)
+        .replace('#include <map_fragment>', `#include <map_fragment>
+{
+  vec3 enc = pow(max(diffuseColor.rgb, vec3(0.0)), vec3(0.4545));
+  float m = clamp((enc.r - enc.b - 0.05) / 0.12, 0.0, 1.0) * clamp((0.82 - enc.g / max(enc.r, 0.001)) / 0.08, 0.0, 1.0)
+          * step(enc.g, enc.r) * step(enc.b, enc.g);
+  vec3 toned = min(vec3(1.0), pow(diffuseColor.rgb, vec3(uSkinGamma)) * uSkinTint);
+  diffuseColor.rgb = mix(diffuseColor.rgb, toned, m);
+}`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
+    };
+  }
+
   /** Crossfade to a clip (no-op if it is already the current one). */
   private play(name: string, fade = 0.18): THREE.AnimationAction | null {
     const next = this.actions[name];
@@ -315,7 +355,7 @@ export class Ramu {
       if (act) act.timeScale = scale;
     };
     if (this.punching) {
-      this.play('punch', 0.08);
+      this.play('punch', 0.05);
     } else if (!this.grounded) {
       // the jump clip is ~2.2 s with a wind-up; the game's jump is ~1 s, hence the double speed
       if (this.wasGrounded) { const j = this.play('jump', 0.08); if (j) { j.reset().play(); j.timeScale = 2.0; } }

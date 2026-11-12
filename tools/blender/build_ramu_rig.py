@@ -20,7 +20,7 @@ PREVIEW = argv[argv.index('--preview') + 1] if '--preview' in argv else None
 HEIGHT = 1.52
 TEX = 2048
 FPS = 30
-SKIN_LIFT = 0.86       # <1 lightens the skin (gamma on skin pixels); 1 = as generated
+SKIN_LIFT = 1.0        # skin is left as generated: the game's Settings > Skin tone slider lightens / darkens it live
 BODY_LIFT = 0.92       # <1 lightens everything a little
 ANIMS = os.path.join(ROOT, 'assets', 'ramu_teen', 'anims')   # Mixamo FBX clips go here (see import_mixamo_clips)
 
@@ -66,7 +66,7 @@ r, g, b = px[:, 0], px[:, 1], px[:, 2]
 skin = np.clip((r - b - 0.05) / 0.12, 0, 1) * np.clip((0.82 - g / np.maximum(r, 1e-3)) / 0.08, 0, 1) * (r > g) * (g > b)
 rgb = px[:, :3].copy()
 lifted = np.power(rgb, BODY_LIFT)
-fair = np.power(rgb, SKIN_LIFT) * np.array([1.06, 1.02, 0.97])      # lighter and a touch warmer
+fair = np.power(rgb, SKIN_LIFT)
 px[:, :3] = np.clip(lifted * (1 - skin[:, None]) + fair * skin[:, None], 0, 1)
 w = skin > 0.5
 print('RIG skin pixels', int(w.sum()), 'mean before', rgb[w].mean(axis=0).round(3), 'after', px[w, :3].mean(axis=0).round(3))

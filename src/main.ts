@@ -18,6 +18,7 @@ import { treeUniforms } from './world/trees';
 import { MapData, project } from './world/types';
 import { LightPool, NIGHT, updateGlow } from './world/night';
 import { Controls } from './game/controls';
+import { PlayerPrefs } from './game/playerPrefs';
 import { Mela } from './world/mela';
 import { TEAR } from './world/melaSite';
 
@@ -109,7 +110,8 @@ async function main() {
   const hintEl = document.getElementById('hint')!;
   hintEl.textContent = controls.hint();
   controls.onChange(() => (hintEl.textContent = controls.hint()));
-  const ramu = new Ramu(camera, world, renderer.domElement, controls);
+  const prefs = new PlayerPrefs();
+  const ramu = new Ramu(camera, world, renderer.domElement, controls, prefs);
   scene.add(ramu.root);
   if (params.has('debug')) (window as unknown as { __ramu: Ramu }).__ramu = ramu;   // for test scripts
   // Crowd size comes from the admin portal (admin.html); ?peds=N overrides it for testing.
@@ -124,7 +126,7 @@ async function main() {
   const stats = new Stats(city.roadPoints);
   let paused = false;
   const menu = new Menu({
-    map, hud, stats, controls,
+    map, hud, stats, controls, prefs,
     player: () => ({ x: ramu.position.x, z: ramu.position.z, yaw: ramu.yaw }),
     onPause: (p) => {
       paused = p;

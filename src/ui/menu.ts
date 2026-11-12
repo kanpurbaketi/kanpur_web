@@ -1,15 +1,17 @@
 import { Stats } from '../game/stats';
+import { ACTIONS, Action, Controls, DEFAULTS, label } from '../game/controls';
 import { MapData, P2, centroid } from '../world/types';
 import { Hud, PX_PER_M } from './hud';
 
 const PROFILE_KEY = 'kanpur.profile.v1';
-type Item = 'profile' | 'map' | 'stats';
-const TITLES: Record<Item, string> = { profile: 'Profile', map: 'Map', stats: 'Statistics' };
+type Item = 'profile' | 'map' | 'stats' | 'controls';
+const TITLES: Record<Item, string> = { profile: 'Profile', map: 'Map', stats: 'Statistics', controls: 'Controls' };
 
 export interface MenuDeps {
   map: MapData;
   hud: Hud;
   stats: Stats;
+  controls: Controls;
   player: () => { x: number; z: number; yaw: number };
   /** called when a panel opens / closes, so the game can pause */
   onPause: (paused: boolean) => void;
@@ -66,7 +68,7 @@ export class Menu {
         return;
       }
       if (e.code === 'Escape' && (this.open || this.drop.classList.contains('on'))) this.close();
-      if (e.code === 'KeyM' && this.btn.style.display !== 'none') this.open === 'map' ? this.close() : this.show('map');
+      if (this.d.controls.matches('map', e.code) && this.btn.style.display !== 'none') this.open === 'map' ? this.close() : this.show('map');
     });
   }
 
@@ -91,6 +93,7 @@ export class Menu {
     if (!wasOpen) this.d.onPause(true);
     if (it === 'profile') this.renderProfile();
     else if (it === 'map') this.renderMap();
+    else if (it === 'controls') this.renderControls();
     else this.renderStats();
   }
 
@@ -270,6 +273,91 @@ export class Menu {
     g.fillText(bar >= 1000 ? `${bar / 1000} km` : `${bar} m`, 12, H - 26);
   }
 
+  // ---------- Controls ----------
+  /** The key bindings: current keys (click one, then press the new key), the defaults for reference, a reset button. */
+  private renderControls(): void {
+    const c = this.d.controls;
+    const table = el('table', 'ctl-table');
+    table.innerHTML = '<thead><tr><th>Action</th><th>Key</th><th>Alternative</th><th>Default</th></tr></thead>';
+    const tb = el('tbody');
+    table.append(tb);
+    const note = text('p', 'Click a key, then press the new one. Esc cancels, Backspace clears.', 'muted');
+    let stop: (() => void) | null = null;
+    const draw = () => {
+      tb.replaceChildren();
+      for (const a of ACTIONS) {
+        const tr = el('tr');
+        tr.append(text('td', a.label));
+        for (const slot of [0, 1] as const) {
+          const td = el('td');
+          const b = el('button', 'key-btn');
+          b.textContent = label(c.get(a.id)[slot]);
+          if (!c.isDefault(a.id, slot)) b.classList.add('changed');
+          b.setAttribute('aria-label', `${a.label}, ${slot ? 'alternative' : 'main'} key: ${b.textContent}. Click to change`);
+          b.addEventListener('click', () => listen(a.id, slot, b));
+          td.append(b);
+          tr.append(td);
+        }
+        tr.append(text('td', DEFAULTS[a.id].filter(Boolean).map(label).join(' / '), 'ctl-default'));
+        tb.append(tr);
+      }
+    };
+    const listen = (a: Action, slot: 0 | 1, b: HTMLButtonElement) => {
+      stop?.();
+      b.classList.add('listening');
+      b.textContent = 'Press a key…';
+      note.textContent = 'Press the new key (Esc cancels, Backspace clears).';
+      let active = true;
+      const done = (msg: string) => {
+        active = false;
+        removeEventListener('keydown', onKey, true);
+        removeEventListener('mousedown', onMouse, true);
+        stop = null;
+        note.textContent = msg;
+        draw();
+      };
+      const assign = (code: string) => {
+        const from = c.set(a, slot, code);
+        const name = ACTIONS.find((x) => x.id === a)!.label;
+        done(code ? `${name}: ${label(code)}${from ? ` (taken from "${ACTIONS.find((x) => x.id === from)!.label}")` : ''}` : `${name}: cleared`);
+      };
+      const onKey = (e: KeyboardEvent) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();       // the game and the menu must not react while a key is being chosen
+        if (e.code === 'Escape') return done('Cancelled.');
+        if (e.code === 'Backspace' || e.code === 'Delete') return assign('');
+        if (['MetaLeft', 'MetaRight', 'ContextMenu'].includes(e.code)) return;
+        assign(e.code);
+      };
+      const onMouse = (e: MouseEvent) => {
+        if ((e.target as HTMLElement).closest('.key-btn') === b) return;   // the click that started listening
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (e.button <= 2) assign('Mouse' + e.button);
+      };
+      addEventListener('keydown', onKey, true);
+      setTimeout(() => active && addEventListener('mousedown', onMouse, true), 0);
+      stop = () => done('');
+    };
+    const reset = el('button', 'link-btn');
+    reset.textContent = 'Reset to defaults';
+    reset.addEventListener('click', () => {
+      stop?.();
+      c.reset();
+      note.textContent = 'Controls reset to the defaults.';
+      draw();
+    });
+    const mouse = rows([
+      ['Look around', 'Move the mouse (click the game first)'],
+      ['Release the mouse / close a panel', 'Esc'],
+      ['Touch screens', 'Left half: move · right half: look · buttons: run, jump, punch'],
+    ]);
+    draw();
+    const foot = el('p', 'muted');
+    foot.append(note, ' ', reset);
+    this.body.append(table, mouse, foot);
+  }
+
   // ---------- Statistics ----------
   private renderStats(): void {
     const s = this.d.stats.data;
@@ -357,4 +445,5 @@ const ICONS: Record<Item, string> = {
   profile: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>'),
   map: svg('<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/>'),
   stats: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+  controls: svg('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>'),
 };

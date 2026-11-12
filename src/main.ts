@@ -17,6 +17,7 @@ import { makeOccupancy, StreetDetail } from './world/streetDetail';
 import { treeUniforms } from './world/trees';
 import { MapData, project } from './world/types';
 import { LightPool, NIGHT, updateGlow } from './world/night';
+import { Controls } from './game/controls';
 import { Mela } from './world/mela';
 import { TEAR } from './world/melaSite';
 
@@ -104,8 +105,13 @@ async function main() {
   scene.add(landmarks.group);
   for (const [x, z, r] of landmarks.posts) world.addPost(x, z, r);
   for (const ring of landmarks.walls) world.addWall(ring, 6);
-  const ramu = new Ramu(camera, world, renderer.domElement);
+  const controls = new Controls();
+  const hintEl = document.getElementById('hint')!;
+  hintEl.textContent = controls.hint();
+  controls.onChange(() => (hintEl.textContent = controls.hint()));
+  const ramu = new Ramu(camera, world, renderer.domElement, controls);
   scene.add(ramu.root);
+  if (params.has('debug')) (window as unknown as { __ramu: Ramu }).__ramu = ramu;   // for test scripts
   // Crowd size comes from the admin portal (admin.html); ?peds=N overrides it for testing.
   const forced = params.has('peds') ? Number(params.get('peds')) || 0 : null;
   const crowdFor = (n: number) => Math.round(n * (desktop ? 1 : 0.5)); // half on touch devices
@@ -118,7 +124,7 @@ async function main() {
   const stats = new Stats(city.roadPoints);
   let paused = false;
   const menu = new Menu({
-    map, hud, stats,
+    map, hud, stats, controls,
     player: () => ({ x: ramu.position.x, z: ramu.position.z, yaw: ramu.yaw }),
     onPause: (p) => {
       paused = p;

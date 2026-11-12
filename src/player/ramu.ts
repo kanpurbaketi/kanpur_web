@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CollisionWorld } from './collide';
+import { Controls } from '../game/controls';
 
 const WALK = 2.2, RUN = 5.6, CROUCH = 1.2, ACCEL = 12, JUMP = 5, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
 const CAM_DIST = 3.2, EYE = 1.35;
@@ -27,7 +28,7 @@ export class Ramu {
   private punchQueued = false;
   private punching = false;
 
-  constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement) {
+  constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement, private controls: Controls) {
     this.buildBody();
     this.root.add(this.model);
     this.bindInput(dom);
@@ -51,10 +52,11 @@ export class Ramu {
   update(dt: number): void {
     const input = new THREE.Vector2();
     if (this.enabled) {
-      if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) input.y -= 1;
-      if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) input.y += 1;
-      if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) input.x -= 1;
-      if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) input.x += 1;
+      const c = this.controls;
+      if (c.held('forward', this.keys)) input.y -= 1;
+      if (c.held('back', this.keys)) input.y += 1;
+      if (c.held('left', this.keys)) input.x -= 1;
+      if (c.held('right', this.keys)) input.x += 1;
       input.add(this.touchMove);
       if (this.jumpQueued && this.grounded) {
         this.vel.y = JUMP;
@@ -63,7 +65,7 @@ export class Ramu {
       }
     }
     this.jumpQueued = false;
-    const crouching = this.enabled && (this.keys.has('KeyC') || this.keys.has('ControlLeft'));
+    const crouching = this.enabled && this.controls.held('crouch', this.keys);
     if (this.punchQueued && this.enabled && this.grounded && !this.punching && this.actions.punch) {
       this.punching = true;
       const a = this.actions.punch;
@@ -74,7 +76,7 @@ export class Ramu {
     if (input.lengthSq() > 1) input.normalize();
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     const dir = new THREE.Vector3(input.x * cos + input.y * sin, 0, -input.x * sin + input.y * cos);
-    const running = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchRun;
+    const running = this.controls.held('run', this.keys) || this.touchRun;
     let speed = crouching ? CROUCH : running ? RUN : WALK;
     if (this.punching) speed *= 0.15;
     const step = ACCEL * speed * dt;
@@ -117,11 +119,16 @@ export class Ramu {
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
   }
 
+  /** a key (or mouse button) went down: the one-shot actions */
+  private press(code: string): void {
+    if (this.controls.matches('jump', code)) this.jumpQueued = true;
+    if (this.controls.matches('punch', code)) this.punchQueued = true;
+  }
+
   private bindInput(dom: HTMLElement): void {
     addEventListener('keydown', (e) => {
       this.keys.add(e.code);
-      if (e.code === 'Space') this.jumpQueued = true;
-      if (e.code === 'KeyF' && !e.repeat) this.punchQueued = true;
+      if (!e.repeat) this.press(e.code);
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
@@ -129,8 +136,12 @@ export class Ramu {
       if (matchMedia('(pointer: fine)').matches) dom.requestPointerLock?.();
     });
     addEventListener('mousedown', (e) => {
-      if (e.button === 0 && document.pointerLockElement === dom) this.punchQueued = true;   // click to punch once the mouse is captured
+      // mouse buttons can be bound too ('Mouse0' = left click), once the mouse is captured by the game
+      if (document.pointerLockElement !== dom) return;
+      this.keys.add('Mouse' + e.button);
+      this.press('Mouse' + e.button);
     });
+    addEventListener('mouseup', (e) => this.keys.delete('Mouse' + e.button));
     addEventListener('mousemove', (e) => {
       if (document.pointerLockElement !== dom) return;
       this.look(e.movementX, e.movementY);

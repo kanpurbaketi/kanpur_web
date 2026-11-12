@@ -49,6 +49,17 @@
     .menu-panel { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; border-radius: 14px;
       background: #f7f3ec; color: #2a241e; box-shadow: 0 16px 48px rgba(0,0,0,.4); box-sizing: border-box; }
     .menu-panel[data-item="map"] { width: min(900px, 100%); }
+    .menu-panel[data-item="controls"] { width: min(640px, 100%); }
+    .ctl-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 16px; }
+    .ctl-table th { text-align: left; font-weight: 600; font-size: 12px; color: #7a6e62; padding: 0 6px 8px 0; }
+    .ctl-table td { padding: 4px 6px 4px 0; border-top: 1px solid #ebe4d8; }
+    .ctl-default { color: #9a8e80; font-size: 12px; }
+    .key-btn { min-width: 84px; padding: 6px 10px; border: 1px solid #cfc5b4; border-radius: 8px; background: #fff; color: #2b2520;
+      font: 600 13px system-ui, sans-serif; cursor: pointer; }
+    .key-btn:hover { border-color: #f2992a; }
+    .key-btn.changed { border-color: #f2992a; background: #fff6e8; }
+    .key-btn.listening { border-color: #e8590c; background: #ffe9d6; color: #b33f00; }
+    .key-btn:focus-visible { outline: 2px solid #f2992a; outline-offset: 2px; }
     .menu-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px 20px;
       border-bottom: 1px solid #e4dccf; }
     .menu-head h2 { margin: 0; font: 650 18px system-ui, sans-serif; }
@@ -90,7 +101,7 @@
 <body>
   <div id="status">Loading Moti Jheel…</div>
   <canvas id="minimap"></canvas>
-  <div id="hint">Click to look · WASD move · Shift run · Space jump · C crouch · F / click punch · Esc release mouse</div>
+  <div id="hint">Click to look · WASD move · Left Shift run · Space jump · C crouch · F punch · Esc release mouse</div>
   <div id="debug"></div>
   <div id="stick"><div id="knob"></div></div>
   <button class="tbtn" id="btn-run">RUN</button>

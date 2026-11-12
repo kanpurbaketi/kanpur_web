@@ -145,7 +145,7 @@ export class City {
       const signs = style?.signs ?? ['#c8261a'];
       const sign = tmp.set(signs[Math.floor(b.seed * 7919) % signs.length]).clone();
       addBuilding(t, b.pts, b.base, b.h, new THREE.Color(b.color), b.shop, new Set(b.front), b.seed,
-        [sign.r, sign.g, sign.b], map.floor_h);
+        [sign.r, sign.g, sign.b], map.floor_h, style?.balcony_share ?? 0.3);
       // Black Sintex-style rooftop water tanks on most houses.
       if (b.h < 20 && b.seed > 0.3 && Math.abs(signedArea(b.pts)) > 35) tanks.push([cx, b.base + b.h, cz]);
       this.stats.buildings++;
@@ -217,13 +217,15 @@ export class City {
  * facade.y: 1 = wall with windows, 2 = plain trim (parapet, ledges), 0 = roof.
  */
 function addBuilding(m: MeshBuilder, poly: P2[], base: number, h: number, col: THREE.Color, shop: boolean,
-                     front: Set<number>, seed: number, sign: number[], floorH: number): void {
+                     front: Set<number>, seed: number, sign: number[], floorH: number, balconyShare: number): void {
   const top = base + h;
   const n = poly.length;
   const area = Math.abs(signedArea(poly));
   const floors = Math.max(1, Math.round(h / floorH));
   const parapet = area > 20 ? 0.9 + (seed > 0.7 ? 0.3 : 0) : 0;
   const trimCol = col.clone().lerp(WHITE_C, 0.12);
+  const bay = 3.0 + (Math.floor(seed * 1000) % 2) * 0.6;   // window bay width, read by the facade shader
+  const H = (k: number) => hash2(seed * 977 + k, k * 3.7 + seed);
   let u = 0;
   for (let i = 0; i < n; i++) {
     const a = poly[i], c = poly[(i + 1) % n];
@@ -240,6 +242,17 @@ function addBuilding(m: MeshBuilder, poly: P2[], base: number, h: number, col: T
     const ex = [isShop ? 1 : 0, 1, seed, isFront ? 1 : 0];
     const trim = [0, 2, seed, 0];
     const nn: [number, number, number] = [nx, 0, nz];
+    const dx = (c[0] - a[0]) / len, dz = (c[1] - a[1]) / len;
+
+    // --- balcony run (stacked over the floors) decided first: the shader opens door-windows for it
+    const cells0 = Math.ceil((u + 0.3) / bay), cells1 = Math.floor((u + len - 0.3) / bay); // whole bays on this wall
+    const nCells = cells1 - cells0;
+    let bk0 = -1, bk = 0;
+    if (floors >= 2 && nCells >= 2 && (isFront || H(i + 40) > 0.7) && H(i + 11) < balconyShare) {
+      bk = Math.min(nCells, 1 + Math.floor(H(i + 21) * 3));
+      bk0 = cells0 + Math.floor(H(i + 31) * (nCells - bk + 1));
+    }
+    m.fx = [bay, bk0 >= 0 ? bk0 + 1 : 0, bk, 0];
     const quad = (x0: number, z0: number, x1: number, z1: number, y0: number, y1: number, nrm: V3, e: number[],
                   cc: THREE.Color, uOff = 0) => {
       const L = Math.hypot(x1 - x0, z1 - z0);
@@ -249,6 +262,79 @@ function addBuilding(m: MeshBuilder, poly: P2[], base: number, h: number, col: T
       m.tri(p0, p2, p3, nrm, cc, [u + uOff, v0], [u + uOff + L, v1], [u + uOff, v1], e, sign);
     };
     quad(a[0], a[1], c[0], c[1], base, top, nn, ex, col);
+
+    // --- attached details: edge-aligned boxes and panels (s along the wall, d out from it)
+    const at = (s: number, d: number, y: number): V3 => [a[0] + dx * s + nx * d, y, a[1] + dz * s + nz * d];
+    const panel = (p0: V3, p1: V3, p2: V3, p3: V3, nrm: V3, e: number[], cc: THREE.Color,
+                   uv: [number, number][]) => {
+      m.tri(p0, p1, p2, nrm, cc, uv[0], uv[1], uv[2], e, sign);
+      m.tri(p0, p2, p3, nrm, cc, uv[0], uv[2], uv[3], e, sign);
+    };
+    const abox = (s0: number, s1: number, y0: number, y1: number, d0: number, d1: number, e: number[], cc: THREE.Color) => {
+      const v0 = y0 - base, v1 = y1 - base;
+      panel(at(s0, d1, y0), at(s1, d1, y0), at(s1, d1, y1), at(s0, d1, y1), nn, e, cc,
+        [[u + s0, v0], [u + s1, v0], [u + s1, v1], [u + s0, v1]]);                              // front
+      panel(at(s0, d0, y1), at(s1, d0, y1), at(s1, d1, y1), at(s0, d1, y1), [0, 1, 0], e, cc,
+        [[u + s0, v1], [u + s1, v1], [u + s1, v1], [u + s0, v1]]);                              // top
+      panel(at(s0, d0, y0), at(s1, d0, y0), at(s1, d1, y0), at(s0, d1, y0), [0, -1, 0], e, cc,
+        [[u + s0, v0], [u + s1, v0], [u + s1, v0], [u + s0, v0]]);                              // bottom
+      panel(at(s0, d0, y0), at(s0, d1, y0), at(s0, d1, y1), at(s0, d0, y1), [-dx, 0, -dz], e, cc,
+        [[u + s0 + d0, v0], [u + s0 + d1, v0], [u + s0 + d1, v1], [u + s0 + d0, v1]]);          // ends
+      panel(at(s1, d0, y0), at(s1, d1, y0), at(s1, d1, y1), at(s1, d0, y1), [dx, 0, dz], e, cc,
+        [[u + s1 + d0, v0], [u + s1 + d1, v0], [u + s1 + d1, v1], [u + s1 + d0, v1]]);
+    };
+    // open railing panel visible from both sides (the shader discards the gaps)
+    const rail = (p0: V3, p1: V3, p2: V3, p3: V3, nrm: V3, uv: [number, number][]) => {
+      const e = [0, 3, seed, 0];
+      panel(p0, p1, p2, p3, nrm, e, trimCol, uv);
+      panel(p0, p1, p2, p3, [-nrm[0], -nrm[1], -nrm[2]], e, trimCol, uv);
+    };
+    if (bk0 >= 0) {
+      const s0 = bk0 * bay - u, s1 = (bk0 + bk) * bay - u, D = 1.15;
+      for (let f = 1; f < floors; f++) {
+        const y = base + f * floorH, v0 = y - base, v1 = v0 + 1.05;
+        abox(s0, s1, y - 0.14, y, 0, D, trim, trimCol);
+        rail(at(s0, D, y), at(s1, D, y), at(s1, D, y + 1.05), at(s0, D, y + 1.05), nn,
+          [[u + s0, v0], [u + s1, v0], [u + s1, v1], [u + s0, v1]]);
+        for (const [ss, sg] of [[s0, -1], [s1, 1]] as [number, number][]) {
+          rail(at(ss, 0, y), at(ss, D, y), at(ss, D, y + 1.05), at(ss, 0, y + 1.05), [sg * dx, 0, sg * dz],
+            [[u + ss, v0], [u + ss + D, v0], [u + ss + D, v1], [u + ss, v1]]);
+        }
+      }
+    }
+    // split-AC outdoor units hung under the windows
+    if (floors >= 2 && len >= bay) {
+      for (let k = cells0; k < cells1; k++) {
+        if (bk0 >= 0 && k >= bk0 && k < bk0 + bk) continue;
+        for (let f = 1; f < floors; f++) {
+          if (H(k * 13 + f * 7 + i) > (isFront ? 0.2 : 0.1)) continue;
+          const sc = (k + 0.5) * bay - u, y = base + f * floorH + 0.32;
+          abox(sc - 0.42, sc + 0.42, y, y + 0.52, 0.02, 0.36, [0, 5, seed, 0], WHITE_C);
+        }
+      }
+    }
+    // shop frontage: striped awnings and hanging blade signs, one decision per 7 m of shutters
+    if (isShop) {
+      for (let seg = Math.floor(u / 7); seg <= Math.floor((u + len) / 7); seg++) {
+        const s0 = Math.max(0.3, seg * 7 - u + 0.3), s1 = Math.min(len - 0.3, (seg + 1) * 7 - u - 0.3);
+        if (s1 - s0 < 2.5) continue;
+        const e = [0, 4, seed, 0], aw = new THREE.Color(sign[0], sign[1], sign[2]);
+        if (H(seg * 5 + 3) < 0.45) {
+          const yT = base + 2.3, yB = base + 1.95, D = 1.25;
+          const slope: V3 = [nx * 0.3, 0.95, nz * 0.3];
+          const pts = [at(s0, 0, yT), at(s1, 0, yT), at(s1, D, yB), at(s0, D, yB)];
+          const uvs: [number, number][] = [[u + s0, 0], [u + s1, 0], [u + s1, 0], [u + s0, 0]];
+          panel(pts[0], pts[1], pts[2], pts[3], slope, e, aw, uvs);
+          panel(pts[0], pts[1], pts[2], pts[3], [-slope[0], -slope[1], -slope[2]], e, aw, uvs);
+          panel(at(s0, D, yB - 0.22), at(s1, D, yB - 0.22), at(s1, D, yB), at(s0, D, yB), nn, e, aw,
+            [[u + s0, 0], [u + s1, 0], [u + s1, 0], [u + s0, 0]]);
+        }
+        if (H(seg * 5 + 4) < 0.35) {
+          const sb = s1 - 0.3;
+          abox(sb - 0.05, sb + 0.05, base + 3.4, base + 4.7, 0.12, 1.0, [0, 6, seed, 0], aw);
+        }
+      }
+    }
 
     if (parapet) {
       const ix = -nx * 0.2, iz = -nz * 0.2, py = top + parapet;
@@ -281,6 +367,25 @@ function addBuilding(m: MeshBuilder, poly: P2[], base: number, h: number, col: T
       }
     }
     u += len;
+  }
+  // stair headroom (mumty) on larger roofs
+  if (area > 45 && seed > 0.3 && floors >= 2) {
+    const [cx, cz] = centroid(poly);
+    const sx = 2.3, sz = 2.3, mh = 2.5, e = [0, 2, seed, 0];
+    const ok = [[-1, -1], [1, -1], [1, 1], [-1, 1]].every(([ax, az]) => pointInPoly(cx + ax * sx, cz + az * sz, poly));
+    if (ok) {
+      const x0 = cx - sx / 2, x1 = cx + sx / 2, z0 = cz - sz / 2, z1 = cz + sz / 2, y1 = top + mh;
+      const q = (p: V3[], nrm: V3) => {
+        const uv: [number, number][] = [[0, 0], [1, 0], [1, 1], [0, 1]];
+        m.tri(p[0], p[1], p[2], nrm, trimCol, uv[0], uv[1], uv[2], e, sign);
+        m.tri(p[0], p[2], p[3], nrm, trimCol, uv[0], uv[2], uv[3], e, sign);
+      };
+      q([[x0, top, z1], [x1, top, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1]);
+      q([[x0, top, z0], [x1, top, z0], [x1, y1, z0], [x0, y1, z0]], [0, 0, -1]);
+      q([[x1, top, z0], [x1, top, z1], [x1, y1, z1], [x1, y1, z0]], [1, 0, 0]);
+      q([[x0, top, z0], [x0, top, z1], [x0, y1, z1], [x0, y1, z0]], [-1, 0, 0]);
+      q([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], [0, 1, 0]);
+    }
   }
   const contour = poly.map(([x, z]) => new THREE.Vector2(x, z));
   const roof = [0, 0, seed, 0];

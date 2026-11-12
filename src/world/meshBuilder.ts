@@ -10,6 +10,9 @@ export class MeshBuilder {
   uv: number[] = [];
   extra: number[] = []; // vec4 per vertex (facade data), only used when withExtra
   extra2: number[] = []; // vec3 per vertex (sign colour)
+  extra3: number[] = []; // vec4 per vertex (facade layout: window bay, balcony run), set through `fx`
+  /** facade layout written with every vertex: [bay width m, balcony first cell + 1 (0 = none), balcony cells, 0] */
+  fx: number[] = [0, 0, 0, 0];
 
   /** surface id written to uv.x when a call passes no uv (see ground.ts SURF) */
   surf = 0;
@@ -39,6 +42,7 @@ export class MeshBuilder {
       if (this.withExtra) {
         this.extra.push(ex[0], ex[1], ex[2], ex[3]);
         this.extra2.push(ex2[0], ex2[1], ex2[2]);
+        this.extra3.push(this.fx[0], this.fx[1], this.fx[2], this.fx[3]);
       }
     }
   }
@@ -120,6 +124,7 @@ export class MeshBuilder {
     if (this.withExtra) {
       g.setAttribute('facade', new THREE.Float32BufferAttribute(this.extra, 4));
       g.setAttribute('signColor', new THREE.Float32BufferAttribute(this.extra2, 3));
+      g.setAttribute('fx', new THREE.Float32BufferAttribute(this.extra3, 4));
     }
     g.computeBoundingSphere();
     return g;

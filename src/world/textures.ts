@@ -141,3 +141,90 @@ export function waterNormal(): THREE.DataTexture {
   t.needsUpdate = true;
   return t;
 }
+
+export const SIGN_COLS = 2, SIGN_ROWS = 16;
+
+/**
+ * Shop signboards: 32 flex-print strips (8:1) in Hindi and English, 2 columns x 16 rows, top row first.
+ * The facade shader picks one per shop frontage.
+ */
+export function signAtlas(): THREE.CanvasTexture {
+  const TW = 1024, TH = 128;
+  const c = document.createElement('canvas');
+  c.width = TW * SIGN_COLS;
+  c.height = TH * SIGN_ROWS;
+  const g = c.getContext('2d')!;
+  const names: [string, string, number][] = [
+    ['राजू टी स्टॉल', 'RAJU TEA STALL', 0], ['कानपुर मेडिकल स्टोर', 'KANPUR MEDICAL STORE', 1],
+    ['LLR HOSPITAL', 'मेडिकल शॉप्स • 24 घंटे', 3], ['श्री गणेश जनरल स्टोर', 'GENERAL & KIRANA STORE', 2],
+    ['शर्मा स्वीट्स', 'SHARMA SWEETS & NAMKEEN', 4], ['न्यू आई केयर सेंटर', 'EYE CARE & OPTICALS', 3],
+    ['मोती मोबाइल पॉइंट', 'MOBILE • RECHARGE • REPAIR', 0], ['जय माता दी होटल', 'HOTEL & RESTAURANT', 2],
+    ['पैथोलॉजी लैब', 'PATHOLOGY • X-RAY • ECG', 3], ['बाबा चाय वाला', 'CHAI • SAMOSA • KACHORI', 4],
+    ['कृष्णा फर्नीचर हाउस', 'KRISHNA FURNITURE', 1], ['सिटी हार्डवेयर', 'PAINTS • HARDWARE • SANITARY', 0],
+    ['डॉ. वर्मा क्लिनिक', 'DR. VERMA CLINIC • ENT', 3], ['अग्रवाल कपड़ा भंडार', 'AGARWAL CLOTH HOUSE', 2],
+    ['न्यू स्टार बेकरी', 'NEW STAR BAKERY', 4], ['गुप्ता ऑटो पार्ट्स', 'GUPTA AUTO PARTS', 1],
+    ['दंत चिकित्सा केंद्र', 'DENTAL CLINIC', 3], ['मोतीझील फोटो स्टूडियो', 'PHOTO STUDIO • FLEX PRINTING', 0],
+    ['सरस्वती स्टेशनरी', 'BOOKS • STATIONERY • XEROX', 2], ['जनता मेडिकोज़', 'MEDICOS • SURGICAL', 3],
+    ['कानपुर टॉकीज़', 'CHAI NASHTA', 4], ['राधे राधे पान भंडार', 'PAN • CIGARETTE • COLD DRINK', 1],
+    ['यादव डेयरी', 'YADAV DAIRY • DAHI • LASSI', 2], ['न्यू फैशन टेलर्स', 'LADIES & GENTS TAILORS', 0],
+    ['सिटी फार्मेसी', 'MEDICINES • 24x7', 3], ['बालाजी इलेक्ट्रॉनिक्स', 'ELECTRICALS & APPLIANCES', 1],
+    ['लक्ष्मी ज्वेलर्स', 'GOLD • SILVER', 4], ['मॉडर्न जिम', 'FITNESS CENTRE', 0],
+    ['पंजाब ढाबा', 'PUNJABI & CHINESE', 2], ['हेल्थ केयर हॉस्पिटल', 'MULTI SPECIALITY • EMERGENCY', 3],
+    ['विजय कम्प्यूटर्स', 'SALES • SERVICE • TRAINING', 1], ['मिश्रा बुक डिपो', 'MISHRA BOOK DEPOT', 4],
+  ];
+  // [background, main text, accent stripe]
+  const schemes = [['#c62828', '#ffe45c', '#ffffff'], ['#1c4f9c', '#ffffff', '#f2c21b'], ['#1f7a45', '#ffffff', '#ffe45c'],
+    ['#f3efe3', '#b3261e', '#1c4f9c'], ['#f2b822', '#7a1410', '#7a1410']];
+  const fit = (txt: string, font: (px: number) => string, maxW: number, px: number) => {
+    g.font = font(px);
+    const w = g.measureText(txt).width;
+    return w > maxW ? Math.floor(px * maxW / w) : px;
+  };
+  const face = "'Noto Sans Devanagari','Kohinoor Devanagari','Mangal','Devanagari Sangam MN','Nirmala UI',Arial,sans-serif";
+  names.forEach(([a, b, k], i) => {
+    const ox = (i % SIGN_COLS) * TW, oy = Math.floor(i / SIGN_COLS) * TH;
+    let [bg, fg, ac] = schemes[(k + (i >> 2)) % schemes.length];
+    if (k === 3) [bg, fg, ac] = schemes[3];
+    g.save();
+    g.translate(ox, oy);
+    g.fillStyle = bg;
+    g.fillRect(0, 0, TW, TH);
+    g.fillStyle = ac;                                     // border stripes
+    g.fillRect(0, 0, TW, 6);
+    g.fillRect(0, TH - 6, TW, 6);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const pxA = fit(a, (p) => `bold ${p}px ${face}`, TW - 140, 70);
+    g.font = `bold ${pxA}px ${face}`;
+    g.fillStyle = fg;
+    g.fillText(a, TW / 2 + 20, 48);
+    const pxB = fit(b, (p) => `600 ${p}px Arial, sans-serif`, TW - 140, 30);
+    g.font = `600 ${pxB}px Arial, sans-serif`;
+    g.fillStyle = k === 4 ? '#3a0c08' : ac;
+    g.fillText(b, TW / 2 + 20, 100);
+    if (k === 3) {                                         // medical cross
+      g.fillStyle = '#c62828';
+      g.fillRect(40, 38, 52, 18);
+      g.fillRect(57, 21, 18, 52);
+    }
+    // faded, dirty flex print: soft streaks and a grimy bottom edge
+    for (let n = 0; n < 40; n++) {
+      g.fillStyle = `rgba(${60 + (n * 7) % 40},${50 + (n * 5) % 30},40,${0.03 + (n % 5) * 0.012})`;
+      g.fillRect((n * 197) % TW, 0, 8 + (n * 13) % 40, TH);
+    }
+    const gr = g.createLinearGradient(0, TH * 0.55, 0, TH);
+    gr.addColorStop(0, 'rgba(40,30,20,0)');
+    gr.addColorStop(1, 'rgba(40,30,20,0.28)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, TW, TH);
+    g.restore();
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.flipY = false;                                          // row 0 is the top of the picture
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.anisotropy = 8;
+  return t;
+}

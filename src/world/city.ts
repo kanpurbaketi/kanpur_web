@@ -141,7 +141,7 @@ export class City {
     const tmp = new THREE.Color();
     for (const b of map.buildings) {
       const [cx, cz] = centroid(b.pts);
-      if (inMela(cx, cz, 6)) continue;   // cleared for the mela
+      if (map.area === 'moti_jheel' && inMela(cx, cz, 6)) continue;   // cleared for the mela
       const t = tileOf(cx, cz).bld;
       const style = map.styles[b.style];
       const signs = style?.signs ?? ['#c8261a'];
@@ -159,7 +159,7 @@ export class City {
       const m = this.add(t.bld, this.mats.facade, true, true);
       if (m) this.buildingMeshes.push(m);
     }
-    this.addTrees(trees.filter(([x, z]) => !inMela(x, z, 12)));   // the mela occupies a clearing
+    this.addTrees(trees.filter(([x, z]) => map.area !== 'moti_jheel' || !inMela(x, z, 12)));   // the mela occupies a clearing
     this.addTanks(tanks);
   }
 

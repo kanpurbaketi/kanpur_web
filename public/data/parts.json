@@ -1,0 +1,4492 @@
+{
+"grid": {
+"south": 26.4736,
+"west": 80.3119,
+"dlat": 0.010999999999999233,
+"dlon": 0.012000000000000455
+},
+"parts": [
+{
+"id": "bithoor",
+"title": "Bithoor",
+"row": 9,
+"col": -8,
+"bbox": [
+26.5726,
+80.2159,
+26.5836,
+80.2279
+],
+"center": [
+26.5781,
+80.2219
+],
+"buildings": 915,
+"built": false
+},
+{
+"id": "kanpur_grid_n9_e1",
+"title": "Kanpur grid N9 E1",
+"row": 9,
+"col": 1,
+"bbox": [
+26.5726,
+80.3239,
+26.5836,
+80.3359
+],
+"center": [
+26.5781,
+80.3299
+],
+"buildings": 560,
+"built": false
+},
+{
+"id": "kanpur_grid_n9_e10",
+"title": "Kanpur grid N9 E10",
+"row": 9,
+"col": 10,
+"bbox": [
+26.5726,
+80.4319,
+26.5836,
+80.4439
+],
+"center": [
+26.5781,
+80.4379
+],
+"buildings": 535,
+"built": false
+},
+{
+"id": "kanpur_grid_n9_e13",
+"title": "Kanpur grid N9 E13",
+"row": 9,
+"col": 13,
+"bbox": [
+26.5726,
+80.4679,
+26.5836,
+80.4799
+],
+"center": [
+26.5781,
+80.4739
+],
+"buildings": 610,
+"built": false
+},
+{
+"id": "chaubeypur",
+"title": "Chaubeypur",
+"row": 8,
+"col": -9,
+"bbox": [
+26.5616,
+80.2039,
+26.5726,
+80.2159
+],
+"center": [
+26.5671,
+80.2099
+],
+"buildings": 712,
+"built": false
+},
+{
+"id": "bithoor_2",
+"title": "Bithoor 2",
+"row": 8,
+"col": -6,
+"bbox": [
+26.5616,
+80.2399,
+26.5726,
+80.2519
+],
+"center": [
+26.5671,
+80.2459
+],
+"buildings": 510,
+"built": false
+},
+{
+"id": "bithoor_3",
+"title": "Bithoor 3",
+"row": 8,
+"col": -5,
+"bbox": [
+26.5616,
+80.2519,
+26.5726,
+80.2639
+],
+"center": [
+26.5671,
+80.2579
+],
+"buildings": 940,
+"built": false
+},
+{
+"id": "kanpur_grid_n8_e6",
+"title": "Kanpur grid N8 E6",
+"row": 8,
+"col": 6,
+"bbox": [
+26.5616,
+80.3839,
+26.5726,
+80.3959
+],
+"center": [
+26.5671,
+80.3899
+],
+"buildings": 1102,
+"built": false
+},
+{
+"id": "kanpur_grid_n8_e7",
+"title": "Kanpur grid N8 E7",
+"row": 8,
+"col": 7,
+"bbox": [
+26.5616,
+80.3959,
+26.5726,
+80.4079
+],
+"center": [
+26.5671,
+80.4019
+],
+"buildings": 847,
+"built": false
+},
+{
+"id": "kanpur_grid_n8_e9",
+"title": "Kanpur grid N8 E9",
+"row": 8,
+"col": 9,
+"bbox": [
+26.5616,
+80.4199,
+26.5726,
+80.4319
+],
+"center": [
+26.5671,
+80.4259
+],
+"buildings": 993,
+"built": false
+},
+{
+"id": "kanpur_grid_n8_e12",
+"title": "Kanpur grid N8 E12",
+"row": 8,
+"col": 12,
+"bbox": [
+26.5616,
+80.4559,
+26.5726,
+80.4679
+],
+"center": [
+26.5671,
+80.4619
+],
+"buildings": 757,
+"built": false
+},
+{
+"id": "kanpur_grid_n8_e13",
+"title": "Kanpur grid N8 E13",
+"row": 8,
+"col": 13,
+"bbox": [
+26.5616,
+80.4679,
+26.5726,
+80.4799
+],
+"center": [
+26.5671,
+80.4739
+],
+"buildings": 1078,
+"built": false
+},
+{
+"id": "kanpur_grid_n8_e14",
+"title": "Kanpur grid N8 E14",
+"row": 8,
+"col": 14,
+"bbox": [
+26.5616,
+80.4799,
+26.5726,
+80.4919
+],
+"center": [
+26.5671,
+80.4859
+],
+"buildings": 715,
+"built": false
+},
+{
+"id": "kanpur_grid_n8_e15",
+"title": "Kanpur grid N8 E15",
+"row": 8,
+"col": 15,
+"bbox": [
+26.5616,
+80.4919,
+26.5726,
+80.5039
+],
+"center": [
+26.5671,
+80.4979
+],
+"buildings": 950,
+"built": false
+},
+{
+"id": "bithoor_4",
+"title": "Bithoor 4",
+"row": 7,
+"col": -8,
+"bbox": [
+26.5506,
+80.2159,
+26.5616,
+80.2279
+],
+"center": [
+26.5561,
+80.2219
+],
+"buildings": 2135,
+"built": false
+},
+{
+"id": "bithoor_5",
+"title": "Bithoor 5",
+"row": 7,
+"col": -7,
+"bbox": [
+26.5506,
+80.2279,
+26.5616,
+80.2399
+],
+"center": [
+26.5561,
+80.2339
+],
+"buildings": 657,
+"built": false
+},
+{
+"id": "bithoor_6",
+"title": "Bithoor 6",
+"row": 7,
+"col": -5,
+"bbox": [
+26.5506,
+80.2519,
+26.5616,
+80.2639
+],
+"center": [
+26.5561,
+80.2579
+],
+"buildings": 556,
+"built": false
+},
+{
+"id": "shuklaganj",
+"title": "Shuklaganj",
+"row": 7,
+"col": 7,
+"bbox": [
+26.5506,
+80.3959,
+26.5616,
+80.4079
+],
+"center": [
+26.5561,
+80.4019
+],
+"buildings": 752,
+"built": false
+},
+{
+"id": "kanpur_grid_n7_e11",
+"title": "Kanpur grid N7 E11",
+"row": 7,
+"col": 11,
+"bbox": [
+26.5506,
+80.4439,
+26.5616,
+80.4559
+],
+"center": [
+26.5561,
+80.4499
+],
+"buildings": 651,
+"built": false
+},
+{
+"id": "kanpur_grid_n7_e13",
+"title": "Kanpur grid N7 E13",
+"row": 7,
+"col": 13,
+"bbox": [
+26.5506,
+80.4679,
+26.5616,
+80.4799
+],
+"center": [
+26.5561,
+80.4739
+],
+"buildings": 3422,
+"built": false
+},
+{
+"id": "kanpur_grid_n7_e14",
+"title": "Kanpur grid N7 E14",
+"row": 7,
+"col": 14,
+"bbox": [
+26.5506,
+80.4799,
+26.5616,
+80.4919
+],
+"center": [
+26.5561,
+80.4859
+],
+"buildings": 3370,
+"built": false
+},
+{
+"id": "kanpur_grid_n7_e15",
+"title": "Kanpur grid N7 E15",
+"row": 7,
+"col": 15,
+"bbox": [
+26.5506,
+80.4919,
+26.5616,
+80.5039
+],
+"center": [
+26.5561,
+80.4979
+],
+"buildings": 2073,
+"built": false
+},
+{
+"id": "chaubeypur_2",
+"title": "Chaubeypur 2",
+"row": 6,
+"col": -9,
+"bbox": [
+26.5396,
+80.2039,
+26.5506,
+80.2159
+],
+"center": [
+26.5451,
+80.2099
+],
+"buildings": 516,
+"built": false
+},
+{
+"id": "bithoor_7",
+"title": "Bithoor 7",
+"row": 6,
+"col": -8,
+"bbox": [
+26.5396,
+80.2159,
+26.5506,
+80.2279
+],
+"center": [
+26.5451,
+80.2219
+],
+"buildings": 938,
+"built": false
+},
+{
+"id": "bithoor_8",
+"title": "Bithoor 8",
+"row": 6,
+"col": -7,
+"bbox": [
+26.5396,
+80.2279,
+26.5506,
+80.2399
+],
+"center": [
+26.5451,
+80.2339
+],
+"buildings": 658,
+"built": false
+},
+{
+"id": "bithoor_9",
+"title": "Bithoor 9",
+"row": 6,
+"col": -5,
+"bbox": [
+26.5396,
+80.2519,
+26.5506,
+80.2639
+],
+"center": [
+26.5451,
+80.2579
+],
+"buildings": 620,
+"built": false
+},
+{
+"id": "bithoor_10",
+"title": "Bithoor 10",
+"row": 6,
+"col": -4,
+"bbox": [
+26.5396,
+80.2639,
+26.5506,
+80.2759
+],
+"center": [
+26.5451,
+80.2699
+],
+"buildings": 528,
+"built": false
+},
+{
+"id": "magarwara",
+"title": "Magarwara",
+"row": 6,
+"col": 10,
+"bbox": [
+26.5396,
+80.4319,
+26.5506,
+80.4439
+],
+"center": [
+26.5451,
+80.4379
+],
+"buildings": 1272,
+"built": false
+},
+{
+"id": "kanpur_grid_n6_e12",
+"title": "Kanpur grid N6 E12",
+"row": 6,
+"col": 12,
+"bbox": [
+26.5396,
+80.4559,
+26.5506,
+80.4679
+],
+"center": [
+26.5451,
+80.4619
+],
+"buildings": 560,
+"built": false
+},
+{
+"id": "kanpur_grid_n6_e13",
+"title": "Kanpur grid N6 E13",
+"row": 6,
+"col": 13,
+"bbox": [
+26.5396,
+80.4679,
+26.5506,
+80.4799
+],
+"center": [
+26.5451,
+80.4739
+],
+"buildings": 3993,
+"built": false
+},
+{
+"id": "kanpur_grid_n6_e14",
+"title": "Kanpur grid N6 E14",
+"row": 6,
+"col": 14,
+"bbox": [
+26.5396,
+80.4799,
+26.5506,
+80.4919
+],
+"center": [
+26.5451,
+80.4859
+],
+"buildings": 5519,
+"built": false
+},
+{
+"id": "kanpur_grid_n6_e15",
+"title": "Kanpur grid N6 E15",
+"row": 6,
+"col": 15,
+"bbox": [
+26.5396,
+80.4919,
+26.5506,
+80.5039
+],
+"center": [
+26.5451,
+80.4979
+],
+"buildings": 2721,
+"built": false
+},
+{
+"id": "bithoor_11",
+"title": "Bithoor 11",
+"row": 5,
+"col": -7,
+"bbox": [
+26.5286,
+80.2279,
+26.5396,
+80.2399
+],
+"center": [
+26.5341,
+80.2339
+],
+"buildings": 1082,
+"built": false
+},
+{
+"id": "bithoor_12",
+"title": "Bithoor 12",
+"row": 5,
+"col": -5,
+"bbox": [
+26.5286,
+80.2519,
+26.5396,
+80.2639
+],
+"center": [
+26.5341,
+80.2579
+],
+"buildings": 653,
+"built": false
+},
+{
+"id": "bithoor_13",
+"title": "Bithoor 13",
+"row": 5,
+"col": -3,
+"bbox": [
+26.5286,
+80.2759,
+26.5396,
+80.2879
+],
+"center": [
+26.5341,
+80.2819
+],
+"buildings": 808,
+"built": false
+},
+{
+"id": "shuklaganj_2",
+"title": "Shuklaganj 2",
+"row": 5,
+"col": 3,
+"bbox": [
+26.5286,
+80.3479,
+26.5396,
+80.3599
+],
+"center": [
+26.5341,
+80.3539
+],
+"buildings": 816,
+"built": false
+},
+{
+"id": "shuklaganj_3",
+"title": "Shuklaganj 3",
+"row": 5,
+"col": 6,
+"bbox": [
+26.5286,
+80.3839,
+26.5396,
+80.3959
+],
+"center": [
+26.5341,
+80.3899
+],
+"buildings": 809,
+"built": false
+},
+{
+"id": "magarwara_2",
+"title": "Magarwara 2",
+"row": 5,
+"col": 7,
+"bbox": [
+26.5286,
+80.3959,
+26.5396,
+80.4079
+],
+"center": [
+26.5341,
+80.4019
+],
+"buildings": 545,
+"built": false
+},
+{
+"id": "magarwara_3",
+"title": "Magarwara 3",
+"row": 5,
+"col": 11,
+"bbox": [
+26.5286,
+80.4439,
+26.5396,
+80.4559
+],
+"center": [
+26.5341,
+80.4499
+],
+"buildings": 665,
+"built": false
+},
+{
+"id": "magarwara_4",
+"title": "Magarwara 4",
+"row": 5,
+"col": 12,
+"bbox": [
+26.5286,
+80.4559,
+26.5396,
+80.4679
+],
+"center": [
+26.5341,
+80.4619
+],
+"buildings": 1062,
+"built": false
+},
+{
+"id": "kanpur_grid_n5_e13",
+"title": "Kanpur grid N5 E13",
+"row": 5,
+"col": 13,
+"bbox": [
+26.5286,
+80.4679,
+26.5396,
+80.4799
+],
+"center": [
+26.5341,
+80.4739
+],
+"buildings": 3294,
+"built": false
+},
+{
+"id": "kanpur_grid_n5_e14",
+"title": "Kanpur grid N5 E14",
+"row": 5,
+"col": 14,
+"bbox": [
+26.5286,
+80.4799,
+26.5396,
+80.4919
+],
+"center": [
+26.5341,
+80.4859
+],
+"buildings": 3855,
+"built": false
+},
+{
+"id": "kanpur_grid_n5_e15",
+"title": "Kanpur grid N5 E15",
+"row": 5,
+"col": 15,
+"bbox": [
+26.5286,
+80.4919,
+26.5396,
+80.5039
+],
+"center": [
+26.5341,
+80.4979
+],
+"buildings": 978,
+"built": false
+},
+{
+"id": "kanpur_grid_n4_w8",
+"title": "Kanpur grid N4 W8",
+"row": 4,
+"col": -8,
+"bbox": [
+26.5176,
+80.2159,
+26.5286,
+80.2279
+],
+"center": [
+26.5231,
+80.2219
+],
+"buildings": 1207,
+"built": false
+},
+{
+"id": "kanpur_grid_n4_w7",
+"title": "Kanpur grid N4 W7",
+"row": 4,
+"col": -7,
+"bbox": [
+26.5176,
+80.2279,
+26.5286,
+80.2399
+],
+"center": [
+26.5231,
+80.2339
+],
+"buildings": 531,
+"built": false
+},
+{
+"id": "bithoor_14",
+"title": "Bithoor 14",
+"row": 4,
+"col": -5,
+"bbox": [
+26.5176,
+80.2519,
+26.5286,
+80.2639
+],
+"center": [
+26.5231,
+80.2579
+],
+"buildings": 702,
+"built": false
+},
+{
+"id": "bithoor_15",
+"title": "Bithoor 15",
+"row": 4,
+"col": -3,
+"bbox": [
+26.5176,
+80.2759,
+26.5286,
+80.2879
+],
+"center": [
+26.5231,
+80.2819
+],
+"buildings": 530,
+"built": false
+},
+{
+"id": "magarwara_5",
+"title": "Magarwara 5",
+"row": 4,
+"col": 7,
+"bbox": [
+26.5176,
+80.3959,
+26.5286,
+80.4079
+],
+"center": [
+26.5231,
+80.4019
+],
+"buildings": 1171,
+"built": false
+},
+{
+"id": "magarwara_6",
+"title": "Magarwara 6",
+"row": 4,
+"col": 10,
+"bbox": [
+26.5176,
+80.4319,
+26.5286,
+80.4439
+],
+"center": [
+26.5231,
+80.4379
+],
+"buildings": 865,
+"built": false
+},
+{
+"id": "magarwara_7",
+"title": "Magarwara 7",
+"row": 4,
+"col": 11,
+"bbox": [
+26.5176,
+80.4439,
+26.5286,
+80.4559
+],
+"center": [
+26.5231,
+80.4499
+],
+"buildings": 1006,
+"built": false
+},
+{
+"id": "magarwara_8",
+"title": "Magarwara 8",
+"row": 4,
+"col": 12,
+"bbox": [
+26.5176,
+80.4559,
+26.5286,
+80.4679
+],
+"center": [
+26.5231,
+80.4619
+],
+"buildings": 892,
+"built": false
+},
+{
+"id": "kanpur_grid_n4_e14",
+"title": "Kanpur grid N4 E14",
+"row": 4,
+"col": 14,
+"bbox": [
+26.5176,
+80.4799,
+26.5286,
+80.4919
+],
+"center": [
+26.5231,
+80.4859
+],
+"buildings": 1970,
+"built": false
+},
+{
+"id": "kanpur_grid_n3_w9",
+"title": "Kanpur grid N3 W9",
+"row": 3,
+"col": -9,
+"bbox": [
+26.5066,
+80.2039,
+26.5176,
+80.2159
+],
+"center": [
+26.5121,
+80.2099
+],
+"buildings": 725,
+"built": false
+},
+{
+"id": "kanpur_grid_n3_w8",
+"title": "Kanpur grid N3 W8",
+"row": 3,
+"col": -8,
+"bbox": [
+26.5066,
+80.2159,
+26.5176,
+80.2279
+],
+"center": [
+26.5121,
+80.2219
+],
+"buildings": 1371,
+"built": false
+},
+{
+"id": "kanpur_grid_n3_w7",
+"title": "Kanpur grid N3 W7",
+"row": 3,
+"col": -7,
+"bbox": [
+26.5066,
+80.2279,
+26.5176,
+80.2399
+],
+"center": [
+26.5121,
+80.2339
+],
+"buildings": 750,
+"built": false
+},
+{
+"id": "kanpur_grid_n3_w6",
+"title": "Kanpur grid N3 W6",
+"row": 3,
+"col": -6,
+"bbox": [
+26.5066,
+80.2399,
+26.5176,
+80.2519
+],
+"center": [
+26.5121,
+80.2459
+],
+"buildings": 810,
+"built": false
+},
+{
+"id": "kanpur_grid_n3_w5",
+"title": "Kanpur grid N3 W5",
+"row": 3,
+"col": -5,
+"bbox": [
+26.5066,
+80.2519,
+26.5176,
+80.2639
+],
+"center": [
+26.5121,
+80.2579
+],
+"buildings": 1787,
+"built": false
+},
+{
+"id": "kanpur_grid_n3_w4",
+"title": "Kanpur grid N3 W4",
+"row": 3,
+"col": -4,
+"bbox": [
+26.5066,
+80.2639,
+26.5176,
+80.2759
+],
+"center": [
+26.5121,
+80.2699
+],
+"buildings": 1193,
+"built": false
+},
+{
+"id": "kanpur_grid_n3_w3",
+"title": "Kanpur grid N3 W3",
+"row": 3,
+"col": -3,
+"bbox": [
+26.5066,
+80.2759,
+26.5176,
+80.2879
+],
+"center": [
+26.5121,
+80.2819
+],
+"buildings": 1298,
+"built": false
+},
+{
+"id": "kanpur_grid_n3_w2",
+"title": "Kanpur grid N3 W2",
+"row": 3,
+"col": -2,
+"bbox": [
+26.5066,
+80.2879,
+26.5176,
+80.2999
+],
+"center": [
+26.5121,
+80.2939
+],
+"buildings": 788,
+"built": false
+},
+{
+"id": "magarwara_9",
+"title": "Magarwara 9",
+"row": 3,
+"col": 8,
+"bbox": [
+26.5066,
+80.4079,
+26.5176,
+80.4199
+],
+"center": [
+26.5121,
+80.4139
+],
+"buildings": 643,
+"built": false
+},
+{
+"id": "magarwara_10",
+"title": "Magarwara 10",
+"row": 3,
+"col": 9,
+"bbox": [
+26.5066,
+80.4199,
+26.5176,
+80.4319
+],
+"center": [
+26.5121,
+80.4259
+],
+"buildings": 978,
+"built": false
+},
+{
+"id": "magarwara_11",
+"title": "Magarwara 11",
+"row": 3,
+"col": 10,
+"bbox": [
+26.5066,
+80.4319,
+26.5176,
+80.4439
+],
+"center": [
+26.5121,
+80.4379
+],
+"buildings": 1943,
+"built": false
+},
+{
+"id": "kanpur_grid_n3_e13",
+"title": "Kanpur grid N3 E13",
+"row": 3,
+"col": 13,
+"bbox": [
+26.5066,
+80.4679,
+26.5176,
+80.4799
+],
+"center": [
+26.5121,
+80.4739
+],
+"buildings": 637,
+"built": false
+},
+{
+"id": "kanpur_grid_n3_e14",
+"title": "Kanpur grid N3 E14",
+"row": 3,
+"col": 14,
+"bbox": [
+26.5066,
+80.4799,
+26.5176,
+80.4919
+],
+"center": [
+26.5121,
+80.4859
+],
+"buildings": 1006,
+"built": false
+},
+{
+"id": "kanpur_grid_n3_e15",
+"title": "Kanpur grid N3 E15",
+"row": 3,
+"col": 15,
+"bbox": [
+26.5066,
+80.4919,
+26.5176,
+80.5039
+],
+"center": [
+26.5121,
+80.4979
+],
+"buildings": 1027,
+"built": false
+},
+{
+"id": "kanpur_grid_n2_w9",
+"title": "Kanpur grid N2 W9",
+"row": 2,
+"col": -9,
+"bbox": [
+26.4956,
+80.2039,
+26.5066,
+80.2159
+],
+"center": [
+26.5011,
+80.2099
+],
+"buildings": 623,
+"built": false
+},
+{
+"id": "panki",
+"title": "Panki",
+"row": 2,
+"col": -7,
+"bbox": [
+26.4956,
+80.2279,
+26.5066,
+80.2399
+],
+"center": [
+26.5011,
+80.2339
+],
+"buildings": 1556,
+"built": false
+},
+{
+"id": "armapur",
+"title": "Armapur",
+"row": 2,
+"col": -6,
+"bbox": [
+26.4956,
+80.2399,
+26.5066,
+80.2519
+],
+"center": [
+26.5011,
+80.2459
+],
+"buildings": 2976,
+"built": false
+},
+{
+"id": "armapur_2",
+"title": "Armapur 2",
+"row": 2,
+"col": -5,
+"bbox": [
+26.4956,
+80.2519,
+26.5066,
+80.2639
+],
+"center": [
+26.5011,
+80.2579
+],
+"buildings": 1669,
+"built": false
+},
+{
+"id": "armapur_3",
+"title": "Armapur 3",
+"row": 2,
+"col": -4,
+"bbox": [
+26.4956,
+80.2639,
+26.5066,
+80.2759
+],
+"center": [
+26.5011,
+80.2699
+],
+"buildings": 675,
+"built": false
+},
+{
+"id": "armapur_4",
+"title": "Armapur 4",
+"row": 2,
+"col": -3,
+"bbox": [
+26.4956,
+80.2759,
+26.5066,
+80.2879
+],
+"center": [
+26.5011,
+80.2819
+],
+"buildings": 1355,
+"built": false
+},
+{
+"id": "kanpur_grid_n2_w2",
+"title": "Kanpur grid N2 W2",
+"row": 2,
+"col": -2,
+"bbox": [
+26.4956,
+80.2879,
+26.5066,
+80.2999
+],
+"center": [
+26.5011,
+80.2939
+],
+"buildings": 1146,
+"built": false
+},
+{
+"id": "kanpur_grid_n2_w1",
+"title": "Kanpur grid N2 W1",
+"row": 2,
+"col": -1,
+"bbox": [
+26.4956,
+80.2999,
+26.5066,
+80.3119
+],
+"center": [
+26.5011,
+80.3059
+],
+"buildings": 2672,
+"built": false
+},
+{
+"id": "kanpur_grid_n2_e0",
+"title": "Kanpur grid N2 E0",
+"row": 2,
+"col": 0,
+"bbox": [
+26.4956,
+80.3119,
+26.5066,
+80.3239
+],
+"center": [
+26.5011,
+80.3179
+],
+"buildings": 2038,
+"built": false
+},
+{
+"id": "magarwara_12",
+"title": "Magarwara 12",
+"row": 2,
+"col": 7,
+"bbox": [
+26.4956,
+80.3959,
+26.5066,
+80.4079
+],
+"center": [
+26.5011,
+80.4019
+],
+"buildings": 611,
+"built": false
+},
+{
+"id": "magarwara_13",
+"title": "Magarwara 13",
+"row": 2,
+"col": 12,
+"bbox": [
+26.4956,
+80.4559,
+26.5066,
+80.4679
+],
+"center": [
+26.5011,
+80.4619
+],
+"buildings": 1087,
+"built": false
+},
+{
+"id": "kanpur_grid_n1_w9",
+"title": "Kanpur grid N1 W9",
+"row": 1,
+"col": -9,
+"bbox": [
+26.4846,
+80.2039,
+26.4956,
+80.2159
+],
+"center": [
+26.4901,
+80.2099
+],
+"buildings": 637,
+"built": false
+},
+{
+"id": "panki_2",
+"title": "Panki 2",
+"row": 1,
+"col": -8,
+"bbox": [
+26.4846,
+80.2159,
+26.4956,
+80.2279
+],
+"center": [
+26.4901,
+80.2219
+],
+"buildings": 1022,
+"built": false
+},
+{
+"id": "panki_3",
+"title": "Panki 3",
+"row": 1,
+"col": -7,
+"bbox": [
+26.4846,
+80.2279,
+26.4956,
+80.2399
+],
+"center": [
+26.4901,
+80.2339
+],
+"buildings": 1301,
+"built": false
+},
+{
+"id": "panki_4",
+"title": "Panki 4",
+"row": 1,
+"col": -6,
+"bbox": [
+26.4846,
+80.2399,
+26.4956,
+80.2519
+],
+"center": [
+26.4901,
+80.2459
+],
+"buildings": 1960,
+"built": false
+},
+{
+"id": "armapur_5",
+"title": "Armapur 5",
+"row": 1,
+"col": -5,
+"bbox": [
+26.4846,
+80.2519,
+26.4956,
+80.2639
+],
+"center": [
+26.4901,
+80.2579
+],
+"buildings": 1345,
+"built": false
+},
+{
+"id": "armapur_6",
+"title": "Armapur 6",
+"row": 1,
+"col": -4,
+"bbox": [
+26.4846,
+80.2639,
+26.4956,
+80.2759
+],
+"center": [
+26.4901,
+80.2699
+],
+"buildings": 1194,
+"built": false
+},
+{
+"id": "armapur_7",
+"title": "Armapur 7",
+"row": 1,
+"col": -3,
+"bbox": [
+26.4846,
+80.2759,
+26.4956,
+80.2879
+],
+"center": [
+26.4901,
+80.2819
+],
+"buildings": 2599,
+"built": false
+},
+{
+"id": "armapur_8",
+"title": "Armapur 8",
+"row": 1,
+"col": -2,
+"bbox": [
+26.4846,
+80.2879,
+26.4956,
+80.2999
+],
+"center": [
+26.4901,
+80.2939
+],
+"buildings": 857,
+"built": false
+},
+{
+"id": "kanpur_grid_n1_w1",
+"title": "Kanpur grid N1 W1",
+"row": 1,
+"col": -1,
+"bbox": [
+26.4846,
+80.2999,
+26.4956,
+80.3119
+],
+"center": [
+26.4901,
+80.3059
+],
+"buildings": 1117,
+"built": false
+},
+{
+"id": "laxman_bagh_income_tax_cgst",
+"title": "Laxman Bagh Income Tax & CGST",
+"row": 1,
+"col": 0,
+"bbox": [
+26.4846,
+80.3119,
+26.4956,
+80.3239
+],
+"center": [
+26.4901,
+80.3179
+],
+"buildings": 1900,
+"built": false
+},
+{
+"id": "kanpur_grid_n1_e1",
+"title": "Kanpur grid N1 E1",
+"row": 1,
+"col": 1,
+"bbox": [
+26.4846,
+80.3239,
+26.4956,
+80.3359
+],
+"center": [
+26.4901,
+80.3299
+],
+"buildings": 2576,
+"built": false
+},
+{
+"id": "kanpur_grid_n1_e2",
+"title": "Kanpur grid N1 E2",
+"row": 1,
+"col": 2,
+"bbox": [
+26.4846,
+80.3359,
+26.4956,
+80.3479
+],
+"center": [
+26.4901,
+80.3419
+],
+"buildings": 693,
+"built": false
+},
+{
+"id": "shuklaganj_4",
+"title": "Shuklaganj 4",
+"row": 1,
+"col": 6,
+"bbox": [
+26.4846,
+80.3839,
+26.4956,
+80.3959
+],
+"center": [
+26.4901,
+80.3899
+],
+"buildings": 1335,
+"built": false
+},
+{
+"id": "magarwara_14",
+"title": "Magarwara 14",
+"row": 1,
+"col": 7,
+"bbox": [
+26.4846,
+80.3959,
+26.4956,
+80.4079
+],
+"center": [
+26.4901,
+80.4019
+],
+"buildings": 1836,
+"built": false
+},
+{
+"id": "magarwara_15",
+"title": "Magarwara 15",
+"row": 1,
+"col": 8,
+"bbox": [
+26.4846,
+80.4079,
+26.4956,
+80.4199
+],
+"center": [
+26.4901,
+80.4139
+],
+"buildings": 568,
+"built": false
+},
+{
+"id": "magarwara_16",
+"title": "Magarwara 16",
+"row": 1,
+"col": 11,
+"bbox": [
+26.4846,
+80.4439,
+26.4956,
+80.4559
+],
+"center": [
+26.4901,
+80.4499
+],
+"buildings": 667,
+"built": false
+},
+{
+"id": "magarwara_17",
+"title": "Magarwara 17",
+"row": 1,
+"col": 12,
+"bbox": [
+26.4846,
+80.4559,
+26.4956,
+80.4679
+],
+"center": [
+26.4901,
+80.4619
+],
+"buildings": 639,
+"built": false
+},
+{
+"id": "panki_5",
+"title": "Panki 5",
+"row": 0,
+"col": -9,
+"bbox": [
+26.4736,
+80.2039,
+26.4846,
+80.2159
+],
+"center": [
+26.4791,
+80.2099
+],
+"buildings": 655,
+"built": false
+},
+{
+"id": "panki_6",
+"title": "Panki 6",
+"row": 0,
+"col": -8,
+"bbox": [
+26.4736,
+80.2159,
+26.4846,
+80.2279
+],
+"center": [
+26.4791,
+80.2219
+],
+"buildings": 1235,
+"built": false
+},
+{
+"id": "panki_7",
+"title": "Panki 7",
+"row": 0,
+"col": -7,
+"bbox": [
+26.4736,
+80.2279,
+26.4846,
+80.2399
+],
+"center": [
+26.4791,
+80.2339
+],
+"buildings": 1241,
+"built": false
+},
+{
+"id": "panki_8",
+"title": "Panki 8",
+"row": 0,
+"col": -6,
+"bbox": [
+26.4736,
+80.2399,
+26.4846,
+80.2519
+],
+"center": [
+26.4791,
+80.2459
+],
+"buildings": 1433,
+"built": false
+},
+{
+"id": "armapur_9",
+"title": "Armapur 9",
+"row": 0,
+"col": -5,
+"bbox": [
+26.4736,
+80.2519,
+26.4846,
+80.2639
+],
+"center": [
+26.4791,
+80.2579
+],
+"buildings": 1735,
+"built": false
+},
+{
+"id": "armapur_10",
+"title": "Armapur 10",
+"row": 0,
+"col": -4,
+"bbox": [
+26.4736,
+80.2639,
+26.4846,
+80.2759
+],
+"center": [
+26.4791,
+80.2699
+],
+"buildings": 2996,
+"built": false
+},
+{
+"id": "armapur_11",
+"title": "Armapur 11",
+"row": 0,
+"col": -3,
+"bbox": [
+26.4736,
+80.2759,
+26.4846,
+80.2879
+],
+"center": [
+26.4791,
+80.2819
+],
+"buildings": 3522,
+"built": false
+},
+{
+"id": "armapur_12",
+"title": "Armapur 12",
+"row": 0,
+"col": -2,
+"bbox": [
+26.4736,
+80.2879,
+26.4846,
+80.2999
+],
+"center": [
+26.4791,
+80.2939
+],
+"buildings": 3327,
+"built": false
+},
+{
+"id": "kanpur_grid_n0_w1",
+"title": "Kanpur grid N0 W1",
+"row": 0,
+"col": -1,
+"bbox": [
+26.4736,
+80.2999,
+26.4846,
+80.3119
+],
+"center": [
+26.4791,
+80.3059
+],
+"buildings": 2147,
+"built": false
+},
+{
+"id": "moti_jheel",
+"title": "Moti Jheel",
+"row": 0,
+"col": 0,
+"bbox": [
+26.4736,
+80.3119,
+26.4846,
+80.3239
+],
+"center": [
+26.4791,
+80.3179
+],
+"buildings": 2383,
+"built": true
+},
+{
+"id": "kidwai_nagar",
+"title": "Kidwai Nagar",
+"row": 0,
+"col": 1,
+"bbox": [
+26.4736,
+80.3239,
+26.4846,
+80.3359
+],
+"center": [
+26.4791,
+80.3299
+],
+"buildings": 3027,
+"built": false
+},
+{
+"id": "kidwai_nagar_2",
+"title": "Kidwai Nagar 2",
+"row": 0,
+"col": 2,
+"bbox": [
+26.4736,
+80.3359,
+26.4846,
+80.3479
+],
+"center": [
+26.4791,
+80.3419
+],
+"buildings": 2002,
+"built": false
+},
+{
+"id": "kidwai_nagar_3",
+"title": "Kidwai Nagar 3",
+"row": 0,
+"col": 3,
+"bbox": [
+26.4736,
+80.3479,
+26.4846,
+80.3599
+],
+"center": [
+26.4791,
+80.3539
+],
+"buildings": 1760,
+"built": false
+},
+{
+"id": "shuklaganj_5",
+"title": "Shuklaganj 5",
+"row": 0,
+"col": 5,
+"bbox": [
+26.4736,
+80.3719,
+26.4846,
+80.3839
+],
+"center": [
+26.4791,
+80.3779
+],
+"buildings": 2492,
+"built": false
+},
+{
+"id": "shuklaganj_6",
+"title": "Shuklaganj 6",
+"row": 0,
+"col": 6,
+"bbox": [
+26.4736,
+80.3839,
+26.4846,
+80.3959
+],
+"center": [
+26.4791,
+80.3899
+],
+"buildings": 4029,
+"built": false
+},
+{
+"id": "shuklaganj_7",
+"title": "Shuklaganj 7",
+"row": 0,
+"col": 7,
+"bbox": [
+26.4736,
+80.3959,
+26.4846,
+80.4079
+],
+"center": [
+26.4791,
+80.4019
+],
+"buildings": 2319,
+"built": false
+},
+{
+"id": "magarwara_18",
+"title": "Magarwara 18",
+"row": 0,
+"col": 8,
+"bbox": [
+26.4736,
+80.4079,
+26.4846,
+80.4199
+],
+"center": [
+26.4791,
+80.4139
+],
+"buildings": 605,
+"built": false
+},
+{
+"id": "shuklaganj_8",
+"title": "Shuklaganj 8",
+"row": 0,
+"col": 12,
+"bbox": [
+26.4736,
+80.4559,
+26.4846,
+80.4679
+],
+"center": [
+26.4791,
+80.4619
+],
+"buildings": 661,
+"built": false
+},
+{
+"id": "kanpur_grid_n0_e13",
+"title": "Kanpur grid N0 E13",
+"row": 0,
+"col": 13,
+"bbox": [
+26.4736,
+80.4679,
+26.4846,
+80.4799
+],
+"center": [
+26.4791,
+80.4739
+],
+"buildings": 773,
+"built": false
+},
+{
+"id": "panki_9",
+"title": "Panki 9",
+"row": -1,
+"col": -8,
+"bbox": [
+26.4626,
+80.2159,
+26.4736,
+80.2279
+],
+"center": [
+26.4681,
+80.2219
+],
+"buildings": 1353,
+"built": false
+},
+{
+"id": "panki_10",
+"title": "Panki 10",
+"row": -1,
+"col": -7,
+"bbox": [
+26.4626,
+80.2279,
+26.4736,
+80.2399
+],
+"center": [
+26.4681,
+80.2339
+],
+"buildings": 1285,
+"built": false
+},
+{
+"id": "panki_11",
+"title": "Panki 11",
+"row": -1,
+"col": -6,
+"bbox": [
+26.4626,
+80.2399,
+26.4736,
+80.2519
+],
+"center": [
+26.4681,
+80.2459
+],
+"buildings": 2225,
+"built": false
+},
+{
+"id": "armapur_13",
+"title": "Armapur 13",
+"row": -1,
+"col": -5,
+"bbox": [
+26.4626,
+80.2519,
+26.4736,
+80.2639
+],
+"center": [
+26.4681,
+80.2579
+],
+"buildings": 797,
+"built": false
+},
+{
+"id": "armapur_14",
+"title": "Armapur 14",
+"row": -1,
+"col": -4,
+"bbox": [
+26.4626,
+80.2639,
+26.4736,
+80.2759
+],
+"center": [
+26.4681,
+80.2699
+],
+"buildings": 708,
+"built": false
+},
+{
+"id": "armapur_15",
+"title": "Armapur 15",
+"row": -1,
+"col": -3,
+"bbox": [
+26.4626,
+80.2759,
+26.4736,
+80.2879
+],
+"center": [
+26.4681,
+80.2819
+],
+"buildings": 1016,
+"built": false
+},
+{
+"id": "armapur_16",
+"title": "Armapur 16",
+"row": -1,
+"col": -2,
+"bbox": [
+26.4626,
+80.2879,
+26.4736,
+80.2999
+],
+"center": [
+26.4681,
+80.2939
+],
+"buildings": 3978,
+"built": false
+},
+{
+"id": "kanpur_grid_s1_w1",
+"title": "Kanpur grid S1 W1",
+"row": -1,
+"col": -1,
+"bbox": [
+26.4626,
+80.2999,
+26.4736,
+80.3119
+],
+"center": [
+26.4681,
+80.3059
+],
+"buildings": 3244,
+"built": false
+},
+{
+"id": "kidwai_nagar_4",
+"title": "Kidwai Nagar 4",
+"row": -1,
+"col": 0,
+"bbox": [
+26.4626,
+80.3119,
+26.4736,
+80.3239
+],
+"center": [
+26.4681,
+80.3179
+],
+"buildings": 4881,
+"built": false
+},
+{
+"id": "kidwai_nagar_5",
+"title": "Kidwai Nagar 5",
+"row": -1,
+"col": 1,
+"bbox": [
+26.4626,
+80.3239,
+26.4736,
+80.3359
+],
+"center": [
+26.4681,
+80.3299
+],
+"buildings": 4785,
+"built": false
+},
+{
+"id": "kidwai_nagar_6",
+"title": "Kidwai Nagar 6",
+"row": -1,
+"col": 2,
+"bbox": [
+26.4626,
+80.3359,
+26.4736,
+80.3479
+],
+"center": [
+26.4681,
+80.3419
+],
+"buildings": 7172,
+"built": false
+},
+{
+"id": "kidwai_nagar_7",
+"title": "Kidwai Nagar 7",
+"row": -1,
+"col": 3,
+"bbox": [
+26.4626,
+80.3479,
+26.4736,
+80.3599
+],
+"center": [
+26.4681,
+80.3539
+],
+"buildings": 5041,
+"built": false
+},
+{
+"id": "kidwai_nagar_8",
+"title": "Kidwai Nagar 8",
+"row": -1,
+"col": 4,
+"bbox": [
+26.4626,
+80.3599,
+26.4736,
+80.3719
+],
+"center": [
+26.4681,
+80.3659
+],
+"buildings": 1274,
+"built": false
+},
+{
+"id": "shuklaganj_9",
+"title": "Shuklaganj 9",
+"row": -1,
+"col": 5,
+"bbox": [
+26.4626,
+80.3719,
+26.4736,
+80.3839
+],
+"center": [
+26.4681,
+80.3779
+],
+"buildings": 1044,
+"built": false
+},
+{
+"id": "shuklaganj_10",
+"title": "Shuklaganj 10",
+"row": -1,
+"col": 6,
+"bbox": [
+26.4626,
+80.3839,
+26.4736,
+80.3959
+],
+"center": [
+26.4681,
+80.3899
+],
+"buildings": 2226,
+"built": false
+},
+{
+"id": "shuklaganj_11",
+"title": "Shuklaganj 11",
+"row": -1,
+"col": 7,
+"bbox": [
+26.4626,
+80.3959,
+26.4736,
+80.4079
+],
+"center": [
+26.4681,
+80.4019
+],
+"buildings": 1366,
+"built": false
+},
+{
+"id": "shuklaganj_12",
+"title": "Shuklaganj 12",
+"row": -1,
+"col": 8,
+"bbox": [
+26.4626,
+80.4079,
+26.4736,
+80.4199
+],
+"center": [
+26.4681,
+80.4139
+],
+"buildings": 635,
+"built": false
+},
+{
+"id": "shuklaganj_13",
+"title": "Shuklaganj 13",
+"row": -1,
+"col": 9,
+"bbox": [
+26.4626,
+80.4199,
+26.4736,
+80.4319
+],
+"center": [
+26.4681,
+80.4259
+],
+"buildings": 788,
+"built": false
+},
+{
+"id": "kanpur_grid_s1_e13",
+"title": "Kanpur grid S1 E13",
+"row": -1,
+"col": 13,
+"bbox": [
+26.4626,
+80.4679,
+26.4736,
+80.4799
+],
+"center": [
+26.4681,
+80.4739
+],
+"buildings": 1002,
+"built": false
+},
+{
+"id": "panki_12",
+"title": "Panki 12",
+"row": -2,
+"col": -9,
+"bbox": [
+26.4516,
+80.2039,
+26.4626,
+80.2159
+],
+"center": [
+26.4571,
+80.2099
+],
+"buildings": 547,
+"built": false
+},
+{
+"id": "panki_13",
+"title": "Panki 13",
+"row": -2,
+"col": -8,
+"bbox": [
+26.4516,
+80.2159,
+26.4626,
+80.2279
+],
+"center": [
+26.4571,
+80.2219
+],
+"buildings": 964,
+"built": false
+},
+{
+"id": "panki_14",
+"title": "Panki 14",
+"row": -2,
+"col": -7,
+"bbox": [
+26.4516,
+80.2279,
+26.4626,
+80.2399
+],
+"center": [
+26.4571,
+80.2339
+],
+"buildings": 677,
+"built": false
+},
+{
+"id": "panki_15",
+"title": "Panki 15",
+"row": -2,
+"col": -6,
+"bbox": [
+26.4516,
+80.2399,
+26.4626,
+80.2519
+],
+"center": [
+26.4571,
+80.2459
+],
+"buildings": 1352,
+"built": false
+},
+{
+"id": "panki_16",
+"title": "Panki 16",
+"row": -2,
+"col": -5,
+"bbox": [
+26.4516,
+80.2519,
+26.4626,
+80.2639
+],
+"center": [
+26.4571,
+80.2579
+],
+"buildings": 878,
+"built": false
+},
+{
+"id": "armapur_17",
+"title": "Armapur 17",
+"row": -2,
+"col": -4,
+"bbox": [
+26.4516,
+80.2639,
+26.4626,
+80.2759
+],
+"center": [
+26.4571,
+80.2699
+],
+"buildings": 1032,
+"built": false
+},
+{
+"id": "armapur_18",
+"title": "Armapur 18",
+"row": -2,
+"col": -3,
+"bbox": [
+26.4516,
+80.2759,
+26.4626,
+80.2879
+],
+"center": [
+26.4571,
+80.2819
+],
+"buildings": 826,
+"built": false
+},
+{
+"id": "armapur_19",
+"title": "Armapur 19",
+"row": -2,
+"col": -2,
+"bbox": [
+26.4516,
+80.2879,
+26.4626,
+80.2999
+],
+"center": [
+26.4571,
+80.2939
+],
+"buildings": 2020,
+"built": false
+},
+{
+"id": "kidwai_nagar_9",
+"title": "Kidwai Nagar 9",
+"row": -2,
+"col": -1,
+"bbox": [
+26.4516,
+80.2999,
+26.4626,
+80.3119
+],
+"center": [
+26.4571,
+80.3059
+],
+"buildings": 2575,
+"built": false
+},
+{
+"id": "kidwai_nagar_10",
+"title": "Kidwai Nagar 10",
+"row": -2,
+"col": 0,
+"bbox": [
+26.4516,
+80.3119,
+26.4626,
+80.3239
+],
+"center": [
+26.4571,
+80.3179
+],
+"buildings": 1513,
+"built": false
+},
+{
+"id": "kidwai_nagar_11",
+"title": "Kidwai Nagar 11",
+"row": -2,
+"col": 1,
+"bbox": [
+26.4516,
+80.3239,
+26.4626,
+80.3359
+],
+"center": [
+26.4571,
+80.3299
+],
+"buildings": 2881,
+"built": false
+},
+{
+"id": "kidwai_nagar_12",
+"title": "Kidwai Nagar 12",
+"row": -2,
+"col": 2,
+"bbox": [
+26.4516,
+80.3359,
+26.4626,
+80.3479
+],
+"center": [
+26.4571,
+80.3419
+],
+"buildings": 3196,
+"built": false
+},
+{
+"id": "kidwai_nagar_13",
+"title": "Kidwai Nagar 13",
+"row": -2,
+"col": 3,
+"bbox": [
+26.4516,
+80.3479,
+26.4626,
+80.3599
+],
+"center": [
+26.4571,
+80.3539
+],
+"buildings": 4795,
+"built": false
+},
+{
+"id": "kanpur_grid_s2_e4",
+"title": "Kanpur grid S2 E4",
+"row": -2,
+"col": 4,
+"bbox": [
+26.4516,
+80.3599,
+26.4626,
+80.3719
+],
+"center": [
+26.4571,
+80.3659
+],
+"buildings": 1138,
+"built": false
+},
+{
+"id": "kanpur_grid_s2_e5",
+"title": "Kanpur grid S2 E5",
+"row": -2,
+"col": 5,
+"bbox": [
+26.4516,
+80.3719,
+26.4626,
+80.3839
+],
+"center": [
+26.4571,
+80.3779
+],
+"buildings": 677,
+"built": false
+},
+{
+"id": "shuklaganj_14",
+"title": "Shuklaganj 14",
+"row": -2,
+"col": 9,
+"bbox": [
+26.4516,
+80.4199,
+26.4626,
+80.4319
+],
+"center": [
+26.4571,
+80.4259
+],
+"buildings": 831,
+"built": false
+},
+{
+"id": "shuklaganj_15",
+"title": "Shuklaganj 15",
+"row": -2,
+"col": 10,
+"bbox": [
+26.4516,
+80.4319,
+26.4626,
+80.4439
+],
+"center": [
+26.4571,
+80.4379
+],
+"buildings": 596,
+"built": false
+},
+{
+"id": "kanpur_grid_s2_e13",
+"title": "Kanpur grid S2 E13",
+"row": -2,
+"col": 13,
+"bbox": [
+26.4516,
+80.4679,
+26.4626,
+80.4799
+],
+"center": [
+26.4571,
+80.4739
+],
+"buildings": 568,
+"built": false
+},
+{
+"id": "kanpur_grid_s2_e15",
+"title": "Kanpur grid S2 E15",
+"row": -2,
+"col": 15,
+"bbox": [
+26.4516,
+80.4919,
+26.4626,
+80.5039
+],
+"center": [
+26.4571,
+80.4979
+],
+"buildings": 906,
+"built": false
+},
+{
+"id": "panki_17",
+"title": "Panki 17",
+"row": -3,
+"col": -6,
+"bbox": [
+26.4406,
+80.2399,
+26.4516,
+80.2519
+],
+"center": [
+26.4461,
+80.2459
+],
+"buildings": 1484,
+"built": false
+},
+{
+"id": "panki_18",
+"title": "Panki 18",
+"row": -3,
+"col": -5,
+"bbox": [
+26.4406,
+80.2519,
+26.4516,
+80.2639
+],
+"center": [
+26.4461,
+80.2579
+],
+"buildings": 1009,
+"built": false
+},
+{
+"id": "armapur_20",
+"title": "Armapur 20",
+"row": -3,
+"col": -4,
+"bbox": [
+26.4406,
+80.2639,
+26.4516,
+80.2759
+],
+"center": [
+26.4461,
+80.2699
+],
+"buildings": 1959,
+"built": false
+},
+{
+"id": "armapur_21",
+"title": "Armapur 21",
+"row": -3,
+"col": -3,
+"bbox": [
+26.4406,
+80.2759,
+26.4516,
+80.2879
+],
+"center": [
+26.4461,
+80.2819
+],
+"buildings": 2809,
+"built": false
+},
+{
+"id": "armapur_22",
+"title": "Armapur 22",
+"row": -3,
+"col": -2,
+"bbox": [
+26.4406,
+80.2879,
+26.4516,
+80.2999
+],
+"center": [
+26.4461,
+80.2939
+],
+"buildings": 3031,
+"built": false
+},
+{
+"id": "kidwai_nagar_14",
+"title": "Kidwai Nagar 14",
+"row": -3,
+"col": -1,
+"bbox": [
+26.4406,
+80.2999,
+26.4516,
+80.3119
+],
+"center": [
+26.4461,
+80.3059
+],
+"buildings": 3010,
+"built": false
+},
+{
+"id": "kidwai_nagar_15",
+"title": "Kidwai Nagar 15",
+"row": -3,
+"col": 0,
+"bbox": [
+26.4406,
+80.3119,
+26.4516,
+80.3239
+],
+"center": [
+26.4461,
+80.3179
+],
+"buildings": 3946,
+"built": false
+},
+{
+"id": "kidwai_nagar_16",
+"title": "Kidwai Nagar 16",
+"row": -3,
+"col": 1,
+"bbox": [
+26.4406,
+80.3239,
+26.4516,
+80.3359
+],
+"center": [
+26.4461,
+80.3299
+],
+"buildings": 3053,
+"built": false
+},
+{
+"id": "kidwai_nagar_17",
+"title": "Kidwai Nagar 17",
+"row": -3,
+"col": 2,
+"bbox": [
+26.4406,
+80.3359,
+26.4516,
+80.3479
+],
+"center": [
+26.4461,
+80.3419
+],
+"buildings": 2821,
+"built": false
+},
+{
+"id": "kanpur_grid_s3_e3",
+"title": "Kanpur grid S3 E3",
+"row": -3,
+"col": 3,
+"bbox": [
+26.4406,
+80.3479,
+26.4516,
+80.3599
+],
+"center": [
+26.4461,
+80.3539
+],
+"buildings": 2514,
+"built": false
+},
+{
+"id": "kanpur_grid_s3_e5",
+"title": "Kanpur grid S3 E5",
+"row": -3,
+"col": 5,
+"bbox": [
+26.4406,
+80.3719,
+26.4516,
+80.3839
+],
+"center": [
+26.4461,
+80.3779
+],
+"buildings": 871,
+"built": false
+},
+{
+"id": "shuklaganj_16",
+"title": "Shuklaganj 16",
+"row": -3,
+"col": 8,
+"bbox": [
+26.4406,
+80.4079,
+26.4516,
+80.4199
+],
+"center": [
+26.4461,
+80.4139
+],
+"buildings": 1347,
+"built": false
+},
+{
+"id": "shuklaganj_17",
+"title": "Shuklaganj 17",
+"row": -3,
+"col": 9,
+"bbox": [
+26.4406,
+80.4199,
+26.4516,
+80.4319
+],
+"center": [
+26.4461,
+80.4259
+],
+"buildings": 1160,
+"built": false
+},
+{
+"id": "shuklaganj_18",
+"title": "Shuklaganj 18",
+"row": -3,
+"col": 10,
+"bbox": [
+26.4406,
+80.4319,
+26.4516,
+80.4439
+],
+"center": [
+26.4461,
+80.4379
+],
+"buildings": 1003,
+"built": false
+},
+{
+"id": "shuklaganj_19",
+"title": "Shuklaganj 19",
+"row": -3,
+"col": 11,
+"bbox": [
+26.4406,
+80.4439,
+26.4516,
+80.4559
+],
+"center": [
+26.4461,
+80.4499
+],
+"buildings": 926,
+"built": false
+},
+{
+"id": "kanpur_grid_s3_e15",
+"title": "Kanpur grid S3 E15",
+"row": -3,
+"col": 15,
+"bbox": [
+26.4406,
+80.4919,
+26.4516,
+80.5039
+],
+"center": [
+26.4461,
+80.4979
+],
+"buildings": 634,
+"built": false
+},
+{
+"id": "panki_19",
+"title": "Panki 19",
+"row": -4,
+"col": -6,
+"bbox": [
+26.4296,
+80.2399,
+26.4406,
+80.2519
+],
+"center": [
+26.4351,
+80.2459
+],
+"buildings": 525,
+"built": false
+},
+{
+"id": "panki_20",
+"title": "Panki 20",
+"row": -4,
+"col": -5,
+"bbox": [
+26.4296,
+80.2519,
+26.4406,
+80.2639
+],
+"center": [
+26.4351,
+80.2579
+],
+"buildings": 833,
+"built": false
+},
+{
+"id": "armapur_23",
+"title": "Armapur 23",
+"row": -4,
+"col": -4,
+"bbox": [
+26.4296,
+80.2639,
+26.4406,
+80.2759
+],
+"center": [
+26.4351,
+80.2699
+],
+"buildings": 1847,
+"built": false
+},
+{
+"id": "kanpur_grid_s4_w3",
+"title": "Kanpur grid S4 W3",
+"row": -4,
+"col": -3,
+"bbox": [
+26.4296,
+80.2759,
+26.4406,
+80.2879
+],
+"center": [
+26.4351,
+80.2819
+],
+"buildings": 1733,
+"built": false
+},
+{
+"id": "kanpur_grid_s4_w2",
+"title": "Kanpur grid S4 W2",
+"row": -4,
+"col": -2,
+"bbox": [
+26.4296,
+80.2879,
+26.4406,
+80.2999
+],
+"center": [
+26.4351,
+80.2939
+],
+"buildings": 4393,
+"built": false
+},
+{
+"id": "kidwai_nagar_18",
+"title": "Kidwai Nagar 18",
+"row": -4,
+"col": -1,
+"bbox": [
+26.4296,
+80.2999,
+26.4406,
+80.3119
+],
+"center": [
+26.4351,
+80.3059
+],
+"buildings": 3265,
+"built": false
+},
+{
+"id": "kidwai_nagar_19",
+"title": "Kidwai Nagar 19",
+"row": -4,
+"col": 0,
+"bbox": [
+26.4296,
+80.3119,
+26.4406,
+80.3239
+],
+"center": [
+26.4351,
+80.3179
+],
+"buildings": 3653,
+"built": false
+},
+{
+"id": "kidwai_nagar_20",
+"title": "Kidwai Nagar 20",
+"row": -4,
+"col": 1,
+"bbox": [
+26.4296,
+80.3239,
+26.4406,
+80.3359
+],
+"center": [
+26.4351,
+80.3299
+],
+"buildings": 3244,
+"built": false
+},
+{
+"id": "kidwai_nagar_21",
+"title": "Kidwai Nagar 21",
+"row": -4,
+"col": 2,
+"bbox": [
+26.4296,
+80.3359,
+26.4406,
+80.3479
+],
+"center": [
+26.4351,
+80.3419
+],
+"buildings": 4563,
+"built": false
+},
+{
+"id": "kanpur_grid_s4_e3",
+"title": "Kanpur grid S4 E3",
+"row": -4,
+"col": 3,
+"bbox": [
+26.4296,
+80.3479,
+26.4406,
+80.3599
+],
+"center": [
+26.4351,
+80.3539
+],
+"buildings": 1343,
+"built": false
+},
+{
+"id": "kanpur_grid_s4_e5",
+"title": "Kanpur grid S4 E5",
+"row": -4,
+"col": 5,
+"bbox": [
+26.4296,
+80.3719,
+26.4406,
+80.3839
+],
+"center": [
+26.4351,
+80.3779
+],
+"buildings": 1278,
+"built": false
+},
+{
+"id": "jajmau",
+"title": "Jajmau",
+"row": -4,
+"col": 6,
+"bbox": [
+26.4296,
+80.3839,
+26.4406,
+80.3959
+],
+"center": [
+26.4351,
+80.3899
+],
+"buildings": 2519,
+"built": false
+},
+{
+"id": "jajmau_2",
+"title": "Jajmau 2",
+"row": -4,
+"col": 7,
+"bbox": [
+26.4296,
+80.3959,
+26.4406,
+80.4079
+],
+"center": [
+26.4351,
+80.4019
+],
+"buildings": 3167,
+"built": false
+},
+{
+"id": "shuklaganj_20",
+"title": "Shuklaganj 20",
+"row": -4,
+"col": 8,
+"bbox": [
+26.4296,
+80.4079,
+26.4406,
+80.4199
+],
+"center": [
+26.4351,
+80.4139
+],
+"buildings": 1189,
+"built": false
+},
+{
+"id": "kanpur_grid_s4_e13",
+"title": "Kanpur grid S4 E13",
+"row": -4,
+"col": 13,
+"bbox": [
+26.4296,
+80.4679,
+26.4406,
+80.4799
+],
+"center": [
+26.4351,
+80.4739
+],
+"buildings": 589,
+"built": false
+},
+{
+"id": "kanpur_grid_s5_w8",
+"title": "Kanpur grid S5 W8",
+"row": -5,
+"col": -8,
+"bbox": [
+26.4186,
+80.2159,
+26.4296,
+80.2279
+],
+"center": [
+26.4241,
+80.2219
+],
+"buildings": 758,
+"built": false
+},
+{
+"id": "kanpur_grid_s5_w4",
+"title": "Kanpur grid S5 W4",
+"row": -5,
+"col": -4,
+"bbox": [
+26.4186,
+80.2639,
+26.4296,
+80.2759
+],
+"center": [
+26.4241,
+80.2699
+],
+"buildings": 1042,
+"built": false
+},
+{
+"id": "kanpur_grid_s5_w3",
+"title": "Kanpur grid S5 W3",
+"row": -5,
+"col": -3,
+"bbox": [
+26.4186,
+80.2759,
+26.4296,
+80.2879
+],
+"center": [
+26.4241,
+80.2819
+],
+"buildings": 1400,
+"built": false
+},
+{
+"id": "kanpur_grid_s5_w2",
+"title": "Kanpur grid S5 W2",
+"row": -5,
+"col": -2,
+"bbox": [
+26.4186,
+80.2879,
+26.4296,
+80.2999
+],
+"center": [
+26.4241,
+80.2939
+],
+"buildings": 3280,
+"built": false
+},
+{
+"id": "naubasta",
+"title": "Naubasta",
+"row": -5,
+"col": -1,
+"bbox": [
+26.4186,
+80.2999,
+26.4296,
+80.3119
+],
+"center": [
+26.4241,
+80.3059
+],
+"buildings": 4349,
+"built": false
+},
+{
+"id": "kidwai_nagar_22",
+"title": "Kidwai Nagar 22",
+"row": -5,
+"col": 0,
+"bbox": [
+26.4186,
+80.3119,
+26.4296,
+80.3239
+],
+"center": [
+26.4241,
+80.3179
+],
+"buildings": 2812,
+"built": false
+},
+{
+"id": "kidwai_nagar_23",
+"title": "Kidwai Nagar 23",
+"row": -5,
+"col": 1,
+"bbox": [
+26.4186,
+80.3239,
+26.4296,
+80.3359
+],
+"center": [
+26.4241,
+80.3299
+],
+"buildings": 1847,
+"built": false
+},
+{
+"id": "kidwai_nagar_24",
+"title": "Kidwai Nagar 24",
+"row": -5,
+"col": 2,
+"bbox": [
+26.4186,
+80.3359,
+26.4296,
+80.3479
+],
+"center": [
+26.4241,
+80.3419
+],
+"buildings": 615,
+"built": false
+},
+{
+"id": "kidwai_nagar_25",
+"title": "Kidwai Nagar 25",
+"row": -5,
+"col": 3,
+"bbox": [
+26.4186,
+80.3479,
+26.4296,
+80.3599
+],
+"center": [
+26.4241,
+80.3539
+],
+"buildings": 1708,
+"built": false
+},
+{
+"id": "kanpur_grid_s5_e4",
+"title": "Kanpur grid S5 E4",
+"row": -5,
+"col": 4,
+"bbox": [
+26.4186,
+80.3599,
+26.4296,
+80.3719
+],
+"center": [
+26.4241,
+80.3659
+],
+"buildings": 1817,
+"built": false
+},
+{
+"id": "kanpur_grid_s5_e5",
+"title": "Kanpur grid S5 E5",
+"row": -5,
+"col": 5,
+"bbox": [
+26.4186,
+80.3719,
+26.4296,
+80.3839
+],
+"center": [
+26.4241,
+80.3779
+],
+"buildings": 2000,
+"built": false
+},
+{
+"id": "jajmau_3",
+"title": "Jajmau 3",
+"row": -5,
+"col": 6,
+"bbox": [
+26.4186,
+80.3839,
+26.4296,
+80.3959
+],
+"center": [
+26.4241,
+80.3899
+],
+"buildings": 4031,
+"built": false
+},
+{
+"id": "jajmau_4",
+"title": "Jajmau 4",
+"row": -5,
+"col": 7,
+"bbox": [
+26.4186,
+80.3959,
+26.4296,
+80.4079
+],
+"center": [
+26.4241,
+80.4019
+],
+"buildings": 3550,
+"built": false
+},
+{
+"id": "jajmau_5",
+"title": "Jajmau 5",
+"row": -5,
+"col": 8,
+"bbox": [
+26.4186,
+80.4079,
+26.4296,
+80.4199
+],
+"center": [
+26.4241,
+80.4139
+],
+"buildings": 2267,
+"built": false
+},
+{
+"id": "kanpur_grid_s6_w4",
+"title": "Kanpur grid S6 W4",
+"row": -6,
+"col": -4,
+"bbox": [
+26.4076,
+80.2639,
+26.4186,
+80.2759
+],
+"center": [
+26.4131,
+80.2699
+],
+"buildings": 772,
+"built": false
+},
+{
+"id": "kanpur_grid_s6_w2",
+"title": "Kanpur grid S6 W2",
+"row": -6,
+"col": -2,
+"bbox": [
+26.4076,
+80.2879,
+26.4186,
+80.2999
+],
+"center": [
+26.4131,
+80.2939
+],
+"buildings": 3475,
+"built": false
+},
+{
+"id": "naubasta_2",
+"title": "Naubasta 2",
+"row": -6,
+"col": -1,
+"bbox": [
+26.4076,
+80.2999,
+26.4186,
+80.3119
+],
+"center": [
+26.4131,
+80.3059
+],
+"buildings": 5786,
+"built": false
+},
+{
+"id": "naubasta_3",
+"title": "Naubasta 3",
+"row": -6,
+"col": 0,
+"bbox": [
+26.4076,
+80.3119,
+26.4186,
+80.3239
+],
+"center": [
+26.4131,
+80.3179
+],
+"buildings": 4697,
+"built": false
+},
+{
+"id": "naubasta_4",
+"title": "Naubasta 4",
+"row": -6,
+"col": 1,
+"bbox": [
+26.4076,
+80.3239,
+26.4186,
+80.3359
+],
+"center": [
+26.4131,
+80.3299
+],
+"buildings": 3235,
+"built": false
+},
+{
+"id": "kidwai_nagar_26",
+"title": "Kidwai Nagar 26",
+"row": -6,
+"col": 2,
+"bbox": [
+26.4076,
+80.3359,
+26.4186,
+80.3479
+],
+"center": [
+26.4131,
+80.3419
+],
+"buildings": 2324,
+"built": false
+},
+{
+"id": "kidwai_nagar_27",
+"title": "Kidwai Nagar 27",
+"row": -6,
+"col": 3,
+"bbox": [
+26.4076,
+80.3479,
+26.4186,
+80.3599
+],
+"center": [
+26.4131,
+80.3539
+],
+"buildings": 545,
+"built": false
+},
+{
+"id": "kidwai_nagar_28",
+"title": "Kidwai Nagar 28",
+"row": -6,
+"col": 4,
+"bbox": [
+26.4076,
+80.3599,
+26.4186,
+80.3719
+],
+"center": [
+26.4131,
+80.3659
+],
+"buildings": 2966,
+"built": false
+},
+{
+"id": "jajmau_6",
+"title": "Jajmau 6",
+"row": -6,
+"col": 5,
+"bbox": [
+26.4076,
+80.3719,
+26.4186,
+80.3839
+],
+"center": [
+26.4131,
+80.3779
+],
+"buildings": 3232,
+"built": false
+},
+{
+"id": "jajmau_7",
+"title": "Jajmau 7",
+"row": -6,
+"col": 6,
+"bbox": [
+26.4076,
+80.3839,
+26.4186,
+80.3959
+],
+"center": [
+26.4131,
+80.3899
+],
+"buildings": 3588,
+"built": false
+},
+{
+"id": "jajmau_8",
+"title": "Jajmau 8",
+"row": -6,
+"col": 7,
+"bbox": [
+26.4076,
+80.3959,
+26.4186,
+80.4079
+],
+"center": [
+26.4131,
+80.4019
+],
+"buildings": 2590,
+"built": false
+},
+{
+"id": "jajmau_9",
+"title": "Jajmau 9",
+"row": -6,
+"col": 8,
+"bbox": [
+26.4076,
+80.4079,
+26.4186,
+80.4199
+],
+"center": [
+26.4131,
+80.4139
+],
+"buildings": 1283,
+"built": false
+},
+{
+"id": "jajmau_10",
+"title": "Jajmau 10",
+"row": -6,
+"col": 9,
+"bbox": [
+26.4076,
+80.4199,
+26.4186,
+80.4319
+],
+"center": [
+26.4131,
+80.4259
+],
+"buildings": 741,
+"built": false
+},
+{
+"id": "kanpur_grid_s6_e13",
+"title": "Kanpur grid S6 E13",
+"row": -6,
+"col": 13,
+"bbox": [
+26.4076,
+80.4679,
+26.4186,
+80.4799
+],
+"center": [
+26.4131,
+80.4739
+],
+"buildings": 554,
+"built": false
+},
+{
+"id": "kanpur_grid_s7_w2",
+"title": "Kanpur grid S7 W2",
+"row": -7,
+"col": -2,
+"bbox": [
+26.3966,
+80.2879,
+26.4076,
+80.2999
+],
+"center": [
+26.4021,
+80.2939
+],
+"buildings": 1108,
+"built": false
+},
+{
+"id": "naubasta_5",
+"title": "Naubasta 5",
+"row": -7,
+"col": -1,
+"bbox": [
+26.3966,
+80.2999,
+26.4076,
+80.3119
+],
+"center": [
+26.4021,
+80.3059
+],
+"buildings": 4320,
+"built": false
+},
+{
+"id": "naubasta_6",
+"title": "Naubasta 6",
+"row": -7,
+"col": 0,
+"bbox": [
+26.3966,
+80.3119,
+26.4076,
+80.3239
+],
+"center": [
+26.4021,
+80.3179
+],
+"buildings": 3861,
+"built": false
+},
+{
+"id": "naubasta_7",
+"title": "Naubasta 7",
+"row": -7,
+"col": 1,
+"bbox": [
+26.3966,
+80.3239,
+26.4076,
+80.3359
+],
+"center": [
+26.4021,
+80.3299
+],
+"buildings": 5078,
+"built": false
+},
+{
+"id": "naubasta_8",
+"title": "Naubasta 8",
+"row": -7,
+"col": 2,
+"bbox": [
+26.3966,
+80.3359,
+26.4076,
+80.3479
+],
+"center": [
+26.4021,
+80.3419
+],
+"buildings": 4731,
+"built": false
+},
+{
+"id": "naubasta_9",
+"title": "Naubasta 9",
+"row": -7,
+"col": 3,
+"bbox": [
+26.3966,
+80.3479,
+26.4076,
+80.3599
+],
+"center": [
+26.4021,
+80.3539
+],
+"buildings": 3762,
+"built": false
+},
+{
+"id": "jajmau_11",
+"title": "Jajmau 11",
+"row": -7,
+"col": 4,
+"bbox": [
+26.3966,
+80.3599,
+26.4076,
+80.3719
+],
+"center": [
+26.4021,
+80.3659
+],
+"buildings": 3422,
+"built": false
+},
+{
+"id": "jajmau_12",
+"title": "Jajmau 12",
+"row": -7,
+"col": 5,
+"bbox": [
+26.3966,
+80.3719,
+26.4076,
+80.3839
+],
+"center": [
+26.4021,
+80.3779
+],
+"buildings": 4184,
+"built": false
+},
+{
+"id": "jajmau_13",
+"title": "Jajmau 13",
+"row": -7,
+"col": 6,
+"bbox": [
+26.3966,
+80.3839,
+26.4076,
+80.3959
+],
+"center": [
+26.4021,
+80.3899
+],
+"buildings": 1936,
+"built": false
+},
+{
+"id": "jajmau_14",
+"title": "Jajmau 14",
+"row": -7,
+"col": 7,
+"bbox": [
+26.3966,
+80.3959,
+26.4076,
+80.4079
+],
+"center": [
+26.4021,
+80.4019
+],
+"buildings": 1798,
+"built": false
+},
+{
+"id": "jajmau_15",
+"title": "Jajmau 15",
+"row": -7,
+"col": 8,
+"bbox": [
+26.3966,
+80.4079,
+26.4076,
+80.4199
+],
+"center": [
+26.4021,
+80.4139
+],
+"buildings": 640,
+"built": false
+},
+{
+"id": "kanpur_grid_s8_w6",
+"title": "Kanpur grid S8 W6",
+"row": -8,
+"col": -6,
+"bbox": [
+26.3856,
+80.2399,
+26.3966,
+80.2519
+],
+"center": [
+26.3911,
+80.2459
+],
+"buildings": 526,
+"built": false
+},
+{
+"id": "naubasta_10",
+"title": "Naubasta 10",
+"row": -8,
+"col": -1,
+"bbox": [
+26.3856,
+80.2999,
+26.3966,
+80.3119
+],
+"center": [
+26.3911,
+80.3059
+],
+"buildings": 3293,
+"built": false
+},
+{
+"id": "naubasta_11",
+"title": "Naubasta 11",
+"row": -8,
+"col": 0,
+"bbox": [
+26.3856,
+80.3119,
+26.3966,
+80.3239
+],
+"center": [
+26.3911,
+80.3179
+],
+"buildings": 3720,
+"built": false
+},
+{
+"id": "jajmau_16",
+"title": "Jajmau 16",
+"row": -8,
+"col": 1,
+"bbox": [
+26.3856,
+80.3239,
+26.3966,
+80.3359
+],
+"center": [
+26.3911,
+80.3299
+],
+"buildings": 2312,
+"built": false
+},
+{
+"id": "naubasta_12",
+"title": "Naubasta 12",
+"row": -8,
+"col": 2,
+"bbox": [
+26.3856,
+80.3359,
+26.3966,
+80.3479
+],
+"center": [
+26.3911,
+80.3419
+],
+"buildings": 2152,
+"built": false
+},
+{
+"id": "jajmau_17",
+"title": "Jajmau 17",
+"row": -8,
+"col": 3,
+"bbox": [
+26.3856,
+80.3479,
+26.3966,
+80.3599
+],
+"center": [
+26.3911,
+80.3539
+],
+"buildings": 1753,
+"built": false
+},
+{
+"id": "jajmau_18",
+"title": "Jajmau 18",
+"row": -8,
+"col": 4,
+"bbox": [
+26.3856,
+80.3599,
+26.3966,
+80.3719
+],
+"center": [
+26.3911,
+80.3659
+],
+"buildings": 1518,
+"built": false
+},
+{
+"id": "jajmau_19",
+"title": "Jajmau 19",
+"row": -8,
+"col": 5,
+"bbox": [
+26.3856,
+80.3719,
+26.3966,
+80.3839
+],
+"center": [
+26.3911,
+80.3779
+],
+"buildings": 2689,
+"built": false
+},
+{
+"id": "jajmau_20",
+"title": "Jajmau 20",
+"row": -8,
+"col": 6,
+"bbox": [
+26.3856,
+80.3839,
+26.3966,
+80.3959
+],
+"center": [
+26.3911,
+80.3899
+],
+"buildings": 986,
+"built": false
+},
+{
+"id": "jajmau_21",
+"title": "Jajmau 21",
+"row": -8,
+"col": 7,
+"bbox": [
+26.3856,
+80.3959,
+26.3966,
+80.4079
+],
+"center": [
+26.3911,
+80.4019
+],
+"buildings": 2690,
+"built": false
+},
+{
+"id": "jajmau_22",
+"title": "Jajmau 22",
+"row": -8,
+"col": 8,
+"bbox": [
+26.3856,
+80.4079,
+26.3966,
+80.4199
+],
+"center": [
+26.3911,
+80.4139
+],
+"buildings": 1397,
+"built": false
+},
+{
+"id": "jajmau_23",
+"title": "Jajmau 23",
+"row": -8,
+"col": 10,
+"bbox": [
+26.3856,
+80.4319,
+26.3966,
+80.4439
+],
+"center": [
+26.3911,
+80.4379
+],
+"buildings": 705,
+"built": false
+},
+{
+"id": "kanpur_grid_s9_w1",
+"title": "Kanpur grid S9 W1",
+"row": -9,
+"col": -1,
+"bbox": [
+26.3746,
+80.2999,
+26.3856,
+80.3119
+],
+"center": [
+26.3801,
+80.3059
+],
+"buildings": 1627,
+"built": false
+},
+{
+"id": "kanpur_grid_s9_e0",
+"title": "Kanpur grid S9 E0",
+"row": -9,
+"col": 0,
+"bbox": [
+26.3746,
+80.3119,
+26.3856,
+80.3239
+],
+"center": [
+26.3801,
+80.3179
+],
+"buildings": 2206,
+"built": false
+},
+{
+"id": "jajmau_24",
+"title": "Jajmau 24",
+"row": -9,
+"col": 1,
+"bbox": [
+26.3746,
+80.3239,
+26.3856,
+80.3359
+],
+"center": [
+26.3801,
+80.3299
+],
+"buildings": 729,
+"built": false
+},
+{
+"id": "jajmau_25",
+"title": "Jajmau 25",
+"row": -9,
+"col": 3,
+"bbox": [
+26.3746,
+80.3479,
+26.3856,
+80.3599
+],
+"center": [
+26.3801,
+80.3539
+],
+"buildings": 590,
+"built": false
+},
+{
+"id": "jajmau_26",
+"title": "Jajmau 26",
+"row": -9,
+"col": 5,
+"bbox": [
+26.3746,
+80.3719,
+26.3856,
+80.3839
+],
+"center": [
+26.3801,
+80.3779
+],
+"buildings": 1463,
+"built": false
+},
+{
+"id": "jajmau_27",
+"title": "Jajmau 27",
+"row": -9,
+"col": 6,
+"bbox": [
+26.3746,
+80.3839,
+26.3856,
+80.3959
+],
+"center": [
+26.3801,
+80.3899
+],
+"buildings": 867,
+"built": false
+},
+{
+"id": "jajmau_28",
+"title": "Jajmau 28",
+"row": -9,
+"col": 7,
+"bbox": [
+26.3746,
+80.3959,
+26.3856,
+80.4079
+],
+"center": [
+26.3801,
+80.4019
+],
+"buildings": 539,
+"built": false
+},
+{
+"id": "jajmau_29",
+"title": "Jajmau 29",
+"row": -9,
+"col": 8,
+"bbox": [
+26.3746,
+80.4079,
+26.3856,
+80.4199
+],
+"center": [
+26.3801,
+80.4139
+],
+"buildings": 1555,
+"built": false
+},
+{
+"id": "kanpur_grid_s10_w2",
+"title": "Kanpur grid S10 W2",
+"row": -10,
+"col": -2,
+"bbox": [
+26.3636,
+80.2879,
+26.3746,
+80.2999
+],
+"center": [
+26.3691,
+80.2939
+],
+"buildings": 508,
+"built": false
+},
+{
+"id": "kanpur_grid_s10_w1",
+"title": "Kanpur grid S10 W1",
+"row": -10,
+"col": -1,
+"bbox": [
+26.3636,
+80.2999,
+26.3746,
+80.3119
+],
+"center": [
+26.3691,
+80.3059
+],
+"buildings": 766,
+"built": false
+},
+{
+"id": "jajmau_30",
+"title": "Jajmau 30",
+"row": -10,
+"col": 1,
+"bbox": [
+26.3636,
+80.3239,
+26.3746,
+80.3359
+],
+"center": [
+26.3691,
+80.3299
+],
+"buildings": 534,
+"built": false
+},
+{
+"id": "jajmau_31",
+"title": "Jajmau 31",
+"row": -10,
+"col": 4,
+"bbox": [
+26.3636,
+80.3599,
+26.3746,
+80.3719
+],
+"center": [
+26.3691,
+80.3659
+],
+"buildings": 586,
+"built": false
+},
+{
+"id": "jajmau_32",
+"title": "Jajmau 32",
+"row": -10,
+"col": 8,
+"bbox": [
+26.3636,
+80.4079,
+26.3746,
+80.4199
+],
+"center": [
+26.3691,
+80.4139
+],
+"buildings": 688,
+"built": false
+},
+{
+"id": "jajmau_33",
+"title": "Jajmau 33",
+"row": -10,
+"col": 9,
+"bbox": [
+26.3636,
+80.4199,
+26.3746,
+80.4319
+],
+"center": [
+26.3691,
+80.4259
+],
+"buildings": 835,
+"built": false
+},
+{
+"id": "jajmau_34",
+"title": "Jajmau 34",
+"row": -10,
+"col": 11,
+"bbox": [
+26.3636,
+80.4439,
+26.3746,
+80.4559
+],
+"center": [
+26.3691,
+80.4499
+],
+"buildings": 656,
+"built": false
+},
+{
+"id": "jajmau_35",
+"title": "Jajmau 35",
+"row": -10,
+"col": 12,
+"bbox": [
+26.3636,
+80.4559,
+26.3746,
+80.4679
+],
+"center": [
+26.3691,
+80.4619
+],
+"buildings": 616,
+"built": false
+}
+]
+}

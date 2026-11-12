@@ -41,6 +41,19 @@
     .status { color: #2e7d32; min-height: 1.4em; }
     .status.err { color: #b3261e; }
     .link { border: 0; background: none; padding: 0; color: #b5480a; text-decoration: underline; }
+    .part-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .part-tools input[type=search] { flex: 1; min-width: 160px; padding: 9px 12px; border: 1px solid #cfc5b4; border-radius: 8px; font: inherit; background: #fff; }
+    .part-tools button { padding: 8px 12px; border-radius: 8px; border: 1px solid #d8cfc1; background: #fff; color: #2a241e; }
+    .part-tools button:hover { background: #f0e9dd; }
+    .part-list { max-height: 460px; overflow: auto; border: 1px solid #e4dccf; border-radius: 10px; background: #fff; }
+    .part { display: grid; grid-template-columns: 24px 1fr auto auto; gap: 10px; align-items: center; padding: 9px 12px; border-top: 1px solid #efe8da; font-size: 14px; }
+    .part:first-child { border-top: 0; }
+    .part input { width: 18px; height: 18px; accent-color: #d9621a; }
+    .part .meta { color: #7a6e62; font-size: 12px; }
+    .chip { padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e6f2e6; color: #1f6a2a; }
+    .chip.no { background: #f0e9dd; color: #7a6e62; }
+    .part.unbuilt { color: #8a7e70; }
+    .part code { font-size: 11px; background: #f3eee4; padding: 1px 5px; border-radius: 4px; }
     .note { font-size: 13px; color: #6f6357; margin: 0; }
     /* login */
     #login { max-width: 360px; margin: 12vh auto 0; padding: 0 16px; }
@@ -90,6 +103,22 @@
         <span class="status" id="status" role="status"></span>
         <button class="link" id="reset-all" type="button">Reset everything to default</button>
       </div>
+    </section>
+    <section class="card" id="card-parts">
+      <h2>Parts of Kanpur</h2>
+      <p>The city is divided into parts, each the size of Moti Jheel. Open a part so players can travel to it (menu → Places).
+        A part can only be opened once its map data is built.</p>
+      <div class="part-tools">
+        <input type="search" id="part-search" placeholder="Search parts" aria-label="Search parts" />
+        <button type="button" id="open-built">Open all built</button>
+        <button type="button" id="close-all">Close all but Moti Jheel</button>
+      </div>
+      <div class="part-list" id="part-list" role="group" aria-label="Parts"></div>
+      <div class="foot">
+        <span class="status" id="part-status" role="status"></span>
+        <button class="link" id="export-parts" type="button">Download parts.json (to publish the open parts for everyone)</button>
+      </div>
+      <p class="note" id="part-count"></p>
     </section>
     <p class="note">Changes save automatically and apply straight away to a game open in this browser.
       Phones and tablets show half the crowd. Settings are stored in this browser only.</p>

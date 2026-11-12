@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "map": "python3 tools/osm/convert.py --area moti_jheel"
+    "map": "python3 tools/osm/convert.py --area moti_jheel",
+    "parts": ".venv/bin/python tools/osm/make_parts.py --reuse-counts",
+    "part": ".venv/bin/python tools/osm/build_part.py"
   },
   "dependencies": {
     "three": "0.186.1"

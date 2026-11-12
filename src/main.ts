@@ -19,6 +19,8 @@ import { MapData, project } from './world/types';
 import { LightPool, NIGHT, updateGlow } from './world/night';
 import { Controls } from './game/controls';
 import { Mela } from './world/mela';
+import { Vendors } from './world/vendors';
+import { HOME, loadManifest, playable } from './game/parts';
 import { TEAR } from './world/melaSite';
 
 /*
@@ -35,10 +37,14 @@ import { TEAR } from './world/melaSite';
  window.__ready is set once the first frame has rendered (for screenshot scripts).
 */
 const params = new URLSearchParams(location.search);
-const AREA = params.get('area') ?? 'moti_jheel';
 
 async function main() {
   const status = document.getElementById('status')!;
+  // which part of Kanpur: ?area=<id>, if the admin has opened it and its data is built; otherwise home (Moti Jheel)
+  const manifest = await loadManifest();
+  const open = new Set(playable(manifest).map((p) => p.id));
+  let AREA = params.get('area') ?? HOME;
+  if (AREA !== HOME && !open.has(AREA)) AREA = HOME;
   const map: MapData = await (await fetch(`data/${AREA}/map.json`)).json();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('cam') || params.has('at') });
@@ -97,10 +103,13 @@ async function main() {
   const world = new CollisionWorld(map);
   for (const [x, z] of city.pillars) world.addPost(x, z, 0.9);
   for (const [x, z, r] of detail.obstacles) world.addPost(x, z, r);
-  const mela = new Mela(map, NIGHT ? lightPool : null, desktop);
-  scene.add(mela.group);
-  for (const [x, z, r] of mela.posts) world.addPost(x, z, r);
-  for (const ring of mela.walls) world.addWall(ring, 3.4);
+  // the mela is part of the Moti Jheel map only (its coordinates are fixed to Tulsi Upvan)
+  const mela = map.area === 'moti_jheel' ? new Mela(map, NIGHT ? lightPool : null, desktop) : null;
+  if (mela) {
+    scene.add(mela.group);
+    for (const [x, z, r] of mela.posts) world.addPost(x, z, r);
+    for (const ring of mela.walls) world.addWall(ring, 3.4);
+  }
   const landmarks = new Landmarks(map);
   scene.add(landmarks.group);
   for (const [x, z, r] of landmarks.posts) world.addPost(x, z, r);
@@ -124,7 +133,7 @@ async function main() {
   const stats = new Stats(city.roadPoints);
   let paused = false;
   const menu = new Menu({
-    map, hud, stats, controls,
+    map, hud, stats, controls, area: AREA, parts: playable(manifest),
     player: () => ({ x: ramu.position.x, z: ramu.position.z, yaw: ramu.yaw }),
     onPause: (p) => {
       paused = p;
@@ -159,6 +168,11 @@ async function main() {
   const stalls = await makeStalls(map, occupied, solid, best);
   scene.add(stalls.mesh);
   for (const [x, z, r] of stalls.posts) world.addPost(x, z, r);
+  const vendors = new Vendors(map, occupied, [...solid, ...stalls.posts], NIGHT ? lightPool : null, desktop);
+  scene.add(vendors.group);
+  for (const [x, z, r] of vendors.posts) world.addPost(x, z, r);
+  console.log('street life', vendors.stats);
+  if (params.has('debug')) (window as unknown as { __vendors: Vendors }).__vendors = vendors;   // for test scripts
   console.log('props', { stalls: stalls.posts.length, traffic: !!traffic });
   ramu.yaw = params.get('spawn') === 'mela' ? -Math.PI / 2 : Math.atan2(best[0] - m[0], best[1] - m[1]); // camera looks toward the metro (or into the mela)
 
@@ -236,7 +250,7 @@ async function main() {
       const l = Math.hypot(lookDir.x, lookDir.z) || 1;
       const who: [number, number] = fixed ? [Infinity, Infinity] : [focus.x, focus.z];
       peds.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
-      mela.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
+      mela?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
       traffic?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
       if (traffic && !fixed) [ramu.position.x, ramu.position.z] = traffic.pushOut(ramu.position.x, ramu.position.z, 0.35);
     }

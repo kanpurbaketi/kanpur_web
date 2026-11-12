@@ -1,5 +1,6 @@
 import { DEFAULTS, LIMITS, Settings, loadSettings, onSettingsChange, saveSettings } from '../game/settings';
 import { skinSwatch } from '../game/skin';
+import { HOME, loadManifest, openIds, saveOpen, type Manifest } from '../game/parts';
 
 /*
  Admin portal: a sign-in gate, then the settings the game reads (crowd, Ramu's skin tone and speeds).
@@ -197,3 +198,60 @@ $('reset-all').addEventListener('click', () => {
 onSettingsChange(showAll); // another admin tab changed something
 showAll(loadSettings());
 gate();
+
+// ---- parts of Kanpur ----------------------------------------------------------------------------------
+
+async function parts(): Promise<void> {
+  const m: Manifest = await loadManifest();
+  const list = $('part-list'), search = $('part-search') as HTMLInputElement, st = $('part-status');
+  let open = new Set(openIds(m));
+  const say = (t: string, err = false) => { st.textContent = t; st.classList.toggle('err', err); };
+  const persist = () => say(saveOpen([...open]) ? 'Saved' : 'Could not save: this browser is blocking storage.', false);
+  const sorted = [...m.parts].sort((a, b) => (a.id === HOME ? -1 : b.id === HOME ? 1 : b.buildings - a.buildings));
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    list.replaceChildren();
+    for (const p of sorted) {
+      if (q && !p.title.toLowerCase().includes(q) && !p.id.includes(q)) continue;
+      const row = document.createElement('label');
+      row.className = 'part' + (p.built ? '' : ' unbuilt');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = open.has(p.id);
+      cb.disabled = !p.built || p.id === HOME;
+      cb.setAttribute('aria-label', `Open ${p.title}`);
+      cb.addEventListener('change', () => { cb.checked ? open.add(p.id) : open.delete(p.id); persist(); count(); });
+      const name = document.createElement('span');
+      name.textContent = p.title;
+      const meta = document.createElement('span');
+      meta.className = 'meta';
+      meta.innerHTML = p.built ? `${p.buildings.toLocaleString()} buildings` : `build: <code>build_part.py ${p.id}</code>`;
+      const chip = document.createElement('span');
+      chip.className = 'chip' + (p.built ? '' : ' no');
+      chip.textContent = p.built ? 'Built' : 'Not built';
+      row.append(cb, name, meta, chip);
+      list.append(row);
+    }
+    if (!list.children.length) list.textContent = 'No parts match.';
+  };
+  const count = () => {
+    const built = m.parts.filter((p) => p.built).length;
+    $('part-count').textContent = `${m.parts.length} parts in the grid · ${built} built · ${[...open].filter((id) => m.parts.some((p) => p.id === id && p.built)).length} open. ` +
+      'Build more with: .venv/bin/python tools/osm/build_part.py --all';
+  };
+  search.addEventListener('input', draw);
+  $('open-built').addEventListener('click', () => { open = new Set(m.parts.filter((p) => p.built).map((p) => p.id)); persist(); draw(); count(); });
+  $('close-all').addEventListener('click', () => { open = new Set([HOME]); persist(); draw(); count(); });
+  $('export-parts').addEventListener('click', () => {
+    const out = { ...m, parts: m.parts.map((p) => ({ ...p, open: open.has(p.id) })) };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 0)], { type: 'application/json' }));
+    a.download = 'parts.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    say('Put the downloaded file at public/data/parts.json and rebuild to publish it.');
+  });
+  draw();
+  count();
+}
+void parts();

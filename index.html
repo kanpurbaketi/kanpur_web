@@ -50,6 +50,13 @@
       background: #f7f3ec; color: #2a241e; box-shadow: 0 16px 48px rgba(0,0,0,.4); box-sizing: border-box; }
     .menu-panel[data-item="map"] { width: min(900px, 100%); }
     .menu-panel[data-item="controls"] { width: min(640px, 100%); }
+    .place-search { width: 100%; padding: 10px 12px; border: 1px solid #cfc5b4; border-radius: 8px; font: inherit; background: #fff; margin-bottom: 10px; }
+    .place-list { display: grid; gap: 6px; max-height: min(52vh, 420px); overflow: auto; }
+    .place-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 11px 14px;
+      border: 1px solid #e0d7c8; border-radius: 10px; background: #fff; color: #2b2520; font: 600 14px system-ui, sans-serif; cursor: pointer; text-align: left; }
+    .place-row:hover:not(:disabled) { border-color: #f2992a; background: #fff6e8; }
+    .place-row:disabled { background: #f0e9dd; color: #7a6e62; cursor: default; }
+    .place-meta { font-weight: 400; font-size: 12px; color: #7a6e62; }
     .ctl-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 16px; }
     .ctl-table th { text-align: left; font-weight: 600; font-size: 12px; color: #7a6e62; padding: 0 6px 8px 0; }
     .ctl-table td { padding: 4px 6px 4px 0; border-top: 1px solid #ebe4d8; }

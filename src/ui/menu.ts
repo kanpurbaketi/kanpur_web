@@ -1,17 +1,21 @@
 import { Stats } from '../game/stats';
+import type { Part } from '../game/parts';
 import { ACTIONS, Action, Controls, DEFAULTS, label } from '../game/controls';
 import { MapData, P2, centroid } from '../world/types';
 import { Hud, PX_PER_M } from './hud';
 
 const PROFILE_KEY = 'kanpur.profile.v1';
-type Item = 'profile' | 'map' | 'stats' | 'controls';
-const TITLES: Record<Item, string> = { profile: 'Profile', map: 'Map', stats: 'Statistics', controls: 'Controls' };
+type Item = 'profile' | 'map' | 'places' | 'stats' | 'controls';
+const TITLES: Record<Item, string> = { profile: 'Profile', map: 'Map', places: 'Places', stats: 'Statistics', controls: 'Controls' };
 
 export interface MenuDeps {
   map: MapData;
   hud: Hud;
   stats: Stats;
   controls: Controls;
+  /** the part of Kanpur that is loaded, and the parts a player may go to (open and built) */
+  area: string;
+  parts: Part[];
   player: () => { x: number; z: number; yaw: number };
   /** called when a panel opens / closes, so the game can pause */
   onPause: (paused: boolean) => void;
@@ -94,6 +98,7 @@ export class Menu {
     if (it === 'profile') this.renderProfile();
     else if (it === 'map') this.renderMap();
     else if (it === 'controls') this.renderControls();
+    else if (it === 'places') this.renderPlaces();
     else this.renderStats();
   }
 
@@ -273,6 +278,42 @@ export class Menu {
     g.fillText(bar >= 1000 ? `${bar / 1000} km` : `${bar} m`, 12, H - 26);
   }
 
+  // ---------- Places ----------
+  /** The parts of Kanpur the admin has opened. Going to one reloads the game with that map. */
+  private renderPlaces(): void {
+    const parts = [...this.d.parts].sort((a, b) => a.title.localeCompare(b.title));
+    const search = el('input', 'place-search') as HTMLInputElement;
+    search.type = 'search';
+    search.placeholder = 'Search places';
+    search.setAttribute('aria-label', 'Search places');
+    const list = el('div', 'place-list');
+    const draw = () => {
+      const q = search.value.trim().toLowerCase();
+      list.replaceChildren();
+      for (const p of parts) {
+        if (q && !p.title.toLowerCase().includes(q)) continue;
+        const here = p.id === this.d.area;
+        const b = el('button', 'place-row');
+        b.disabled = here;
+        b.innerHTML = `<span class="place-name"></span><span class="place-meta"></span>`;
+        (b.querySelector('.place-name') as HTMLElement).textContent = p.title;
+        (b.querySelector('.place-meta') as HTMLElement).textContent = here ? 'You are here' : p.buildings ? `${p.buildings.toLocaleString()} buildings` : 'Go';
+        b.addEventListener('click', () => {
+          const u = new URL(location.href);
+          u.searchParams.set('area', p.id);
+          for (const k of ['spawn', 'cam', 'at']) u.searchParams.delete(k);
+          location.href = u.toString();
+        });
+        list.append(b);
+      }
+      if (!list.children.length) list.append(text('p', 'No places match.', 'muted'));
+    };
+    search.addEventListener('input', draw);
+    draw();
+    const note = text('p', parts.length > 1 ? 'Places open to play. Going to one reloads the game there.' : 'Only Moti Jheel is open for now.', 'muted');
+    this.body.append(search, list, note);
+  }
+
   // ---------- Controls ----------
   /** The key bindings: current keys (click one, then press the new key), the defaults for reference, a reset button. */
   private renderControls(): void {
@@ -445,5 +486,6 @@ const ICONS: Record<Item, string> = {
   profile: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>'),
   map: svg('<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/>'),
   stats: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+  places: svg('<path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>'),
   controls: svg('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>'),
 };

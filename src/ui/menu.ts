@@ -16,6 +16,8 @@ export interface MenuDeps {
   /** the part of Kanpur that is loaded, and the parts a player may go to (open and built) */
   area: string;
   parts: Part[];
+  /** every part of Kanpur, open or not (the city map greys out the unopened ones) */
+  allParts: Part[];
   player: () => { x: number; z: number; yaw: number };
   /** called when a panel opens / closes, so the game can pause */
   onPause: (paused: boolean) => void;
@@ -33,6 +35,7 @@ export class Menu {
   private title = el('h2');
   private body = el('div', 'menu-body');
   private open: Item | null = null;
+  private cityView = true; // map shows the whole of Kanpur (greyed) until switched to the local street map
   private mapView = { cx: 0, cz: 0, scale: 0 }; // metres at panel centre, canvas px per metre
 
   constructor(private d: MenuDeps) {
@@ -163,9 +166,14 @@ export class Menu {
       draw();
     });
     const zoom = (k: number) => {
+      if (this.cityView) return;
       this.mapView.scale = Math.max(fit(), Math.min(6, this.mapView.scale * k));
       draw();
     };
+    mk('▦', 'Switch between the whole city and the local map', () => {
+      this.cityView = !this.cityView;
+      draw();
+    });
     mk('+', 'Zoom in', () => zoom(1.5));
     mk('−', 'Zoom out', () => zoom(1 / 1.5));
     mk('◎', 'Centre on me', () => {
@@ -186,13 +194,24 @@ export class Menu {
     // drag to pan (mouse and touch), pinch to zoom
     const pts = new Map<number, { x: number; y: number }>();
     let pinch = 0;
+    canvas.addEventListener('click', (e) => {
+      if (!this.cityView) return;
+      const r = canvas.getBoundingClientRect();
+      const hit = this.cityHit(canvas, e.clientX - r.left, e.clientY - r.top);
+      if (!hit || hit.id === this.d.area) return;
+      const u = new URL(location.href);
+      u.searchParams.set('area', hit.id);
+      for (const k of ['spawn', 'cam', 'at']) u.searchParams.delete(k);
+      location.href = u.toString();
+    });
     canvas.addEventListener('pointerdown', (e) => {
+      if (this.cityView) return;
       canvas.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     });
     canvas.addEventListener('pointermove', (e) => {
       const prev = pts.get(e.pointerId);
-      if (!prev) return;
+      if (!prev || this.cityView) return;
       if (pts.size === 1) {
         this.mapView.cx -= (e.clientX - prev.x) / this.mapView.scale;
         this.mapView.cz -= (e.clientY - prev.y) / this.mapView.scale;
@@ -214,7 +233,84 @@ export class Menu {
     canvas.addEventListener('pointercancel', up);
   }
 
+  /** lat/lon -> canvas px for the whole-city view (plain equirectangular, fitted to all parts) */
+  private cityProj(canvas: HTMLCanvasElement) {
+    const all = this.d.allParts;
+    const s = Math.min(...all.map((p) => p.bbox[0])), n = Math.max(...all.map((p) => p.bbox[2]));
+    const w = Math.min(...all.map((p) => p.bbox[1])), e = Math.max(...all.map((p) => p.bbox[3]));
+    const kx = Math.cos(((s + n) / 2) * Math.PI / 180);
+    const W = canvas.clientWidth, H = canvas.clientHeight, pad = 26;
+    const k = Math.min((W - 2 * pad) / ((e - w) * kx), (H - 2 * pad) / (n - s));
+    const ox = (W - (e - w) * kx * k) / 2, oy = (H - (n - s) * k) / 2;
+    return { x: (lon: number) => ox + (lon - w) * kx * k, y: (lat: number) => oy + (n - lat) * k };
+  }
+
+  private cityHit(canvas: HTMLCanvasElement, px: number, py: number): Part | null {
+    const pr = this.cityProj(canvas);
+    const open = new Set(this.d.parts.map((p) => p.id));
+    for (const p of this.d.allParts) {
+      if (!open.has(p.id)) continue;
+      if (px >= pr.x(p.bbox[1]) && px <= pr.x(p.bbox[3]) && py >= pr.y(p.bbox[2]) && py <= pr.y(p.bbox[0])) return p;
+    }
+    return null;
+  }
+
+  /** The whole of Kanpur as a grid of boxes: only the opened parts are coloured, the rest are greyed out. */
+  private drawCity(canvas: HTMLCanvasElement): void {
+    const g = canvas.getContext('2d')!;
+    const dpr = canvas.width / (canvas.clientWidth || 1);
+    const W = canvas.clientWidth, H = canvas.clientHeight;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = '#c9c6bf';
+    g.fillRect(0, 0, W, H);
+    const pr = this.cityProj(canvas);
+    const open = new Set(this.d.parts.map((p) => p.id));
+    const box = (p: Part) => [pr.x(p.bbox[1]), pr.y(p.bbox[2]), pr.x(p.bbox[3]) - pr.x(p.bbox[1]), pr.y(p.bbox[0]) - pr.y(p.bbox[2])] as const;
+    for (const p of this.d.allParts) {
+      const [x, y, w, h] = box(p);
+      g.fillStyle = '#b4b1aa';
+      g.fillRect(x, y, w, h);
+      g.strokeStyle = '#9d9a93';
+      g.lineWidth = 0.5;
+      g.strokeRect(x + 0.25, y + 0.25, w - 0.5, h - 0.5);
+    }
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    for (const p of this.d.allParts) {
+      if (!open.has(p.id)) continue;
+      const [x, y, w, h] = box(p);
+      g.fillStyle = p.id === this.d.area ? '#f2a65a' : '#8fbf7a';
+      g.fillRect(x, y, w, h);
+      g.strokeStyle = '#7a3a05';
+      g.lineWidth = 2;
+      g.strokeRect(x, y, w, h);
+      g.font = '700 12px system-ui, sans-serif';
+      g.lineWidth = 3;
+      g.strokeStyle = 'rgba(255,255,255,.9)';
+      g.strokeText(p.title, x + w / 2, y - 9);
+      g.fillStyle = '#3a1d02';
+      g.fillText(p.title, x + w / 2, y - 9);
+    }
+    const me = this.d.player();
+    const [lat0, lon0] = this.d.map.origin_latlon;
+    const lat = lat0 - me.z / 111320, lon = lon0 + me.x / (111320 * Math.cos(lat0 * Math.PI / 180));
+    g.fillStyle = '#e8590c';
+    g.strokeStyle = '#fff';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(pr.x(lon), pr.y(lat), 5, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    g.fillStyle = '#222';
+    g.font = 'bold 13px system-ui';
+    g.fillText('N ↑', W - 22, 16);
+    g.textAlign = 'left';
+    g.font = '11px system-ui';
+    g.fillText('Kanpur. Greyed parts are not open yet. ▦ switches to the local map.', 12, H - 12);
+  }
+
   private drawMap(canvas: HTMLCanvasElement): void {
+    if (this.cityView) { this.drawCity(canvas); return; }
     const g = canvas.getContext('2d')!;
     const dpr = canvas.width / (canvas.clientWidth || 1);
     const W = canvas.clientWidth, H = canvas.clientHeight;

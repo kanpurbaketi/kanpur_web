@@ -133,7 +133,7 @@ async function main() {
   const stats = new Stats(city.roadPoints);
   let paused = false;
   const menu = new Menu({
-    map, hud, stats, controls, area: AREA, parts: playable(manifest),
+    map, hud, stats, controls, area: AREA, parts: playable(manifest), allParts: manifest.parts,
     player: () => ({ x: ramu.position.x, z: ramu.position.z, yaw: ramu.yaw }),
     onPause: (p) => {
       paused = p;

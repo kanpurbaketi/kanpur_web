@@ -89,13 +89,14 @@ def stage_overture(m, only):
 
 
 # ---------------------------------------------------------------- osm
-def query_block(bbox):
+def query_block(bbox, first=0):
     s, w, n, e = bbox
     q = fetch_osm.QUERY.replace("{b}", "%f,%f,%f,%f" % (s, w, n, e))
     data = urllib.parse.urlencode({"data": q}).encode()
     last = None
     for attempt in range(3):
-        for url in fetch_osm.ENDPOINTS:
+        order = fetch_osm.ENDPOINTS[first:] + fetch_osm.ENDPOINTS[:first]   # each worker starts on its own server
+        for url in order:
             try:
                 print("  querying", url, flush=True)
                 return json.loads(fetch_osm._post(url, data))
@@ -136,20 +137,28 @@ def stage_osm(m, only, block):
     for p in todo:
         groups.setdefault((p["row"] // block, p["col"] // block), []).append(p)
     print("osm: %d parts in %d blocks" % (len(todo), len(groups)))
-    for gi, (key, ps) in enumerate(sorted(groups.items())):
+    from concurrent.futures import ThreadPoolExecutor
+    items = sorted(groups.items())
+
+    def work(args):
+        gi, (key, ps), first = args
         bbox = [min(p["bbox"][0] for p in ps), min(p["bbox"][1] for p in ps), max(p["bbox"][2] for p in ps), max(p["bbox"][3] for p in ps)]
-        print("block %s (%d/%d): %d parts" % (key, gi + 1, len(groups), len(ps)), flush=True)
+        print("block %s (%d/%d): %d parts" % (key, gi + 1, len(items), len(ps)), flush=True)
         try:
-            data = query_block(bbox)
+            data = query_block(bbox, first)
         except RuntimeError as ex:
-            print("  giving up on this block for now:", ex)
-            continue
+            print("  giving up on block %s for now: %s" % (key, ex), flush=True)
+            return
         els = data.get("elements", [])
         for p in ps:
             sub = filter_elements(els, p["bbox"])
             json.dump({**{k: v for k, v in data.items() if k != "elements"}, "elements": sub}, open(os.path.join(RAW, p["id"] + ".osm.json"), "w"))
-        print("  %d elements -> %d parts" % (len(els), len(ps)), flush=True)
-        time.sleep(15)   # be polite to the public Overpass servers
+        print("  block %s: %d elements -> %d parts" % (key, len(els), len(ps)), flush=True)
+        time.sleep(10)   # be polite to the public Overpass servers
+
+    workers = min(2, len(fetch_osm.ENDPOINTS))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(work, [(gi, it, gi % workers) for gi, it in enumerate(items)]))
 
 
 # ---------------------------------------------------------------- convert

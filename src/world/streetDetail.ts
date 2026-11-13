@@ -3,6 +3,8 @@ import { walkAlong } from './city';
 import { makeGroundMaterial, SURF } from './ground';
 import { MeshBuilder, offsetLines } from './meshBuilder';
 import { makeTrees } from './trees';
+import { inMela } from './melaSite';
+import { lampColor } from './lampPools';
 import { DRIVABLE, hash2, MapData, P2, pointInPoly } from './types';
 import { halos, NIGHT } from './night';
 
@@ -104,7 +106,7 @@ export class StreetDetail {
     this.addPoles(poles);
     this.addLamps(lamps);
     for (const [x, z] of lamps) this.lamps.push([x, z]);
-    this.addTrees(trees);
+    this.addTrees(map.area === 'moti_jheel' ? trees.filter(([x, z]) => !inMela(x, z, 3)) : trees);   // none inside the mela
     const wg = new THREE.BufferGeometry();
     wg.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));
     const wl = new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: '#1b1b1b' }));
@@ -161,7 +163,7 @@ export class StreetDetail {
     this.instanced(hb.build(), new THREE.MeshBasicMaterial({ color: NIGHT ? '#fff1c8' : '#e9e4c8', toneMapped: !NIGHT }), list);
     if (NIGHT && list.length) {
       const hp = halos(list.flatMap(([x, z]) => [-1.7, 1.7].map((dx) => ({
-        x: x + dx, y: 8.55, z, color: new THREE.Color('#ffc880'), size: 3.2,
+        x: x + dx, y: 8.55, z, color: new THREE.Color(lampColor(x, z)), size: 3.0,
       }))), 0.9);
       this.group.add(hp);
     }

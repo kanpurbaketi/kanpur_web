@@ -5,12 +5,15 @@ import { drapeGeo, flatUv, footGeo, forearmGeo, handGeo, headGeo, longHairGeo, s
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { faceTexture, Pedestrians } from './pedestrians';
-import { MELA, TEAR, WALL_LOOP } from './melaSite';
+import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, GATE, HINDOLA, INFLATABLE, KUAN, MELA, Rect, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
+import { buildInflatable } from './inflatable';
+import { buildMautKuan } from './mautKuan';
 import { MapData } from './types';
 
 /*
  The Moti Jheel mela, a night fair on the open ground of Tulsi Upvan:
-   rides      giant wheel, Columbus boat, chair swing (chakri), carousel (ghoda jhoola), wooden hindola
+   rides      giant wheel, Columbus boat, chair swing (chakri), carousel (ghoda jhoola), wooden hindola,
+              maut ka kuan (mautKuan.ts: bikes and cars on the wall, the crowd on the gallery)
    stage      kavi sammelan: poets on white gaddis, banner, speakers, marigold, a seated audience
    stalls     toys and balloons, chaat / jalebi, bangles, cotton candy, under strings of coloured bulbs
    crowd      people strolling the aisles (Pedestrians on a small private street graph) + the seated audience
@@ -22,7 +25,10 @@ const C = (h: string) => new THREE.Color(h);
 
 // ---- rides ----------------------------------------------------------------------------------------
 
-interface Ride { group: THREE.Group; update(t: number, dt: number): void; post: [number, number, number][]; light: [number, number, number, string] }
+interface Ride {
+  group: THREE.Group; update(t: number, dt: number): void; post: [number, number, number, number?][]; light: [number, number, number, string];
+  rails?: { ring: [number, number][]; h: number }[]; floor?: (x: number, z: number) => number | null;
+}
 
 /** Giant wheel: legs, two rims with chasing bulbs, 16 hanging cabins that stay upright. Wheel plane = the z-y plane. */
 function giantWheel(): Ride {
@@ -429,7 +435,10 @@ function clothTexture(kind: number): THREE.CanvasTexture {
 export class Mela {
   readonly group = new THREE.Group();
   /** solid circles for collision: [x, z, r] */
-  readonly posts: [number, number, number][] = [];
+  readonly posts: [number, number, number, number?][] = [];   // [x, z, r, height (default: tall)]
+  /** railings you can't climb over, and walkable surfaces such as the well's stair and gallery */
+  readonly rails: { ring: [number, number][]; h: number }[] = [];
+  readonly floors: ((x: number, z: number) => number | null)[] = [];
   /** collision rings for the boundary cloth (thin quads; none across the tear) */
   readonly walls: [number, number][][] = [];
   readonly crowd: Pedestrians;
@@ -438,11 +447,14 @@ export class Mela {
 
   constructor(map: MapData, lights: LightPool | null, desktop: boolean) {
     this.buildGround();
-    this.addRide(giantWheel(), 6, 172, Math.PI / 2, lights);
-    this.addRide(columbus(), 92, 146, 0, lights);
-    this.addRide(chairSwing(), 90, 184, 0, lights);
-    this.addRide(carousel(), 14, 208, 0, lights);
-    this.addRide(hindola(), 82, 208, 0, lights);
+    this.addRide(giantWheel(), WHEEL.x, WHEEL.z, Math.PI / 2, lights);
+    this.addRide(columbus(), COLUMBUS.x, COLUMBUS.z, 0, lights);
+    this.addRide(chairSwing(), CHAIR_SWING.x, CHAIR_SWING.z, 0, lights);
+    this.addRide(carousel(), CAROUSEL.x, CAROUSEL.z, 0, lights);
+    this.addRide(hindola(), HINDOLA.x, HINDOLA.z, 0, lights);
+    const wellMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: faceTexture(), roughness: 0.85 });
+    this.addRide(buildMautKuan(person, wellMat), KUAN.x, KUAN.z, -Math.PI / 2, lights);   // its stair runs north, between the stall blocks
+    this.addRide(buildInflatable(person, wellMat), INFLATABLE.x, INFLATABLE.z, 0, lights);
     this.buildStage(lights, desktop);
     this.buildStalls(lights);
     this.buildGate(lights);
@@ -460,41 +472,46 @@ export class Mela {
     this.group.add(r.group);
     this.rides.push(r);
     const c = Math.cos(ry), s = Math.sin(ry);
-    for (const [px, pz, pr] of r.post) this.posts.push([x + px * c + pz * s, z - px * s + pz * c, pr]);
+    for (const [px, pz, pr, ph] of r.post) this.posts.push([x + px * c + pz * s, z - px * s + pz * c, pr, ph]);
+    if (r.rails) for (const w of r.rails) this.rails.push({ h: w.h, ring: w.ring.map(([px, pz]) => [x + px * c + pz * s, z - px * s + pz * c] as [number, number]) });
+    if (r.floor) { const f = r.floor; this.floors.push((wx, wz) => f((wx - x) * c - (wz - z) * s, (wx - x) * s + (wz - z) * c)); }
     lights?.add(x, r.light[1], z, r.light[3], 230, 34);
   }
 
-  update(dt: number, fx: number, fz: number, dirX: number, dirZ: number, px: number, pz: number): void {
+  update(dt: number, fx: number, fz: number, dirX: number, dirZ: number, px: number, pz: number, py = 0): void {
     this.t += dt;
-    const far = Math.hypot(fx - 50, fz - 170) > 260;
+    const far = Math.hypot(fx - 50, fz - 165) > 260;
     if (far) return;
     for (const r of this.rides) r.update(this.t, dt);
-    this.crowd.update(dt, fx, fz, dirX, dirZ, px, pz);
+    this.crowd.update(dt, fx, fz, dirX, dirZ, px, pz, py);
   }
 
-  // ground: trodden dirt over the park grass, a darker packed aisle, and white dari sheets under the audience
+  // ground: trodden dirt over the park grass and a packed aisle from the gate to the middle (the dari sheets under the audience are laid with the stage)
   private buildGround(): void {
     const g = new Geo();
-    const sh = new THREE.Shape([[MELA.x0, MELA.z0], [MELA.x1, MELA.z0], [MELA.x1, MELA.z1 - 4], [MELA.x0 + 10, MELA.z1 - 4], [MELA.x0, MELA.z1 - 12]].map(([x, z]) => new THREE.Vector2(x, -z)));
+    const sh = new THREE.Shape([[MELA.x0, MELA.z0], [MELA.x1, MELA.z0], [MELA.x1, MELA.z1], [MELA.x0, MELA.z1]].map(([x, z]) => new THREE.Vector2(x, -z)));
     const geo = new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2);   // shape y = -z; after the turn it lies flat, facing up
     const pos = geo.getAttribute('position');
     for (let i = 0; i < pos.count; i++) pos.setY(i, 0.05);
     g.add(geo.index ? geo.toNonIndexed() : geo, '#6f624d');
-    g.box(MELA.cx, 0.07, 170, 7, 0.02, 100, '#7b6d56');
+    g.box(GATE.x, 0.07, (GATE.z + 150) / 2, 7, 0.02, GATE.z - 150, '#7b6d56');
     const m = new THREE.Mesh(g.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }));
     m.receiveShadow = true;
     this.group.add(m);
-    // audience dari
-    const d = new Geo();
-    d.box(MELA.cx, 0.09, 142, 34, 0.04, 22, '#c9c5b6');
-    for (let i = 0; i < 12; i++) d.box(MELA.cx - 17 + i * 3.1, 0.115, 142, 0.05, 0.01, 22, '#cfc9b8');
-    const dm = new THREE.Mesh(d.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
-    dm.receiveShadow = true;
-    this.group.add(dm);
   }
 
   private buildStage(lights: LightPool | null, desktop: boolean): void {
-    const cx = MELA.cx, cz = 120, W = 17, D = 8, SH = 1.3;
+    // The stage is built in its own frame (centre at the origin, front toward +z, audience beyond) and the group is turned so the
+    // front faces east, as on the map.
+    const cx = 0, cz = 0, W = STAGE.z1 - STAGE.z0, D = STAGE.x1 - STAGE.x0, SH = 1.3;
+    const sx0 = (STAGE.x0 + STAGE.x1) / 2, sz0 = (STAGE.z0 + STAGE.z1) / 2;
+    const stage = new THREE.Group();
+    stage.position.set(sx0, 0, sz0);
+    stage.rotation.y = Math.PI / 2;
+    this.group.add(stage);
+    const toW = (lx: number, lz: number): [number, number] => [sx0 + lz, sz0 - lx];
+    const L = (x: number, y: number, z: number, color: string, intensity: number, range: number) => { const [wx, wz] = toW(x, z); lights?.add(wx, y, wz, color, intensity, range); };
+    const post = (x: number, z: number, r: number, h?: number) => { const [wx, wz] = toW(x, z); this.posts.push([wx, wz, r, h]); };
     const g = new Geo(), bulbs = new Bulbs();
     g.box(cx, SH / 2, cz, W, SH, D, '#6b4a2a');
     g.box(cx, SH + 0.04, cz, W - 0.4, 0.08, D - 0.4, '#e9e6dc');                                     // white gaddi
@@ -532,7 +549,7 @@ export class Mela {
       const c = ['#ff8a3d', '#ffd29a', '#6ab7ff', '#ff6fa8', '#ffd29a'][i % 5];
       bulbs.add(x, 6.85, cz + D / 2 - 0.5, c, -1, 3.2);
     }
-    this.group.add(new THREE.Mesh(g.build(), litMat()));
+    stage.add(new THREE.Mesh(g.build(), litMat()));
     // banner backdrop + side flex
     const tex = banner(1024, 300, '#7b1113', '#f2c21b', [
       { text: 'अखिल भारतीय कवि सम्मेलन', size: 120, color: '#ffe9a8', y: 105 },
@@ -540,25 +557,26 @@ export class Mela {
     ]);
     const back = new THREE.Mesh(new THREE.PlaneGeometry(W - 1, 5.0), bannerMat(tex, 0.55));
     back.position.set(cx, SH + 3.1, cz - D / 2 + 0.15);
-    this.group.add(back);
+    stage.add(back);
     const side = banner(256, 512, '#0d3b66', '#fcbf49', [
       { text: 'कवि', size: 130, color: '#fcbf49', y: 130 }, { text: 'सम्मेलन', size: 90, color: '#ffffff', y: 260 }, { text: '7 PM', size: 90, color: '#ffffff', y: 390 },
     ]);
     for (const sx of [-1, 1]) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 4.8), bannerMat(side, 0.5));
       m.position.set(cx + sx * (W / 2 + 3.2), 3.6, cz + D / 2 - 0.6);
-      this.group.add(m);
+      stage.add(m);
       const pole = new Geo().rod(new THREE.Vector3(cx + sx * (W / 2 + 3.2), 0, cz + D / 2 - 0.7), new THREE.Vector3(cx + sx * (W / 2 + 3.2), 6.2, cz + D / 2 - 0.7), 0.07, '#888');
-      this.group.add(new THREE.Mesh(pole.build(), litMat()));
+      stage.add(new THREE.Mesh(pole.build(), litMat()));
     }
-    this.group.add(bulbs.object(0.9));
-    lights?.add(cx, 5.5, cz + 4.5, '#ffb877', 300, 30);
-    lights?.add(cx - 8, 5, cz + 3, '#ffd29a', 200, 26);
-    lights?.add(cx + 8, 5, cz + 3, '#ffd29a', 200, 26);
-    lights?.add(cx, 4, cz + 16, '#ffcf9a', 160, 28);
-    for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) this.posts.push([cx + sx * 9.5, cz + 2.4, 0.9]);
-    for (let i = -3; i <= 3; i++) this.posts.push([cx + i * 2.4, cz, 1.5]);
-    this.posts.push([cx - W / 2, cz + D / 2 - 0.5, 0.5], [cx + W / 2, cz + D / 2 - 0.5, 0.5]);
+    stage.add(bulbs.object(0.9));
+    L(cx, 5.5, cz + 4.5, '#ffb877', 300, 30);
+    L(cx - 8, 5, cz + 3, '#ffd29a', 200, 26);
+    L(cx + 8, 5, cz + 3, '#ffd29a', 200, 26);
+    L(cx, 4, cz + 16, '#ffcf9a', 160, 28);
+    for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) post(cx + sx * 9.5, cz + 2.4, 0.9);
+    for (let i = -3; i <= 3; i++) for (const k of [-1, -0.5, 0, 0.5, 1]) post(cx + i * 2.4, cz + k * (D / 2 - 1.3), 1.3, SH);   // the platform: jump up on it
+    post(cx - W / 2, cz + D / 2 - 0.5, 0.5);
+    post(cx + W / 2, cz + D / 2 - 0.5, 0.5);
 
     // people: poets on the gaddi, one at the mic, audience on the floor and on chairs
     const poetColours = [['#f4f0e6', '#f4f0e6'], ['#e9d8a6', '#f4f0e6'], ['#3a5a40', '#f4f0e6'], ['#8a5a2a', '#e9e6dc'], ['#f4f0e6', '#2a2a30'], ['#c98b2b', '#f4f0e6'], ['#b3261e', '#f4f0e6'], ['#f4f0e6', '#f4f0e6']];
@@ -569,7 +587,7 @@ export class Mela {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(x, y, z);
       m.rotation.y = ry;
-      this.group.add(m);
+      stage.add(m);
     };
     poetColours.forEach(([top, bot], i) => {
       const woman = i === 3;
@@ -585,10 +603,11 @@ export class Mela {
       { top: '#7b3fa0', bottom: '#7b3fa0', woman: true },
     ].map((o, i) => ({ ...o, skin: skins[i % 6], hair: o.woman ? '#0d0c0f' : hairs[i % 5], pose: 'sit' as const }));
     const spots: { x: number; z: number; v: number; s: number }[] = [];
-    const cols = desktop ? 34 : 22, rowsN = desktop ? 17 : 11;
+    const cols = Math.floor((AUDIENCE.z1 - AUDIENCE.z0) / 0.86), rowsN = Math.floor((AUDIENCE.x1 - AUDIENCE.x0) / 0.95);
+    const aud0 = AUDIENCE.x0 - sx0 + 0.5;       // first row, in the stage frame
     for (let r = 0; r < rowsN; r++) for (let c = 0; c < cols; c++) {
-      if (rnd(r * 97 + c * 13 + 5) < 0.4) continue;
-      const x = cx - (cols - 1) * 0.43 + c * 0.86 + (rnd(r * 7 + c) - 0.5) * 0.15, z = 133.2 + r * 0.95 + (rnd(c * 5 + r) - 0.5) * 0.12;
+      if (rnd(r * 97 + c * 13 + 5) < 0.4 || (!desktop && (r + c) % 2)) continue;
+      const x = cx - (cols - 1) * 0.43 + c * 0.86 + (rnd(r * 7 + c) - 0.5) * 0.15, z = aud0 + r * 0.95 + (rnd(c * 5 + r) - 0.5) * 0.12;
       spots.push({ x, z, v: Math.floor(rnd(r * 31 + c * 17) * outfits.length), s: 0.9 + rnd(r + c * 3) * 0.14 });
     }
     outfits.forEach((o, v) => {
@@ -602,8 +621,29 @@ export class Mela {
         im.setColorAt(i, new THREE.Color().setScalar(0.85 + rnd(i * 11 + v) * 0.25));
       });
       im.frustumCulled = false;
-      this.group.add(im);
+      stage.add(im);
     });
+    // the white dari sheets under the audience
+    const d = new Geo();
+    const dw = AUDIENCE.z1 - AUDIENCE.z0, dd = AUDIENCE.x1 - AUDIENCE.x0, dcz = (AUDIENCE.x0 + AUDIENCE.x1) / 2 - sx0;
+    d.box(0, 0.09, dcz, dw, 0.04, dd, '#c9c5b6');
+    for (let i = 0; i < Math.floor(dw / 3.1); i++) d.box(-dw / 2 + 1.5 + i * 3.1, 0.115, dcz, 0.05, 0.01, dd, '#cfc9b8');
+    const dm = new THREE.Mesh(d.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+    dm.receiveShadow = true;
+    stage.add(dm);
+    // stairs up the north side (local +x), and the back-stage entry by the torn place in the wall (back = local -z)
+    const ex = new Geo();
+    const sw = STAGE_STAIRS.x1 - STAGE_STAIRS.x0, scz = (STAGE_STAIRS.x0 + STAGE_STAIRS.x1) / 2 - sx0;
+    for (let i = 0; i < 4; i++) ex.box(W / 2 + 0.6 + (3 - i) * 0.9 - 0.3, (i + 1) * SH / 4 / 2, scz, 0.9, (i + 1) * SH / 4, sw, i % 2 ? '#8a5a2a' : '#7a4e24');
+    for (const sz of [-1, 1]) ex.rod(new THREE.Vector3(W / 2 + 3.2, 0.9, scz + sz * sw / 2), new THREE.Vector3(W / 2 + 0.2, SH + 0.9, scz + sz * sw / 2), 0.04, '#b8b8bc');
+    const doorX = sz0 - (STAGE_ENTRY.z0 + STAGE_ENTRY.z1) / 2;          // local x of the back-stage door
+    ex.box(doorX, 0.35, -D / 2 - 1.0, 2.0, 0.7, 1.4, '#8a5a2a');
+    ex.box(doorX, 0.8, -D / 2 - 0.3, 2.6, 1.6, 0.12, '#1c1c20');
+    for (const sx of [-1, 1]) ex.rod(new THREE.Vector3(doorX + sx * 1.35, SH, -D / 2 - 0.1), new THREE.Vector3(doorX + sx * 1.35, SH + 2.6, -D / 2 - 0.1), 0.05, '#b8b8bc');
+    ex.box(doorX, SH + 2.7, -D / 2 - 0.1, 2.8, 0.1, 0.1, '#b8b8bc');
+    for (const sx of [-1, 1]) ex.box(doorX + sx * 0.7, SH + 1.3, -D / 2 - 0.12, 1.3, 2.4, 0.04, '#7b1113');   // curtain halves
+    stage.add(new THREE.Mesh(ex.build(), litMat({ metalness: 0.1, roughness: 0.8 })));
+    L(doorX, 3.4, -D / 2 - 1.5, '#ffbf7a', 140, 16);
   }
 
   private buildStalls(lights: LightPool | null): void {
@@ -651,14 +691,9 @@ export class Mela {
       }
       this.posts.push([x, z, 1.35]);
     };
-    // two columns facing the main aisle, a few near the gate and the rides
+    // the blocks of the map: stalls in a row along the long side, two rows back to back when the block is deep enough;
+    // the fronts face outward, into the aisles
     let n = 0;
-    for (let z = 164; z <= 212; z += 7.0) {
-      stall(MELA.cx - 13, z, Math.PI / 2, 10 + n++);
-      stall(MELA.cx + 13, z, -Math.PI / 2, 10 + n++);
-    }
-    for (let x = 12; x <= 100; x += 11) if (Math.abs(x - 50) > 18 && x > 24 && x < 78) stall(x, 128, Math.PI, 70 + x);   // row behind the audience
-    // strings of bulbs and bunting across the aisle and along it
     const bunting = new Geo();
     const string = (a: THREE.Vector3, b: THREE.Vector3, sag: number, step: number, ph: number) => {
       const len = a.distanceTo(b), nb = Math.max(2, Math.round(len / step));
@@ -669,20 +704,34 @@ export class Mela {
         if (i % 2 === 1) bunting.add(new THREE.BoxGeometry(0.28, 0.34, 0.012), FEST[(i + ph) % FEST.length], new THREE.Matrix4().makeRotationZ(Math.PI / 4).setPosition(p.x, p.y - 0.18, p.z));
       }
     };
-    for (let z = 164; z <= 212; z += 7.0) {
-      string(new THREE.Vector3(MELA.cx - 13, 3.2, z - 0.8), new THREE.Vector3(MELA.cx + 13, 3.2, z - 0.8), 0.9, 0.85, Math.floor(z));
-      string(new THREE.Vector3(MELA.cx - 13, 3.2, z + 0.8), new THREE.Vector3(MELA.cx + 13, 3.2, z + 0.8), 0.9, 0.85, Math.floor(z) + 2);
+    const SPACING = 3.0;
+    for (const B of STALL_BLOCKS) {
+      const w = B.x1 - B.x0, d = B.z1 - B.z0, cx = (B.x0 + B.x1) / 2, cz = (B.z0 + B.z1) / 2;
+      const horizontal = w >= d, len = horizontal ? w : d, depth = horizontal ? d : w;
+      const count = Math.max(1, Math.floor(len / SPACING)), rows = depth >= 5 ? 2 : 1;
+      for (let r = 0; r < rows; r++) {
+        const side = rows === 2 ? (r ? 1 : -1) : 0, off = side * 1.05;
+        for (let k = 0; k < count; k++) {
+          const along = (k - (count - 1) / 2) * (len / count);
+          if (horizontal) stall(cx + along, cz + off, side > 0 ? 0 : Math.PI, 10 + n++);
+          else stall(cx + off, cz + along, side > 0 ? Math.PI / 2 : -Math.PI / 2, 10 + n++);
+        }
+      }
+      // strings of bulbs and bunting along both long edges, and one light over the block
+      const e = depth / 2 + 0.3;
+      for (const sd of [-1, 1]) {
+        if (horizontal) string(new THREE.Vector3(B.x0 + 0.4, 3.2, cz + sd * e), new THREE.Vector3(B.x1 - 0.4, 3.2, cz + sd * e), 0.8, 0.85, Math.floor(cx + sd));
+        else string(new THREE.Vector3(cx + sd * e, 3.2, B.z0 + 0.4), new THREE.Vector3(cx + sd * e, 3.2, B.z1 - 0.4), 0.8, 0.85, Math.floor(cz + sd));
+      }
+      lights?.add(cx, 4.4, cz, '#ffc98a', 150, 22);
     }
-    for (const x of [MELA.cx - 13, MELA.cx + 13]) string(new THREE.Vector3(x, 3.1, 160), new THREE.Vector3(x, 3.1, 214), 0.5, 0.8, 1);
-    for (const [x, z] of [[MELA.cx, 128]]) string(new THREE.Vector3(x - 30, 4.8, z), new THREE.Vector3(x + 30, 4.8, z), 1.4, 0.9, 3);
     this.group.add(new THREE.Mesh(g.build(), litMat({ metalness: 0.05, roughness: 0.8 })));
     this.group.add(new THREE.Mesh(bunting.build(), litMat({ metalness: 0, roughness: 0.9, side: THREE.DoubleSide })));
     this.group.add(bulbs.object(0.7));
-    for (let z = 168; z <= 212; z += 11) { lights?.add(MELA.cx, 4.2, z, '#ffc98a', 150, 26); }
   }
 
   private buildGate(lights: LightPool | null): void {
-    const cx = MELA.cx, cz = MELA.gateZ, W = 15;
+    const cx = GATE.x, cz = GATE.z - 0.8, W = 15;
     const g = new Geo(), bulbs = new Bulbs();
     for (const sx of [-1, 1]) {
       g.box(cx + sx * W / 2, 3.2, cz, 1.2, 6.4, 1.2, '#f2e6c9');
@@ -709,7 +758,7 @@ export class Mela {
   // tall floodlight masts on the edges: the white glare that makes a mela visible from far away
   private buildMasts(lights: LightPool | null): void {
     const g = new Geo(), bulbs = new Bulbs();
-    for (const [x, z] of [[MELA.x0 + 4, 130], [MELA.x1 - 4, 130], [MELA.x0 + 4, 195], [MELA.x1 - 4, 195], [MELA.cx - 26, 156], [MELA.cx + 26, 156]]) {
+    for (const [x, z] of [[-5.5, 131], [105.5, 131], [-5.5, 199], [105.5, 199], [44, 129.5], [30, 201], [75, 201]]) {
       g.rod(new THREE.Vector3(x, 0, z), new THREE.Vector3(x, 11, z), 0.12, '#7a7d82');
       g.box(x, 11.2, z, 1.7, 0.5, 0.3, '#2a2a2e');
       for (let k = 0; k < 4; k++) bulbs.add(x - 0.6 + k * 0.4, 11.0, z - 0.2, '#fff7e0', -1, 3.2);
@@ -765,13 +814,19 @@ export class Mela {
     for (let e = 0; e < L.length; e++) {
       const a = L[e], b = L[(e + 1) % L.length];
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / len, dz = (b[1] - a[1]) / len;
-      // does the torn place lie on this edge? (distance along the edge to the tear)
-      const onEdge = Math.abs((TEAR.x - a[0]) * dz - (TEAR.z - a[1]) * dx) < 0.5 && (TEAR.x - a[0]) * dx + (TEAR.z - a[1]) * dz > 0 &&
-        (TEAR.x - a[0]) * dx + (TEAR.z - a[1]) * dz < len;
-      const st = onEdge ? (TEAR.x - a[0]) * dx + (TEAR.z - a[1]) * dz : -1;
-      const spans: { s0: number; s1: number; torn: boolean }[] = onEdge
-        ? [{ s0: 0, s1: st - 3, torn: false }, { s0: st - 3, s1: st + 3, torn: true }, { s0: st + 3, s1: len, torn: false }]
-        : [{ s0: 0, s1: len, torn: false }];
+      // the openings on this edge: the torn place, and the gate (a clear gap); distance along the edge, measured from `a`
+      const along = (q: { x: number; z: number }) => ((q.x - a[0]) * dx + (q.z - a[1]) * dz);
+      const onThis = (q: { x: number; z: number }) => Math.abs((q.x - a[0]) * dz - (q.z - a[1]) * dx) < 0.5 && along(q) > 0 && along(q) < len;
+      const here = [{ q: TEAR, half: 3, torn: true }, { q: GATE, half: GATE.half, torn: false }].filter((o) => onThis(o.q)).sort((u, v) => along(u.q) - along(v.q));
+      const spans: { s0: number; s1: number; torn: boolean }[] = [];
+      let cur = 0;
+      for (const o of here) {
+        const st = along(o.q);
+        if (st - o.half - cur > 0.3) spans.push({ s0: cur, s1: st - o.half, torn: false });
+        if (o.torn) spans.push({ s0: st - 3, s1: st + 3, torn: true });
+        cur = st + o.half;
+      }
+      if (len - cur > 0.3) spans.push({ s0: cur, s1: len, torn: false });
       for (const sp of spans) {
         const n = Math.max(1, Math.round((sp.s1 - sp.s0) / SPAN)), w = (sp.s1 - sp.s0) / n;
         const P = (s: number): [number, number] => [a[0] + dx * s, a[1] + dz * s];
@@ -839,15 +894,23 @@ export class Mela {
     this.walls.push([[a[0] + nx, a[1] + nz], [b[0] + nx, b[1] + nz], [b[0] - nx, b[1] - nz], [a[0] - nx, a[1] - nz]]);
   }
 
-  /** aisles of the mela as a street graph for the strolling crowd */
+  /** aisles of the mela as a street graph: a grid of free cells (clear of stalls, rides, the stage and the wall), linked to their neighbours */
   private aisles(map: MapData): MapData {
-    const road = (pts: [number, number][]) => ({ id: 0, pts, w: 3.0, cls: 'service', name: '', oneway: false, lanes: 1, bridge: false, layer: 0, divider: false, sidewalk: 'no', surface: '' });
-    const roads = [
-      road([[50, 216], [50, 160]]),                           // main aisle (the audience sits beyond it)
-      road([[10, 162], [90, 162]]), road([[10, 196], [90, 196]]),
-      road([[24, 162], [24, 214]]), road([[76, 162], [76, 214]]), road([[10, 162], [10, 214]]), road([[92, 162], [92, 214]]),
-      road([[10, 214], [90, 214]]),
-    ];
+    const road = (pts: [number, number][]) => ({ id: 0, pts, w: 1.0, cls: 'service', name: '', oneway: false, lanes: 1, bridge: false, layer: 0, divider: false, sidewalk: 'no', surface: '' });
+    const pad = (r: Rect, m: number): Rect => ({ x0: r.x0 - m, x1: r.x1 + m, z0: r.z0 - m, z1: r.z1 + m });
+    const solids: Rect[] = [...STALL_BLOCKS.map((r) => pad(r, 1.4)), pad(STAGE, 1.2), pad(AUDIENCE, 0.4)];
+    const discs = [{ ...WHEEL, r: WHEEL.r + 1.5 }, { ...INFLATABLE, r: INFLATABLE.r + 2 }, { ...KUAN, r: KUAN.r + 1.5 },
+      { ...CAROUSEL, r: 6.5 }, { ...HINDOLA, r: 7 }, { ...COLUMBUS, r: 8 }, { ...CHAIR_SWING, r: 8 }];
+    const free = (x: number, z: number) =>
+      x > -6.5 && x < 106.5 && z > 129 && z < 201.5 &&
+      !solids.some((r) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1) && !discs.some((c) => Math.hypot(x - c.x, z - c.z) < c.r);
+    const S = 4.5, roads: ReturnType<typeof road>[] = [];
+    const gx = (i: number) => -6 + i * S, gz = (j: number) => 130 + j * S;
+    for (let i = 0; gx(i) < 106.5; i++) for (let j = 0; gz(j) < 201.5; j++) {
+      if (!free(gx(i), gz(j))) continue;
+      if (free(gx(i + 1), gz(j)) && gx(i + 1) < 106.5) roads.push(road([[gx(i), gz(j)], [gx(i + 1), gz(j)]]));
+      if (free(gx(i), gz(j + 1)) && gz(j + 1) < 201.5) roads.push(road([[gx(i), gz(j)], [gx(i), gz(j + 1)]]));
+    }
     return { ...map, roads };
   }
 }

@@ -64,14 +64,58 @@ function sprite(): THREE.CanvasTexture {
   const g = c.getContext('2d')!;
   const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
   r.addColorStop(0, 'rgba(255,255,255,1)');
-  r.addColorStop(0.18, 'rgba(255,255,255,0.7)');
-  r.addColorStop(0.5, 'rgba(255,255,255,0.14)');
+  r.addColorStop(0.06, 'rgba(255,255,255,0.8)');
+  r.addColorStop(0.16, 'rgba(255,255,255,0.3)');
+  r.addColorStop(0.36, 'rgba(255,255,255,0.075)');
+  r.addColorStop(0.7, 'rgba(255,255,255,0.015)');
   r.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = r;
   g.fillRect(0, 0, 64, 64);
   spriteTex = new THREE.CanvasTexture(c);
   spriteTex.colorSpace = THREE.SRGBColorSpace;
   return spriteTex;
+}
+
+/**
+ * A headlight beam as it lands on the road (or a wall): a soft egg-shaped pool, brightest next to the lamp, widening and
+ * fading away from it. On a quad lying flat, the bright end is its -z end (so a vehicle that faces +z puts the quad ahead).
+ */
+let beamTex: THREE.CanvasTexture | null = null;
+export function beamTexture(): THREE.CanvasTexture {
+  if (beamTex) return beamTex;
+  const W = 128, H = 256;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(W, H);
+  const sm = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  for (let y = 0; y < H; y++) {
+    const t = y / (H - 1);                         // 0 at the lamp, 1 at the far edge of the pool
+    const half = 0.34 + 0.66 * Math.sqrt(t);       // the beam widens away from the lamp
+    const along = Math.pow(1 - t, 1.35) * sm(0, 0.05, t) * (0.55 + 0.45 * (1 - sm(0.4, 1, t)));
+    for (let x = 0; x < W; x++) {
+      const s = Math.abs((x / (W - 1)) * 2 - 1) / half;
+      const across = 1 - sm(0.35, 1, s);
+      const v = Math.round(255 * Math.max(0, Math.min(1, along * across * (0.55 + 0.45 * (1 - s * s)))));
+      const i = (y * W + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  beamTex = new THREE.CanvasTexture(c);
+  beamTex.colorSpace = THREE.NoColorSpace;
+  return beamTex;
+}
+
+/** Additive material for beam pools. `strength` ~0.5 is a car headlight at night. */
+export function beamMaterial(strength = 0.55, tint = '#ffe7bd'): THREE.MeshBasicMaterial {
+  const m = new THREE.MeshBasicMaterial({
+    map: beamTexture(), color: new THREE.Color(tint).multiplyScalar(strength), transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+  });
+  return m;
 }
 
 /** Shared view/time uniforms for glow materials (set by `updateGlow` each frame). */

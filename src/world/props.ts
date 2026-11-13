@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { walkAlong } from './city';
 import { hash2, MapData, P2 } from './types';
+import { beamMaterial, NIGHT } from './night';
+import { loadPBR, PBRPart } from './vehicleModels';
 
 /*
  Street props modelled in Blender (tools/blender/build_models.py -> public/models/*.glb):
@@ -12,7 +14,7 @@ import { hash2, MapData, P2 } from './types';
 
 const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'secondary_link', 'trunk_link', 'primary_link']);
 
-interface Parts { body: THREE.BufferGeometry; glass?: THREE.BufferGeometry }
+interface Parts { body: THREE.BufferGeometry; glass?: THREE.BufferGeometry; pbr?: PBRPart[] }
 
 async function loadModel(name: string): Promise<Parts> {
   const gltf = await new GLTFLoader().loadAsync(`models/${name}.glb`);
@@ -46,20 +48,33 @@ interface Vehicle {
 }
 
 const SPAWN_MIN = 90, SPAWN_MAX = 230, DESPAWN = 265;
+const CAR_COLOURS = ['#e9e7e0', '#e9e7e0', '#a72a2a', '#8d9196', '#2b4c8c', '#d8d3c4', '#5a1f1f', '#e9e7e0'];
+
+/** headlamps in model space (x, y, z), and the pool of light each throws on the road ahead (width, length) */
+const LAMPS: Record<string, { at: [number, number, number][]; pool: [number, number] }> = {
+  bus: { at: [[-0.95, 0.85, 4.78], [0.95, 0.85, 4.78]], pool: [3.2, 13] },
+  auto: { at: [[0, 0.78, 1.5]], pool: [2.6, 8] },
+  maruti: { at: [[-0.5, 0.68, 1.68], [0.5, 0.68, 1.68]], pool: [3.0, 11] },
+  tirri: { at: [[0, 0.95, 1.6]], pool: [2.4, 7] },
+};
 
 export class Traffic {
   readonly group = new THREE.Group();
   private nodes: Node[] = [];
   private cars: Vehicle[] = [];
-  private meshes: { body: THREE.InstancedMesh; glass?: THREE.InstancedMesh }[] = [];
+  private meshes: { body: THREE.InstancedMesh; glass?: THREE.InstancedMesh; extra?: THREE.InstancedMesh[] }[] = [];
+  /** night only: the lamp lenses and the pools of light they throw on the road */
+  private lenses: THREE.InstancedMesh | null = null;
+  private pools: THREE.InstancedMesh | null = null;
 
   static async create(map: MapData, desktop: boolean): Promise<Traffic> {
     const kinds: Kind[] = [
       { name: 'bus', count: desktop ? 5 : 3, speed: 7.5, halfL: 4.8, halfW: 1.3, majorOnly: true },
       { name: 'auto', count: desktop ? 16 : 9, speed: 6.5, halfL: 1.45, halfW: 0.7, majorOnly: false },
       { name: 'tirri', count: desktop ? 16 : 9, speed: 4.5, halfL: 1.55, halfW: 0.62, majorOnly: false },
+      { name: 'maruti', count: desktop ? 6 : 3, speed: 6.2, halfL: 1.75, halfW: 0.78, majorOnly: false },
     ];
-    const parts = await Promise.all(kinds.map((k) => loadModel(k.name)));
+    const parts: Parts[] = await Promise.all(kinds.map(async (k) => (k.name === 'maruti' ? { body: new THREE.BufferGeometry(), pbr: await loadPBR('maruti') } : loadModel(k.name))));
     return new Traffic(map, kinds, parts);
   }
 
@@ -76,7 +91,17 @@ export class Traffic {
     };
     kinds.forEach((k, ki) => {
       const p = parts[ki];
-      this.meshes.push({ body: im(p.body, paint(), k.count), glass: p.glass && im(p.glass, glass(), k.count) });
+      if (p.pbr) {
+        const ims = p.pbr.map(({ geo, mat }) => {
+          const m = im(geo, mat, k.count);
+          if (mat.name === 'glass') m.castShadow = false;
+          if (mat.name === 'paint') for (let i = 0; i < k.count; i++) m.setColorAt(i, new THREE.Color(CAR_COLOURS[(i * 7 + 3) % CAR_COLOURS.length]));
+          return m;
+        });
+        this.meshes.push({ body: ims[0], extra: ims.slice(1) });
+      } else {
+        this.meshes.push({ body: im(p.body, paint(), k.count), glass: p.glass && im(p.glass, glass(), k.count) });
+      }
       for (let i = 0; i < k.count; i++) {
         this.cars.push({
           kind: ki, slot: i, vmax: k.speed * (0.85 + Math.random() * 0.3), v: 0,
@@ -84,6 +109,37 @@ export class Traffic {
         });
       }
     });
+    if (NIGHT) {
+      const n = kinds.reduce((a, k) => a + k.count * LAMPS[k.name].at.length, 0);
+      this.lenses = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 8, 6), new THREE.MeshBasicMaterial({ color: '#fff3d6', toneMapped: false }), n);
+      this.pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), beamMaterial(0.4), n);
+      for (const m of [this.lenses, this.pools]) {
+        m.frustumCulled = false;
+        m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        m.userData.noAO = true;
+        this.group.add(m);
+      }
+      this.pools.renderOrder = 2;
+    }
+  }
+
+  /** A moving vehicle at (x, z) (a walker of radius r), if any: its velocity, so it can knock the walker over. */
+  hit(x: number, z: number, r: number): { vx: number; vz: number; speed: number } | null {
+    for (const c of this.cars) {
+      if (c.fresh || c.v < 0.4) continue;
+      const k = this.kinds[c.kind];
+      const fxv = Math.sin(c.heading), fzv = Math.cos(c.heading);
+      const dx = x - c.x, dz = z - c.z;
+      if (Math.abs(dx) > 7 || Math.abs(dz) > 7) continue;
+      const along = dx * fxv + dz * fzv, side = dx * fzv - dz * fxv;
+      if (Math.abs(along) < k.halfL + r && Math.abs(side) < k.halfW + r) return { vx: fxv * c.v, vz: fzv * c.v, speed: c.v };
+    }
+    return null;
+  }
+
+  /** where the vehicles are (for tests) */
+  positions(): { kind: string; x: number; z: number; heading: number }[] {
+    return this.cars.filter((c) => !c.fresh).map((c) => ({ kind: this.kinds[c.kind].name, x: c.x, z: c.z, heading: c.heading }));
   }
 
   /** Road network. Two-way roads get a lane each way (keep left); one-way roads only run forward. */
@@ -236,15 +292,37 @@ export class Traffic {
       const m = this.meshes[c.kind];
       m.body.setMatrixAt(c.slot, M);
       m.glass?.setMatrixAt(c.slot, M);
+      if (m.extra) for (const e of m.extra) e.setMatrixAt(c.slot, M);
+    }
+    if (this.lenses && this.pools) {
+      let n = 0;
+      for (const c of this.cars) {
+        const L = LAMPS[this.kinds[c.kind].name];
+        for (const [lx, ly, lz] of L.at) {
+          if (c.fresh) { this.lenses.setMatrixAt(n, ZERO); this.pools.setMatrixAt(n, ZERO); n++; continue; }
+          const R = M.makeRotationY(c.heading);
+          const s = Math.sin(c.heading), co = Math.cos(c.heading);
+          const px = c.x + lx * co + lz * s, pz = c.z - lx * s + lz * co;
+          this.lenses.setMatrixAt(n, M2.copy(R).setPosition(px, ly + 0.05, pz));
+          // the pool starts at the lamp and runs ahead along the road
+          const w = L.pool[0], len = L.pool[1];
+          const cx = px + s * len * 0.5, cz = pz + co * len * 0.5;
+          this.pools.setMatrixAt(n, M2.copy(R).setPosition(cx, 0.1, cz).scale(V3.set(w, 1, len)));
+          n++;
+        }
+      }
+      this.lenses.instanceMatrix.needsUpdate = true;
+      this.pools.instanceMatrix.needsUpdate = true;
     }
     for (const m of this.meshes) {
       m.body.instanceMatrix.needsUpdate = true;
       if (m.glass) m.glass.instanceMatrix.needsUpdate = true;
+      if (m.extra) for (const e of m.extra) e.instanceMatrix.needsUpdate = true;
     }
   }
 }
 
-const M = new THREE.Matrix4();
+const M = new THREE.Matrix4(), M2 = new THREE.Matrix4(), V3 = new THREE.Vector3();
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
 // ---------------------------------------------------------------------------------------------

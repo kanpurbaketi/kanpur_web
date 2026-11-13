@@ -15,6 +15,8 @@ import {
 
 const SPAWN_MIN = 60, SPAWN_MAX = 170, DESPAWN = 195; // metres from the player
 const SIDEWALK_Y = 0.16;
+// goons: a few men in dark clothes who run at the player and punch / kick
+const AGGRO = 14, CHASE = 3.4, REACH = 1.6, PUNCH_DMG = 8, KICK_DMG = 12;
 
 interface Link { to: number; off: number; y: number }
 interface Node { x: number; z: number; links: Link[] }
@@ -29,6 +31,11 @@ interface Ped {
   x: number; y: number; z: number; heading: number;
   phase: number; moving: number; wait: number;
   fresh: boolean;     // not on a street yet
+  hostile: boolean;   // a goon
+  mode: number;       // 0 normal, 1 after the player
+  atkKind: number;    // 0 none, 1 punch, 2 kick
+  atkT: number; atkE: number; struck: boolean; cool: number; stun: number; guard: number;
+  down: number; downT: number; kvx: number; kvz: number; panic: number;   // knocked down: time left, time since the fall, knock velocity, running away
 }
 
 const SKIN = ['#8a5a3c', '#a9714b', '#b98058', '#7a4e34', '#c08d66', '#96633f'];
@@ -43,10 +50,18 @@ export class Pedestrians {
   private nodes: Node[] = [];
   private peds: Ped[] = [];
   private active = 0;
+  /** called with the damage when a goon lands a punch or a kick on the player */
+  onHurt: ((damage: number) => void) | null = null;
+  /** collision (walls etc.) for goons on the run: returns the corrected [x, z] */
+  resolve: ((x: number, z: number) => [number, number]) | null = null;
+  /** where the nearest person hit by the last punch was (the puncher turns to face them) */
+  lastHit: { x: number; z: number } | null = null;
+  /** a moving vehicle at a point, if one is there: its velocity (so a car can knock people over) */
+  vehicleAt: ((x: number, z: number, r: number) => { vx: number; vz: number; speed: number } | null) | null = null;
   private parts: Record<'thigh' | 'shin' | 'torso' | 'skirt' | 'drape' | 'sleeve' | 'forearm' | 'hand' | 'head' | 'hair' | 'longHair' | 'feet', THREE.InstancedMesh>;
 
   /** `local`: a fixed crowd on a small street graph (the mela): people stay on it and never get recycled around the player */
-  constructor(map: MapData, readonly capacity: number, private local = false) {
+  constructor(map: MapData, readonly capacity: number, private local = false, private goonRate = 0.06) {
     const count = capacity;
     this.buildGraph(map);
     const face = faceTexture();
@@ -129,14 +144,16 @@ export class Pedestrians {
       jitter: (Math.random() - 0.5) * 0.7,
       a: 0, b: 0, link: { to: 0, off: 0, y: 0 }, t: 0, len: 1,
       x: 0, y: 0, z: 0, heading: 0, phase: Math.random() * 6, moving: 1, wait: 0, fresh: true,
+      hostile: false, mode: 0, atkKind: 0, atkT: 0, atkE: 0, struck: false, cool: 0, stun: 0, guard: 0, down: 0, downT: 0, kvx: 0, kvz: 0, panic: 0,
     };
+    if (!child && kind <= 1 && Math.random() < this.goonRate) { p.hostile = true; p.scale = 0.98 + Math.random() * 0.08; }
     // colours
     const c = new THREE.Color();
     const pick = (list: string[]) => c.set(list[Math.floor(Math.random() * list.length)]).clone();
     const skin = pick(SKIN), hair = pick(HAIR.slice(0, child || woman ? 4 : 6));
-    const top = pick(kind === 0 ? SHIRTS : kind === 1 ? KURTAS : BRIGHT);
+    const top = p.hostile ? pick(['#161616', '#241414', '#4a1414', '#1b2430']) : pick(kind === 0 ? SHIRTS : kind === 1 ? KURTAS : BRIGHT);
     const accent = pick(BRIGHT); // sari blouse / dupatta
-    const bottom = kind === 0 ? pick(TROUSERS) : kind === 1 ? pick(['#ece8dc', '#e0dccf', '#d9d4c4'])
+    const bottom = p.hostile ? pick(['#161618', '#202226']) : kind === 0 ? pick(TROUSERS) : kind === 1 ? pick(['#ece8dc', '#e0dccf', '#d9d4c4'])
       : kind === 2 ? (Math.random() < 0.5 ? top.clone().multiplyScalar(0.7) : pick(['#e8e3d6', '#2f2f35', '#d9b44a'])) : top;
     const longSleeve = kind === 1 || (kind === 0 && Math.random() < 0.35);
     const P = this.parts;
@@ -203,7 +220,7 @@ export class Pedestrians {
    * (fx, fz): the player (or camera) position; (dirX, dirZ): where the camera looks, on the ground plane;
    * (px, pz): somebody to make way for (the player), if any.
    */
-  update(dt: number, fx: number, fz: number, dirX: number, dirZ: number, px = Infinity, pz = Infinity): void {
+  update(dt: number, fx: number, fz: number, dirX: number, dirZ: number, px = Infinity, pz = Infinity, py = 0): void {
     for (let i = 0; i < this.active; i++) {
       const p = this.peds[i];
       if (p.fresh) {
@@ -212,12 +229,36 @@ export class Pedestrians {
         p.fresh = false;
       }
       if (!this.local && Math.hypot(p.x - fx, p.z - fz) > DESPAWN) this.place(p, fx, fz, SPAWN_MIN, SPAWN_MAX, dirX, dirZ);
+      if (p.down > 0) {                       // lying where they fell, then getting up
+        p.down -= dt;
+        p.downT += dt;
+        const sp = Math.hypot(p.kvx, p.kvz);
+        if (sp > 0.05) {
+          let nx = p.x + p.kvx * dt, nz = p.z + p.kvz * dt;
+          if (this.resolve) [nx, nz] = this.resolve(nx, nz);
+          p.x = nx; p.z = nz;
+          const f = Math.exp(-3.2 * dt);
+          p.kvx *= f; p.kvz *= f;
+        }
+        p.moving += (0 - p.moving) * Math.min(1, dt * 10);
+        p.guard = 0; p.atkKind = 0; p.atkE = 0;
+        if (p.down <= 0) { p.mode = 0; p.stun = 0; if (!p.hostile) p.panic = 6; this.snapToGraph(p); }
+        continue;
+      }
+      if (this.vehicleAt && !p.fresh) {
+        const v = this.vehicleAt(p.x, p.z, 0.4);
+        if (v && v.speed > 1.2) { this.knockDown(p, v.vx * 0.9, v.vz * 0.9, 3.6); continue; }
+      }
+      if (p.hostile && this.fight(p, dt, px, pz, py)) {
+        p.phase += CHASE * dt * 4.2 * p.moving / p.scale;
+        continue;
+      }
       const blocked = Math.hypot(p.x - px, p.z - pz) < 0.9;
       let walking = false;
       if (p.wait > 0) p.wait -= dt;
       else if (!blocked) {
         walking = true;
-        p.t += p.speed * dt;
+        p.t += p.speed * (p.panic > 0 ? 1.8 : 1) * dt;
         if (p.t >= p.len) {
           // junction: any street except straight back, unless it is a dead end
           const here = p.b, from = p.a;
@@ -242,6 +283,117 @@ export class Pedestrians {
     this.write();
   }
 
+  /** where the active goons are (for tests) */
+  goons(): { x: number; z: number; mode: number; down: number }[] {
+    return this.peds.slice(0, this.active).filter((p) => p.hostile).map((p) => ({ x: p.x, z: p.z, mode: p.mode, down: p.down }));
+  }
+
+  private knockDown(p: Ped, vx: number, vz: number, secs: number): void {
+    p.down = secs;
+    p.downT = 0;
+    p.kvx = vx;
+    p.kvz = vz;
+    p.stun = secs;
+    p.atkKind = 0;
+    p.wait = 0;
+  }
+
+  /**
+   * A punch from (x, z) facing (fx, fz): everyone within arm's reach in front is knocked off their feet and shoved back.
+   * Goons get up angrier; other people get up and run. Returns how many were hit.
+   */
+  hit(x: number, z: number, fx: number, fz: number): number {
+    let n = 0, best = Infinity;
+    this.lastHit = null;
+    for (let i = 0; i < this.active; i++) {
+      const p = this.peds[i];
+      if (p.down > 0 || p.fresh) continue;
+      const dx = p.x - x, dz = p.z - z, d = Math.hypot(dx, dz);
+      if (d > 1.9 || d < 1e-3) continue;
+      if ((dx * fx + dz * fz) / d < -0.3) continue;      // anyone but directly behind
+      this.knockDown(p, (dx / d) * 4.2, (dz / d) * 4.2, p.hostile ? 1.8 : 3.4);
+      if (d < best) { best = d; this.lastHit = { x: p.x, z: p.z }; }
+      n++;
+    }
+    return n;
+  }
+
+  /** The player punched: any goon within arm's reach is staggered and shoved back. Returns how many. */
+  punchAt(x: number, z: number): number {
+    let n = 0;
+    for (let i = 0; i < this.active; i++) {
+      const p = this.peds[i];
+      if (!p.hostile || p.mode === 0) continue;
+      const dx = p.x - x, dz = p.z - z, d = Math.hypot(dx, dz);
+      if (d > 2.0) continue;
+      p.stun = 1.5;
+      p.atkKind = 0; p.atkE = 0;
+      const k = 1.1 / (d || 1);
+      [p.x, p.z] = this.resolve ? this.resolve(p.x + dx * k, p.z + dz * k) : [p.x + dx * k, p.z + dz * k];
+      n++;
+    }
+    return n;
+  }
+
+  /** Goon behaviour: true while the goon is busy with the player (running at, hitting, or staggered). */
+  private fight(p: Ped, dt: number, px: number, pz: number, py: number): boolean {
+    p.cool = Math.max(0, p.cool - dt);
+    if (p.stun > 0) {
+      p.stun -= dt;
+      p.moving += (0 - p.moving) * Math.min(1, dt * 8);
+      p.guard = 0;
+      return true;
+    }
+    const dx = px - p.x, dz = pz - p.z, d = Math.hypot(dx, dz);
+    if (!(d < AGGRO) || py > 1.0) {                           // nobody to chase (or he is out of reach, up on the gallery)
+      if (p.mode) { p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; this.snapToGraph(p); }
+      return false;
+    }
+    p.mode = 1;
+    p.guard = 1;
+    const want = Math.atan2(-dx, -dz);
+    p.heading += Math.atan2(Math.sin(want - p.heading), Math.cos(want - p.heading)) * Math.min(1, dt * 9);
+    if (p.atkKind) {
+      p.moving += (0 - p.moving) * Math.min(1, dt * 8);
+      p.atkT += dt;
+      const t = p.atkT;
+      p.atkE = t < 0.38 ? t / 0.38 : Math.max(0, 1 - (t - 0.38) / 0.4);
+      if (!p.struck && t >= 0.38) {
+        p.struck = true;
+        if (d < REACH) this.onHurt?.(p.atkKind === 1 ? PUNCH_DMG : KICK_DMG);
+      }
+      if (t >= 0.8) { p.atkKind = 0; p.atkE = 0; p.cool = 0.5 + Math.random() * 0.6; }
+      return true;
+    }
+    if (d > 1.15) {
+      const s = Math.min(CHASE * dt, d - 1.0);
+      let nx = p.x + (dx / d) * s, nz = p.z + (dz / d) * s;
+      if (this.resolve) [nx, nz] = this.resolve(nx, nz);
+      p.x = nx; p.z = nz; p.y = 0.05;
+      p.moving += (1 - p.moving) * Math.min(1, dt * 8);
+      return true;
+    }
+    p.moving += (0 - p.moving) * Math.min(1, dt * 8);
+    if (p.cool <= 0) { p.atkKind = Math.random() < 0.55 ? 1 : 2; p.atkT = 0; p.atkE = 0; p.struck = false; }
+    return true;
+  }
+
+  /** Back onto the nearest street after a chase. */
+  private snapToGraph(p: Ped): void {
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < this.nodes.length; i++) {
+      const n = this.nodes[i];
+      if (!n.links.length) continue;
+      const d = (n.x - p.x) ** 2 + (n.z - p.z) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    if (best < 0) return;
+    p.a = best;
+    const links = this.nodes[best].links;
+    this.setLink(p, links[Math.floor(Math.random() * links.length)]);
+    p.wait = 0;
+  }
+
   private write(): void {
     const P = this.parts;
     for (let i = 0; i < this.active; i++) {
@@ -249,6 +401,13 @@ export class Pedestrians {
       const swing = Math.sin(p.phase) * 0.55 * p.moving;
       const bob = Math.abs(Math.cos(p.phase)) * 0.025 * p.moving;
       ROOT.compose(V.set(p.x, p.y + bob * p.scale, p.z), Q.setFromAxisAngle(UP, p.heading), S.setScalar(p.scale));
+      if (p.down > 0) {
+        // knocked flat onto their back (pivoting about the feet), lying a moment, then getting up
+        const fall = Math.min(1, p.downT / 0.3), rise = Math.min(1, p.down / 0.5);
+        const e = fall * rise;
+        const tilt = (Math.PI / 2) * e;
+        ROOT.compose(V.set(p.x, p.y + 0.2 * e * p.scale, p.z), Q.setFromAxisAngle(UP, p.heading).multiply(Q2.setFromAxisAngle(AX, tilt)), S.setScalar(p.scale));
+      }
       const woman = p.kind >= 2;
       P.torso.setMatrixAt(i, ROOT);
       P.head.setMatrixAt(i, ROOT);
@@ -261,17 +420,20 @@ export class Pedestrians {
       for (const s of [0, 1]) {
         const sign = s ? 1 : -1, k = i * 2 + s;
         // leg: thigh swings from the hip, the knee flexes as the leg comes through
-        M.copy(ROOT).multiply(L.makeTranslation(sign * BODY.hipX, BODY.hipY, 0)).multiply(R.makeRotationX(legSwing * sign));
+        const legA = p.atkKind === 2 && s === 1 ? 1.4 * p.atkE : legSwing * sign;   // a kick swings the right leg up and forward
+        M.copy(ROOT).multiply(L.makeTranslation(sign * BODY.hipX, BODY.hipY, 0)).multiply(R.makeRotationX(legA));
         P.thigh.setMatrixAt(k, M);
-        const knee = 0.9 * Math.max(0, sign * Math.cos(p.phase)) * p.moving * (p.kind === 3 ? 0.45 : 1);
+        let knee = 0.9 * Math.max(0, sign * Math.cos(p.phase)) * p.moving * (p.kind === 3 ? 0.45 : 1);
+        if (p.atkKind === 2 && s === 1) knee = 1.1 * Math.sin(Math.min(1, p.atkE) * Math.PI);
         M.multiply(L.makeTranslation(0, -BODY.thigh, 0)).multiply(R.makeRotationX(-knee));
         P.shin.setMatrixAt(k, M);
         P.feet.setMatrixAt(k, M);
         // arm: swings opposite to the leg, elbow bent a little more as the hand comes forward
-        const armA = -swing * 0.75 * sign;
+        const punch = p.atkKind === 1 && s === 1;
+        const armA = punch ? 1.45 * p.atkE : p.guard ? 0.85 : -swing * 0.75 * sign;
         M.copy(ROOT).multiply(L.makeTranslation(sign * BODY.shoulderX, BODY.shoulderY, 0)).multiply(R.makeRotationX(armA));
         P.sleeve.setMatrixAt(k, M);
-        const flex = 0.18 + 0.55 * Math.max(0, armA / 0.42) * p.moving;
+        const flex = punch ? 0.1 + 0.9 * (1 - p.atkE) : p.guard ? 1.15 : 0.18 + 0.55 * Math.max(0, armA / 0.42) * p.moving;
         M.multiply(L.makeTranslation(0, -BODY.upperArm, 0)).multiply(R.makeRotationX(flex));
         P.forearm.setMatrixAt(k, M);
         P.hand.setMatrixAt(k, M);
@@ -285,7 +447,8 @@ export class Pedestrians {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
-const V = new THREE.Vector3(), S = new THREE.Vector3(), Q = new THREE.Quaternion();
+const V = new THREE.Vector3(), S = new THREE.Vector3(), Q = new THREE.Quaternion(), Q2 = new THREE.Quaternion();
+const AX = new THREE.Vector3(1, 0, 0);
 const ROOT = new THREE.Matrix4(), M = new THREE.Matrix4(), L = new THREE.Matrix4(), R = new THREE.Matrix4();
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 

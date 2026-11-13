@@ -9,6 +9,10 @@ const CELL = 8;
 /** 2D collision world: building walls and water edges as segments on a spatial hash. */
 export class CollisionWorld {
   private cells = new Map<number, Seg[]>();
+  /** walkable surfaces above the ground (stairs, galleries): height at (x, z), or null when not over this surface */
+  private floors: ((x: number, z: number) => number | null)[] = [];
+  /** low obstacles (counters, platforms, carts): you can jump up on them and stand on top */
+  private tops = new Map<number, { x0: number; x1: number; z0: number; z1: number; h: number }[]>();
 
   constructor(map: MapData) {
     for (const b of map.buildings) this.addRing(b.pts, b.base + b.h);
@@ -18,10 +22,35 @@ export class CollisionWorld {
   /** Square post (pillar, pole, tree trunk) of half-size r. */
   addPost(x: number, z: number, r: number, h = 10): void {
     this.addRing([[x - r, z - r], [x + r, z - r], [x + r, z + r], [x - r, z + r]], h, r > 0.5);
+    if (h <= 1.7) {
+      const t = { x0: x - r, x1: x + r, z0: z - r, z1: z + r, h };
+      for (let cx = Math.floor(t.x0 / CELL); cx <= Math.floor(t.x1 / CELL); cx++) for (let cz = Math.floor(t.z0 / CELL); cz <= Math.floor(t.z1 / CELL); cz++) {
+        const k = this.key(cx, cz);
+        let l = this.tops.get(k);
+        if (!l) this.tops.set(k, (l = []));
+        l.push(t);
+      }
+    }
   }
 
-  addWall(ring: P2[], h: number): void {
-    this.addRing(ring, h);
+  addWall(ring: P2[], h: number, cam = true): void {
+    this.addRing(ring, h, cam);
+  }
+
+  addFloor(f: (x: number, z: number) => number | null): void {
+    this.floors.push(f);
+  }
+
+  /** Height of the highest surface under (x, z) that a walker at foot height y can step onto (0 = the ground). */
+  floorAt(x: number, z: number, y: number): number {
+    let best = 0;
+    const cell = this.tops.get(this.key(Math.floor(x / CELL), Math.floor(z / CELL)));
+    if (cell) for (const t of cell) if (x >= t.x0 && x <= t.x1 && z >= t.z0 && z <= t.z1 && t.h > best && t.h <= y + 0.5) best = t.h;
+    for (const f of this.floors) {
+      const h = f(x, z);
+      if (h !== null && h > best && h <= y + 0.5) best = h;
+    }
+    return best;
   }
 
   private key(cx: number, cz: number): number {
@@ -58,7 +87,7 @@ export class CollisionWorld {
     for (let iter = 0; iter < 3; iter++) {
       let moved = false;
       for (const s of this.near(x - r, z - r, x + r, z + r)) {
-        if (y >= s.h - 0.1) continue; // standing above it (e.g. on a roof)
+        if (y >= s.h - 0.5) continue; // standing on it, or high enough to clamber up (a jump onto a counter, a platform)
         const dx = s.bx - s.ax, dz = s.bz - s.az;
         const l2 = dx * dx + dz * dz || 1e-9;
         const t = Math.max(0, Math.min(1, ((x - s.ax) * dx + (z - s.az) * dz) / l2));

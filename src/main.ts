@@ -2,12 +2,15 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { CollisionWorld } from './player/collide';
 import { Ramu } from './player/ramu';
 import { CROWD_MAX, loadSettings, onSettingsChange } from './game/settings';
 import { Stats } from './game/stats';
 import { Hud } from './ui/hud';
+import { Health } from './game/health';
 import { Menu } from './ui/menu';
 import { City } from './world/city';
 import { Landmarks } from './world/landmarks';
@@ -17,6 +20,7 @@ import { makeOccupancy, StreetDetail } from './world/streetDetail';
 import { treeUniforms } from './world/trees';
 import { MapData, project } from './world/types';
 import { LightPool, NIGHT, updateGlow } from './world/night';
+import { LampPools, lampColor } from './world/lampPools';
 import { Controls } from './game/controls';
 import { Mela } from './world/mela';
 import { Vendors } from './world/vendors';
@@ -98,8 +102,11 @@ async function main() {
   const occupied = makeOccupancy(map);
   const detail = new StreetDetail(map, occupied);
   scene.add(detail.group);
-  const lightPool = new LightPool(scene, 8);
-  if (NIGHT) for (const [x, z] of detail.lamps) lightPool.add(x, 8.2, z, '#ffd9a0', 170, 32);
+  const lightPool = new LightPool(scene, desktop ? 10 : 8);
+  if (NIGHT) for (const [x, z] of detail.lamps) lightPool.add(x, 8.2, z, lampColor(x, z), 170, 32);
+  if (params.has('debug')) (window as unknown as { __lamps: [number, number][] }).__lamps = detail.lamps;
+  const lampPools = NIGHT ? new LampPools(detail.lamps) : null;
+  if (lampPools) scene.add(lampPools.group);
   const world = new CollisionWorld(map);
   for (const [x, z] of city.pillars) world.addPost(x, z, 0.9);
   for (const [x, z, r] of detail.obstacles) world.addPost(x, z, r);
@@ -107,7 +114,9 @@ async function main() {
   const mela = map.area === 'moti_jheel' ? new Mela(map, NIGHT ? lightPool : null, desktop) : null;
   if (mela) {
     scene.add(mela.group);
-    for (const [x, z, r] of mela.posts) world.addPost(x, z, r);
+    for (const [x, z, r, h] of mela.posts) world.addPost(x, z, r, h);
+    for (const w of mela.rails) world.addWall(w.ring, w.h, false);
+    for (const f of mela.floors) world.addFloor(f);
     for (const ring of mela.walls) world.addWall(ring, 3.4);
   }
   const landmarks = new Landmarks(map);
@@ -147,34 +156,50 @@ async function main() {
   // Spawn: near the Moti Jheel metro on the nearest road point.
   const m = map.landmarks.moti_jheel_metro ?? [0, 0];
   let spawn: [number, number] = [m[0] + 6, m[1] + 45]; // just south of the station, facing it
-  if (params.get('spawn') && params.get('spawn') !== 'mela') {
+  if (params.get('spawn') && !['mela', 'inside', 'metro'].includes(params.get('spawn')!)) {
     const [lat, lon] = params.get('spawn')!.split(',').map(Number);
     spawn = project(map, lat, lon);
   }
-  if (params.get('spawn') === 'mela') spawn = [TEAR.x - 7, TEAR.z];   // in the park, outside the torn place in the cloth wall
+  const spawnMode = params.get('spawn') ?? (map.area === 'moti_jheel' ? 'inside' : null);
+  if (spawnMode === 'mela') spawn = [TEAR.x - 7, TEAR.z];   // in the park, outside the torn place in the cloth wall
+  if (spawnMode === 'inside') spawn = [TEAR.x + 2.2, TEAR.z]; // the game starts in the mela, just past the tear (beside the stage entry)
   let best = spawn, bd = Infinity;
   for (const p of city.roadPoints) {
     const d = Math.hypot(p[0] - spawn[0], p[1] - spawn[1]);
     if (d < bd) [bd, best] = [d, p];
   }
-  if (params.get('spawn') === 'mela') best = spawn;
+  if (spawnMode === 'mela' || spawnMode === 'inside') best = spawn;
   ramu.position.set(best[0], 0, best[1]);
+  const spawnAt: [number, number] = [best[0], best[1]];
+  // life bar: vehicles hurt; a knockout wakes Ramu back at the spawn point
+  const health = new Health(() => { ramu.position.set(spawnAt[0], 0, spawnAt[1]); ramu.releaseKeys(); });
+  if (params.has('debug')) (window as unknown as { __health: Health }).__health = health;
+  // goons (dark-clothed men in the crowd) run at Ramu and punch / kick; his own punch staggers them
+  const mugged = (d: number) => health.hurt(d);
+  const away = (x: number, z: number): [number, number] => world.resolve(x, z, 0.35, 0);
+  peds.onHurt = mugged;
+  peds.resolve = away;
+  peds.vehicleAt = null;   // set once the traffic exists
+  if (mela) { mela.crowd.onHurt = mugged; mela.crowd.resolve = away; }
+  if (params.has('debug')) (window as unknown as { __peds: Pedestrians }).__peds = peds;
+  let punchesSeen = 0;
 
   // Blender-built props: traffic (buses, autos, e-rickshaws) and panipuri stalls. ?traffic=0 turns traffic off.
   const traffic = params.get('traffic') === '0' ? null : await Traffic.create(map, desktop);
-  if (traffic) scene.add(traffic.group);
+  if (traffic) { scene.add(traffic.group); peds.vehicleAt = (x, z, r) => traffic.hit(x, z, r); }
+  if (traffic && params.has('debug')) (window as unknown as { __traffic: Traffic }).__traffic = traffic;
   const solid: [number, number, number][] = [...detail.obstacles, ...landmarks.posts,
     ...city.pillars.map(([x, z]) => [x, z, 0.9] as [number, number, number])];
   const stalls = await makeStalls(map, occupied, solid, best);
   scene.add(stalls.mesh);
-  for (const [x, z, r] of stalls.posts) world.addPost(x, z, r);
+  for (const [x, z, r] of stalls.posts) world.addPost(x, z, r, 1.15);   // low enough to jump up on
   const vendors = new Vendors(map, occupied, [...solid, ...stalls.posts], NIGHT ? lightPool : null, desktop);
   scene.add(vendors.group);
-  for (const [x, z, r] of vendors.posts) world.addPost(x, z, r);
+  for (const [x, z, r] of vendors.posts) world.addPost(x, z, r, 1.15);
   console.log('street life', vendors.stats);
   if (params.has('debug')) (window as unknown as { __vendors: Vendors }).__vendors = vendors;   // for test scripts
   console.log('props', { stalls: stalls.posts.length, traffic: !!traffic });
-  ramu.yaw = params.get('spawn') === 'mela' ? -Math.PI / 2 : Math.atan2(best[0] - m[0], best[1] - m[1]); // camera looks toward the metro (or into the mela)
+  ramu.yaw = spawnMode === 'mela' || spawnMode === 'inside' ? -Math.PI / 2 : Math.atan2(best[0] - m[0], best[1] - m[1]); // camera looks toward the metro (or into the mela)
 
   // Fixed debug cameras.
   let fixed = false;
@@ -227,6 +252,23 @@ async function main() {
       });
     };
     composer.addPass(ao);
+    // lights bloom (only things brighter than the scene's whites: bulbs, lamps, signs, lenses)
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), NIGHT ? 0.22 : 0.08, 0.4, NIGHT ? 1.05 : 1.3));
+    // grade: cool shadows, warm highlights, a little vignette, so a night street reads as a night street
+    composer.addPass(new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, night: { value: NIGHT ? 1 : 0 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D tDiffuse; uniform float night; varying vec2 vUv;
+void main() {
+  vec3 c = texture2D(tDiffuse, vUv).rgb;
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c = mix(c, c * vec3(0.86, 0.98, 1.16), (1.0 - smoothstep(0.0, 0.3, l)) * 0.55 * night);
+  c = mix(c, c * vec3(1.1, 1.0, 0.86), smoothstep(0.5, 2.0, l) * 0.45 * night);
+  vec2 d = vUv - 0.5;
+  c *= 1.0 - dot(d, d) * (0.55 + 0.5 * night);
+  gl_FragColor = vec4(c, 1.0);
+}`,
+    }));
     composer.addPass(new OutputPass());
   }
 
@@ -241,7 +283,15 @@ async function main() {
   let frames = 0, acc = 0;
   renderer.setAnimationLoop(() => {
     const dt = Math.min(0.05, clock.getDelta());
-    if (!fixed) ramu.update(dt);
+    if (!fixed && ramu.punches !== punchesSeen) {
+      punchesSeen = ramu.punches;
+      const fx = -Math.sin(ramu.facing), fz = -Math.cos(ramu.facing);
+      peds.hit(ramu.position.x, ramu.position.z, fx, fz);
+      mela?.crowd.hit(ramu.position.x, ramu.position.z, fx, fz);
+      const target = peds.lastHit ?? mela?.crowd.lastHit;
+      if (target) ramu.faceTowards(target.x, target.z);
+    }
+    if (!fixed) { health.update(dt); ramu.enabled = !paused && !health.knockedOut; ramu.update(dt); }
     if (!fixed && !paused) stats.update(dt, ramu.position.x, ramu.position.z, ramu.speed, ramu.jumps);
     const focus = fixed ? camera.position : ramu.position;
     sun.target.position.set(focus.x, 0, focus.z);
@@ -249,10 +299,20 @@ async function main() {
       camera.getWorldDirection(lookDir);
       const l = Math.hypot(lookDir.x, lookDir.z) || 1;
       const who: [number, number] = fixed ? [Infinity, Infinity] : [focus.x, focus.z];
-      peds.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
-      mela?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
+      const prey: [number, number] = health.knockedOut ? [Infinity, Infinity] : who;   // goons leave a knocked-out Ramu alone
+      peds.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, prey[0], prey[1], ramu.position.y);
+      mela?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, prey[0], prey[1], ramu.position.y);
       traffic?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
-      if (traffic && !fixed) [ramu.position.x, ramu.position.z] = traffic.pushOut(ramu.position.x, ramu.position.z, 0.35);
+      if (traffic && !fixed) {
+        const bx = ramu.position.x, bz = ramu.position.z;
+        // hit by a moving vehicle: hurt (more the faster it goes) and thrown clear
+        const h = ramu.stun <= 0 && !health.knockedOut ? traffic.hit(bx, bz, 0.4) : null;
+        if (h && h.speed > 1.2) {
+          health.hurt(Math.min(45, Math.round(8 + h.speed * 3.5)));
+          ramu.knock(h.vx * 0.85, h.vz * 0.85, 3.2);
+        }
+        [ramu.position.x, ramu.position.z] = traffic.pushOut(bx, bz, 0.35);
+      }
     }
     sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
     if (!fixed) hud.update(ramu.position.x, ramu.position.z, ramu.yaw);
@@ -261,6 +321,7 @@ async function main() {
     sky.position.copy(camera.position);
     updateGlow(dt, camera, innerHeight * renderer.getPixelRatio());
     if (NIGHT) lightPool.update(focus.x, focus.z);
+    lampPools?.update(camera.position.x, camera.position.z);
     if (composer) composer.render(dt);
     else renderer.render(scene, camera);
     (window as unknown as { __ready: boolean }).__ready = true;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { noiseTexture } from './textures';
+import { NIGHT } from './night';
 
 /** Surface ids, stored in uv.x of flat geometry (uv.y = position across a road ribbon, -1..1). */
 export const SURF = { concrete: 0, asphalt: 1, dirt: 2, grass: 3, paving: 4 } as const;
@@ -13,6 +14,7 @@ export function makeGroundMaterial(): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.noiseTex = { value: noiseTexture() };
+    sh.uniforms.uWet = { value: NIGHT ? 1 : 0 };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
 varying vec3 vW;
@@ -25,6 +27,7 @@ vSurf = uv;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform sampler2D noiseTex;
+uniform float uWet;
 varying vec3 vW;
 varying vec3 vWN;
 varying vec2 vSurf;
@@ -47,6 +50,11 @@ float gRough = 0.95;`)
     float edge = smoothstep(0.72, 1.0, abs(across));
     col = mix(col, vec3(0.24, 0.20, 0.14), edge * (0.3 + 0.4 * n1.g));  // dust blown to the edges
     gRough = 0.82 + 0.14 * grain;
+    if (uWet > 0.5) {                                              // after the rain: damp asphalt with glossy puddles
+      float pud = smoothstep(0.46, 0.62, n2.g * 0.55 + n1.g * 0.45);
+      col *= mix(0.92, 0.55, pud);
+      gRough = mix(0.5 + 0.2 * grain, 0.05, pud);
+    }
   } else if (surf == 2) {                // dusty soil
     col *= mix(0.75, 1.15, n2.b) * (0.82 + 0.36 * n3.r);
     col = mix(col, col * vec3(0.8, 0.82, 0.7), smoothstep(0.55, 0.8, n2.g) * 0.6);
@@ -61,7 +69,7 @@ float gRough = 0.95;`)
     col *= (0.86 + 0.28 * n3.r) * mix(0.85, 1.1, n2.g);
     col = mix(col, col * 0.7, smoothstep(0.72, 0.85, n1.b) * 0.6);  // stains
     col *= 1.0 - 0.3 * smoothstep(0.92, 0.98, n1.a);
-    gRough = 0.9;
+    gRough = uWet > 0.5 ? 0.62 : 0.9;
   } else {                               // weathered concrete
     col *= (0.9 + 0.2 * n3.r) * mix(0.88, 1.08, n1.g);
     col = mix(col, col * 0.75, smoothstep(0.75, 0.9, n2.b) * 0.5);

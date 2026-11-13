@@ -19,6 +19,10 @@ export class Ramu {
   enabled = true;
   /** total jumps (for statistics) */
   jumps = 0;
+  /** punches thrown so far (the game checks it to see when one was thrown) */
+  punches = 0;
+  /** seconds left of being knocked about (no control while it runs) */
+  stun = 0;
   private grounded = true;
   private keys = new Set<string>();
   private touchMove = new THREE.Vector2();
@@ -52,6 +56,26 @@ export class Ramu {
     return Math.hypot(this.vel.x, this.vel.z);
   }
 
+  /** the way he faces (radians, the same convention as a pedestrian's heading) */
+  get facing(): number {
+    return this.model.rotation.y;
+  }
+
+  /** turn to face a point (the punch finds its man) */
+  faceTowards(x: number, z: number): void {
+    this.model.rotation.y = Math.atan2(-(x - this.root.position.x), -(z - this.root.position.z));
+  }
+
+  /** Thrown by a car or a blow: sets him flying (vx, vz in m/s, vy up) and takes control away for a moment. */
+  knock(vx: number, vz: number, vy = 3): void {
+    this.vel.x = vx;
+    this.vel.z = vz;
+    this.vel.y = vy;
+    this.grounded = false;
+    this.stun = 0.9;
+    this.punching = false;
+  }
+
   /** forget held keys (e.g. when a menu takes focus) */
   releaseKeys(): void {
     this.keys.clear();
@@ -60,7 +84,8 @@ export class Ramu {
 
   update(dt: number): void {
     const input = new THREE.Vector2();
-    if (this.enabled) {
+    this.stun = Math.max(0, this.stun - dt);
+    if (this.enabled && this.stun <= 0) {
       const c = this.controls;
       if (c.held('forward', this.keys)) input.y -= 1;
       if (c.held('back', this.keys)) input.y += 1;
@@ -75,8 +100,9 @@ export class Ramu {
     }
     this.jumpQueued = false;
     const crouching = this.enabled && this.controls.held('crouch', this.keys);
-    if (this.punchQueued && this.enabled && this.grounded && !this.punching && this.actions.punch) {
+    if (this.punchQueued && this.enabled && this.stun <= 0 && this.grounded && !this.punching && this.actions.punch) {
       this.punching = true;
+      this.punches++;
       const a = this.actions.punch;
       a.reset();
       a.timeScale = this.cfg.punchSpeed;
@@ -89,7 +115,7 @@ export class Ramu {
     const running = this.controls.held('run', this.keys) || this.touchRun;
     let speed = crouching ? CROUCH : running ? this.cfg.runSpeed : this.cfg.walkSpeed;
     if (this.punching) speed *= 0.15;
-    const step = ACCEL * speed * dt;
+    const step = (this.stun > 0 ? 4 : ACCEL * speed) * dt;   // knocked back: slide rather than stop dead
     this.vel.x = moveToward(this.vel.x, dir.x * speed, step);
     this.vel.z = moveToward(this.vel.z, dir.z * speed, step);
     this.vel.y -= GRAVITY * dt;
@@ -98,8 +124,10 @@ export class Ramu {
     p.x += this.vel.x * dt;
     p.z += this.vel.z * dt;
     p.y += this.vel.y * dt;
-    if (p.y <= 0) {
-      p.y = 0;
+    const floor = this.world.floorAt(p.x, p.z, p.y);
+    if (this.grounded && this.vel.y <= 0 && p.y > floor && p.y - floor < 0.45) p.y = floor;   // walking down a stair keeps his feet on it
+    if (p.y <= floor) {
+      p.y = floor;
       this.vel.y = 0;
       this.grounded = true;
     }

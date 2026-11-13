@@ -68,7 +68,7 @@ export class Bulbs {
     const out = new THREE.Group();
     if (!this.list.length) return out;
     const parts = this.list.map((b) => {
-      const g = new THREE.OctahedronGeometry(0.055 * b.size, 0).toNonIndexed();
+      const g = new THREE.IcosahedronGeometry(0.05 * b.size, 0).toNonIndexed();
       g.deleteAttribute('normal');
       g.deleteAttribute('uv');
       g.translate(b.x, b.y, b.z);

@@ -13,6 +13,23 @@ NAME, TRIS = argv[0], int(argv[1])
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=os.path.join(ROOT, 'public', 'models', NAME + '.glb'), merge_vertices=True)
+# the wheels (split_wheels.py) go back into the body: far away they need not turn
+for o in list(bpy.data.objects):
+    if o.type == 'EMPTY':
+        bpy.data.objects.remove(o, do_unlink=True)
+meshes = [o for o in bpy.data.objects if o.type == 'MESH']
+solid = [o for o in meshes if not any(m and m.name == 'glass' for m in o.data.materials)]
+for o in solid:
+    mw = o.matrix_world.copy()
+    o.parent = None
+    o.matrix_world = mw
+if len(solid) > 1:
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in solid:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = solid[0]
+    bpy.ops.object.join()
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 meshes = [o for o in bpy.data.objects if o.type == 'MESH']
 
 

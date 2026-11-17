@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { walkAlong } from './city';
 import { hash2, MapData, P2 } from './types';
 import { beamMaterial, NIGHT } from './night';
-import { loadPBR, PBRPart } from './vehicleModels';
+import { loadPBR, loadWheels, PBRPart, Wheel } from './vehicleModels';
 import { FigureKind, Pose, riderParts } from './figures';
 import { inMela } from './melaSite';
 
@@ -35,7 +35,7 @@ async function loadModel(name: string): Promise<Parts> {
 
 /** Models with real materials (photo-textured ones from tools/triposr, the scripted Maruti) keep them; the old vertex-coloured ones get the shared paint. */
 async function loadAny(name: string): Promise<Parts> {
-  const pbr = await loadPBR(name);
+  const pbr = (await loadPBR(name)).filter((p) => !p.wheel);     // the wheels are drawn on their own, turning
   if (pbr.some((p) => p.mat.map || p.mat.name === 'paint')) return { body: new THREE.BufferGeometry(), pbr };
   return loadModel(name);
 }
@@ -66,6 +66,8 @@ export interface Vehicle {
   parked: boolean;
   /** its people were thrown out: no riders drawn on it until it is recycled */
   empty: boolean;
+  /** metres rolled (the wheels turn by dist / radius), and the front wheels' steer angle (radians, to the left) */
+  dist: number; steer: number;
 }
 
 /**
@@ -104,7 +106,11 @@ export const LOD_TRIS: Record<string, number> = {
 };
 
 /** one way of drawing a kind: an InstancedMesh per part, plus the riders, packed so only the vehicles in use are drawn */
-interface Draw { parts: THREE.InstancedMesh[]; riders: THREE.InstancedMesh[]; n: number; rn: number[] }
+interface Draw {
+  parts: THREE.InstancedMesh[]; riders: THREE.InstancedMesh[]; n: number; rn: number[];
+  /** per wheel of the kind, its parts (none in the far draw for a model's own wheels: they are in the far body, still) */
+  wheels: { mesh: THREE.InstancedMesh; colours: THREE.Color[] | null }[][];
+}
 
 const SPAWN_MIN = 90, SPAWN_MAX = 230, DESPAWN = 265;
 const CAR_COLOURS = ['#e9e7e0', '#e9e7e0', '#a72a2a', '#8d9196', '#2b4c8c', '#d8d3c4', '#5a1f1f', '#e9e7e0'];
@@ -189,11 +195,12 @@ export class Traffic {
         // a figure faces -z and a vehicle +z: turn it round, then put it on the seat
         return { seat: si, look: v, mat, geo: geo.clone().rotateY(Math.PI).scale(s, s, s).translate(...seat.at) };
       })))));
-    return new Traffic(map, kinds, parts, far, riders);
+    const wheels = await Promise.all(kinds.map((k) => loadWheels(k.name)));
+    return new Traffic(map, kinds, parts, far, riders, wheels);
   }
 
   private constructor(map: MapData, private kinds: Kind[], parts: Parts[], far: (THREE.BufferGeometry[] | null)[],
-    riders: { seat: number; look: number; mat: THREE.Material; geo: THREE.BufferGeometry }[][]) {
+    riders: { seat: number; look: number; mat: THREE.Material; geo: THREE.BufferGeometry }[][], private wheels: Wheel[][]) {
     this.buildGraph(map);
     const im = (g: THREE.BufferGeometry, m: THREE.Material, n: number) => {
       const mesh = new THREE.InstancedMesh(g, m, n);
@@ -208,13 +215,15 @@ export class Traffic {
       const p = parts[ki];
       // the parts: geometry and material, and the colour each vehicle slot gives it
       const list: { geo: THREE.BufferGeometry; lod: THREE.BufferGeometry; mat: THREE.Material; shadow: boolean; colours: THREE.Color[] | null }[] = [];
+      const colouring = (mat: THREE.Material): THREE.Color[] | null => {
+        if (mat.name === 'paint') return Array.from({ length: k.count }, (_, i) => new THREE.Color(CAR_COLOURS[(i * 7 + 3) % CAR_COLOURS.length]));
+        // photo-textured models: a little variation in how clean / faded each one is
+        if ((mat as THREE.MeshStandardMaterial).map) return Array.from({ length: k.count }, (_, i) => new THREE.Color().setScalar(0.78 + 0.22 * (((i * 37) % 10) / 9)));
+        return null;
+      };
       if (p.pbr) {
         p.pbr.forEach(({ geo, mat }, pi) => {
-          let colours: THREE.Color[] | null = null;
-          if (mat.name === 'paint') colours = Array.from({ length: k.count }, (_, i) => new THREE.Color(CAR_COLOURS[(i * 7 + 3) % CAR_COLOURS.length]));
-          // photo-textured models: a little variation in how clean / faded each one is
-          else if (mat.map) colours = Array.from({ length: k.count }, (_, i) => new THREE.Color().setScalar(0.78 + 0.22 * (((i * 37) % 10) / 9)));
-          list.push({ geo, lod: far[ki]?.[pi] ?? geo, mat, shadow: mat.name !== 'glass', colours });
+          list.push({ geo, lod: far[ki]?.[pi] ?? geo, mat, shadow: mat.name !== 'glass', colours: colouring(mat) });
         });
       } else {
         list.push({ geo: p.body, lod: p.body, mat: paint(), shadow: true, colours: null });
@@ -238,7 +247,14 @@ export class Traffic {
           m.castShadow = !lodded;
           return m;
         });
-        return { parts, riders: rs, n: 0, rn: rs.map(() => 0) };
+        const ws = wheels[ki].map((w) => (lodded ? w.far : w.parts).map((q) => {
+          const m = im(q.geo, q.mat, k.count);
+          m.castShadow = !lodded;
+          const colours = colouring(q.mat);
+          if (colours) m.setColorAt(0, colours[0]);
+          return { mesh: m, colours };
+        }));
+        return { parts, riders: rs, n: 0, rn: rs.map(() => 0), wheels: ws };
       };
       this.meshes.push({
         near: draw(false), far: draw(true), colours: list.map((q) => q.colours),
@@ -249,7 +265,7 @@ export class Traffic {
         this.cars.push({
           kind: ki, slot: i, vmax: k.speed * (0.85 + Math.random() * 0.3), v: 0,
           a: 0, b: 0, link: { to: 0, off: 0, bus: false }, t: 0, len: 1, x: 0, z: 0, heading: 0, fresh: true, near: false,
-          player: false, parked: false, empty: false,
+          player: false, parked: false, empty: false, dist: 0, steer: 0,
         });
       }
     });
@@ -430,7 +446,12 @@ export class Traffic {
       const s = Math.min(1, dt * 3.5);
       c.x += (tx - c.x) * s;
       c.z += (tz - c.z) * s;
-      c.heading += Math.atan2(Math.sin(th - c.heading), Math.cos(th - c.heading)) * s;
+      const turn = Math.atan2(Math.sin(th - c.heading), Math.cos(th - c.heading)) * s;
+      c.heading += turn;
+      c.dist += c.v * dt;
+      // the front wheels point the way it is turning: steer = atan(turn rate × wheelbase / speed)
+      const lock = Math.max(-0.55, Math.min(0.55, Math.atan((turn / Math.max(dt, 1e-3)) * this.wheelbase(c.kind) / Math.max(1, c.v))));
+      c.steer += (lock - c.steer) * Math.min(1, dt * 6);
     }
     this.separate();
     this.write(fx, fz);
@@ -515,9 +536,11 @@ export class Traffic {
     // turns the way the wheels point, the sharper the slower it goes (none standing still)
     const grip = Math.min(1, Math.abs(c.v) / 3) / (1 + Math.abs(c.v) / (s.vmax * 1.5));
     c.heading += steer * s.turn * grip * Math.sign(c.v) * dt;
+    c.steer += (steer * 0.5 / (1 + Math.abs(c.v) / 12) - c.steer) * Math.min(1, dt * 7);
     const fx = Math.sin(c.heading), fz = Math.cos(c.heading);
     c.x += fx * c.v * dt;
     c.z += fz * c.v * dt;
+    c.dist += c.v * dt;
     // the body as circles along its length
     const r = k.halfW, n = Math.max(1, Math.round((k.halfL - r) / r) + 1), span = Math.max(0, k.halfL - r);
     const circles = (o: Vehicle) => this.circles(o);
@@ -575,6 +598,14 @@ export class Traffic {
         b.x += px * deep * kb; b.z += pz * deep * kb;
       }
     }
+  }
+
+  /** front axle to rear axle, m (from the wheels; for a kind without, most of its length) */
+  wheelbase(kind: number): number {
+    const ws = this.wheels[kind];
+    if (!ws?.length) return this.kinds[kind].halfL * 1.2;
+    const zs = ws.map((w) => w.hub.z);
+    return Math.max(0.5, Math.max(...zs) - Math.min(...zs));
   }
 
   /** a vehicle's body as circles of its half-width along its length: [x, z] */
@@ -640,6 +671,18 @@ export class Traffic {
         const col = m.colours[pi];
         if (col) p.setColorAt(i, col[c.slot]);
       });
+      // the wheels: at their hubs, the front ones steered, all rolled by the distance gone
+      this.wheels[c.kind].forEach((w, wi) => {
+        const parts = dr.wheels[wi];
+        if (!parts.length) return;
+        WM.copy(M).multiply(WT.makeTranslation(w.hub.x, w.hub.y, w.hub.z));
+        if (w.steer && c.steer) WM.multiply(WT.makeRotationY(c.steer));
+        WM.multiply(WT.makeRotationX(c.dist / w.r));
+        for (const q of parts) {
+          q.mesh.setMatrixAt(i, WM);
+          if (q.colours) q.mesh.setColorAt(i, q.colours[c.slot]);
+        }
+      });
       const seated = this.seated[c.kind];
       dr.riders.forEach((r, ri) => {
         if (seated[ri][c.slot] && !c.empty) r.setMatrixAt(dr.rn[ri]++, M);
@@ -653,6 +696,12 @@ export class Traffic {
           p.instanceMatrix.needsUpdate = true;
           if (p.instanceColor) p.instanceColor.needsUpdate = true;
         });
+        for (const parts of dr.wheels) for (const q of parts) {
+          q.mesh.count = dr.n;
+          q.mesh.visible = dr.n > 0;
+          q.mesh.instanceMatrix.needsUpdate = true;
+          if (q.mesh.instanceColor) q.mesh.instanceColor.needsUpdate = true;
+        }
         dr.riders.forEach((r, ri) => {
           r.count = dr.rn[ri];
           r.visible = dr.rn[ri] > 0;
@@ -683,7 +732,7 @@ export class Traffic {
   }
 }
 
-const M = new THREE.Matrix4(), M2 = new THREE.Matrix4(), V3 = new THREE.Vector3();
+const M = new THREE.Matrix4(), M2 = new THREE.Matrix4(), V3 = new THREE.Vector3(), WM = new THREE.Matrix4(), WT = new THREE.Matrix4();
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
 // ---------------------------------------------------------------------------------------------

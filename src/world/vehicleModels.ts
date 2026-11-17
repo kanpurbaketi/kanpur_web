@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { NIGHT } from './night';
 
 /*
@@ -10,20 +11,58 @@ import { NIGHT } from './night';
 
 const LAMP: Record<string, [string, number]> = { lamp_head: ['#fff1c8', 3.0], lamp_tail: ['#ff2a1a', 1.5], lamp_amber: ['#ffa030', 0.4] };
 
-export interface PBRPart { geo: THREE.BufferGeometry; mat: THREE.MeshStandardMaterial }
+/** `wheel`: the part belongs to that wheel (tools/blender/split_wheels.py) */
+export interface PBRPart { geo: THREE.BufferGeometry; mat: THREE.MeshStandardMaterial; wheel?: string }
 
-const cache = new Map<string, Promise<PBRPart[]>>();
+/**
+ * A wheel the game turns: its hub in the vehicle's frame, radius and width (m), whether it steers, and its parts with
+ * their geometry about the hub (axle along x). `made`: a modelled wheel (the photo-built vehicles), not the model's own.
+ */
+export interface Wheel { name: string; hub: THREE.Vector3; r: number; w: number; steer: boolean; made: boolean; parts: PBRPart[]; far: PBRPart[] }
 
-/** Every mesh of the model with its transform baked into the geometry, and its (shared) material. */
+interface Loaded { parts: PBRPart[]; wheels: Wheel[] }
+const cache = new Map<string, Promise<Loaded>>();
+
+/** Every mesh of the model with its transform baked into the geometry, and its (shared) material; the wheels in place. */
 export function loadPBR(name: string): Promise<PBRPart[]> {
+  return load(name).then((l) => l.parts);
+}
+
+/** The wheels of a model, for turning them. */
+export function loadWheels(name: string): Promise<Wheel[]> {
+  return load(name).then((l) => l.wheels);
+}
+
+function load(name: string): Promise<Loaded> {
   let p = cache.get(name);
   if (!p) {
     p = new GLTFLoader().loadAsync(`models/${name}.glb`).then((gltf) => {
       gltf.scene.updateMatrixWorld(true);
       const out: PBRPart[] = [];
+      const wheels: Wheel[] = [];
+      gltf.scene.traverse((o) => {
+        if (!o.name.startsWith('wheel_') || o.parent?.name.startsWith('wheel_')) return;
+        const u = o.userData as { r?: number; w?: number; steer?: number; make?: number };
+        const hub = new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+        const r = u.r ?? 0.3, w = u.w ?? 0.2, right = hub.x < 0;
+        const wheel: Wheel = { name: o.name, hub, r, w, steer: !!u.steer, made: !!u.make, parts: [], far: [] };
+        if (wheel.made) {
+          wheel.parts = madeWheel(r, w, right, 20);
+          wheel.far = madeWheel(r, w, right, 8);
+        } else {
+          const inv = new THREE.Matrix4().copy(o.matrixWorld).invert();
+          o.traverse((c) => {
+            const m = c as THREE.Mesh;
+            if (m.isMesh) wheel.parts.push({ geo: m.geometry.clone().applyMatrix4(inv.clone().multiply(m.matrixWorld)), mat: m.material as THREE.MeshStandardMaterial, wheel: o.name });
+          });
+        }
+        wheels.push(wheel);
+      });
       gltf.scene.traverse((o) => {
         const m = o as THREE.Mesh;
         if (!m.isMesh) return;
+        let wheel: string | undefined;
+        for (let q: THREE.Object3D | null = m; q; q = q.parent) if (q.name.startsWith('wheel_')) wheel = q.name;
         const mat = m.material as THREE.MeshStandardMaterial;
         const lamp = LAMP[mat.name];
         if (lamp) {
@@ -34,13 +73,52 @@ export function loadPBR(name: string): Promise<PBRPart[]> {
           mat.transparent = true;
           mat.depthWrite = false;
         }
-        out.push({ geo: m.geometry.clone().applyMatrix4(m.matrixWorld), mat });
+        out.push({ geo: m.geometry.clone().applyMatrix4(m.matrixWorld), mat, wheel });
       });
-      return out;
+      // the modelled wheels, in place, for whatever shows the vehicle standing still
+      for (const w of wheels) if (w.made) for (const q of w.parts) out.push({ geo: q.geo.clone().translate(w.hub.x, w.hub.y, w.hub.z), mat: q.mat, wheel: w.name });
+      return { parts: out, wheels };
     });
     cache.set(name, p);
   }
   return p;
+}
+
+const TYRE = new THREE.MeshStandardMaterial({ name: 'tyre', color: '#1c1c1d', roughness: 0.92, metalness: 0 });
+const RIM = new THREE.MeshStandardMaterial({ name: 'rim', color: '#9a9ca0', roughness: 0.42, metalness: 0.6 });
+
+/**
+ * A modelled wheel about its hub, the axle along x, the rim's face outward (to +x on the left, to -x on the right):
+ * a rounded tyre with a tread, a dished rim, five spokes and a hub cap (so its turning shows). `seg`: round the circle.
+ */
+function madeWheel(r: number, w: number, right: boolean, seg: number): PBRPart[] {
+  const rr = r * 0.64, e = Math.min(0.035, w * 0.25);
+  // the tyre's cross-section, revolved round the axle
+  const prof = [[rr, -w / 2], [r - e, -w / 2], [r - e * 0.3, -w / 2 + e * 0.3], [r, -w / 2 + e], [r, w / 2 - e],
+    [r - e * 0.3, w / 2 - e * 0.3], [r - e, w / 2], [rr, w / 2]].map(([a, b]) => new THREE.Vector2(a, b));
+  const tyre = new THREE.LatheGeometry(prof, seg * 2);
+  // tread: every other band of the tread a little deeper (rows of blocks)
+  const pos = tyre.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i), d = Math.hypot(x, z);
+    if (d > r - 0.002 && Math.round((Math.atan2(z, x) / (Math.PI * 2)) * seg * 4) % 2) pos.setXYZ(i, x * (1 - 0.012), pos.getY(i), z * (1 - 0.012));
+  }
+  tyre.computeVertexNormals();
+  const parts: THREE.BufferGeometry[] = [];
+  const dish = new THREE.LatheGeometry([[0.001, w * 0.22], [rr * 0.3, w * 0.24], [rr * 0.95, w * 0.12], [rr, -w * 0.3]].map(([a, b]) => new THREE.Vector2(a, b)), seg);
+  parts.push(dish);
+  for (let k = 0; k < 5; k++) {
+    const sp = new THREE.BoxGeometry(rr * 0.2, w * 0.1, rr * 0.9).translate(0, w * 0.26, rr * 0.45).rotateY((k / 5) * Math.PI * 2);
+    parts.push(sp);
+  }
+  parts.push(new THREE.CylinderGeometry(rr * 0.22, rr * 0.26, w * 0.12, seg).translate(0, w * 0.3, 0));
+  const rim = mergeGeometries(parts.map((g) => g.toNonIndexed()));
+  // the lathe's axis is y: turn it to x, the face toward +x (left); a right wheel faces -x
+  const turn = new THREE.Matrix4().makeRotationZ(-Math.PI / 2);
+  if (right) turn.premultiply(new THREE.Matrix4().makeRotationY(Math.PI));
+  tyre.applyMatrix4(turn);
+  rim.applyMatrix4(turn);
+  return [{ geo: tyre, mat: TYRE }, { geo: rim, mat: RIM }];
 }
 
 /** One car as a group of meshes; the paint material is copied so each car can have its own colour. */

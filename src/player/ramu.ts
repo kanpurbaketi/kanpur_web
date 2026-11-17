@@ -6,13 +6,17 @@ import { NIGHT } from '../world/night';
 import { loadSettings, onSettingsChange, Settings } from '../game/settings';
 import { skinParams } from '../game/skin';
 import { CLIP_SECS, ONCE, prepareClips, PUNCH_LANDS } from '../world/actors';
+import { Rider, RidePose } from './rider';
 
 const CROUCH = 1.2, ACCEL = 12, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
 const CAM_DIST = 3.2, EYE = 1.35;
 
-/** Ramu on a vehicle (set every frame by the driving): his seat in the world, which way it faces, how he sits, and the chase camera */
-export interface Ride {
-  x: number; y: number; z: number; heading: number; pose: 'ride' | 'drive';
+/**
+ * Ramu on a vehicle (set every frame by the driving): which way it faces, its pose for the rider (body frame, kind, steer,
+ * wheels' roll, how far on he is), and the chase camera.
+ */
+export interface Ride extends RidePose {
+  heading: number;
   /** the vehicle: its centre, its speed (m/s, backward < 0), the camera's distance and the height it looks at */
   cx: number; cz: number; speed: number; cam: number; camH: number;
 }
@@ -58,8 +62,8 @@ export class Ramu {
   onUse: (() => void) | null = null;
   /** the vehicle keys: headlights (pressed), horn (down and up) */
   onKey: ((a: 'lights' | 'horn', down: boolean) => void) | null = null;
-  private body: THREE.Object3D | null = null;
-  private seated = new Map<string, THREE.Mesh>();
+  /** poses him on a vehicle (IK on his rig) */
+  private rider: Rider | null = null;
   private lookIdle = 0;    // seconds since the player last turned the camera
   private skin = { gamma: { value: 1 }, tint: { value: new THREE.Color(1, 1, 1) }, glow: { value: NIGHT ? 0.2 : 0.1 } };
 
@@ -145,6 +149,7 @@ export class Ramu {
   /** Got off a vehicle at (x, z): on his feet there. */
   stepDown(x: number, z: number): void {
     this.ride = null;
+    this.model.rotation.set(0, this.model.rotation.y, 0);      // upright again (a bike leant him over)
     this.root.position.set(x, this.world.floorAt(x, z, 0.5), z);
     this.vel.set(0, 0, 0);
     this.grounded = true;
@@ -154,15 +159,17 @@ export class Ramu {
   update(dt: number): void {
     this.lookIdle += dt;
     const r = this.ride;
-    if (this.body) this.body.visible = !r;
     if (this.blob) this.blob.visible = !r;
-    for (const [pose, m] of this.seated) m.visible = !!r && r.pose === pose;
     if (r) {
-      this.root.position.set(r.x, r.y, r.z);
       this.vel.set(0, 0, 0);
-      this.model.rotation.y = r.heading + Math.PI;
       this.jumpQueued = this.punchQueued = false;
       this.punching = false;
+      // on it: the standing idle from the mixer, then the rider bends him onto the seat, the grips and the pedals
+      if (this.mixer && this.rider) {
+        this.play('idle', 0.15);
+        this.mixer.update(dt);
+        this.rider.apply(this.root, this.model, r);
+      }
       // the camera swings round behind the vehicle as it goes, unless the player is looking about
       if (this.lookIdle > 1.2 && Math.abs(r.speed) > 1.5) {
         const want = r.heading + Math.PI;
@@ -398,21 +405,7 @@ export class Ramu {
       });
       gltf.scene.rotation.y = Math.PI;
       this.model.add(gltf.scene);
-      this.body = gltf.scene;
-      // how he sits on a vehicle: still poses of the same body (tools/blender/build_figures.py --char ramu), in his own material
-      let mat: THREE.Material | null = null;
-      gltf.scene.traverse((o) => { if ((o as THREE.Mesh).isMesh && !mat) mat = (o as THREE.Mesh).material as THREE.Material; });
-      new GLTFLoader().loadAsync('models/figures/ramu.glb').then((f) => {
-        f.scene.traverse((o) => {
-          const m = o as THREE.Mesh;
-          if (!m.isMesh || !mat) return;
-          const seat = new THREE.Mesh(m.geometry.rotateY(Math.PI), mat);    // the file faces +z, as the rig does
-          seat.visible = false;
-          seat.castShadow = false;
-          this.seated.set(m.name, seat);
-          this.model.add(seat);
-        });
-      }).catch((e) => console.error('Ramu seated poses failed to load', e));
+      this.rider = new Rider(gltf.scene);
       if (NIGHT) {
         // a soft cool light just above him, so he does not vanish into the dark street
         const glow = new THREE.PointLight('#d8e4ff', 9, 9, 2);

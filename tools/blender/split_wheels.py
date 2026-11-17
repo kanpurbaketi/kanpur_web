@@ -12,6 +12,10 @@ Each wheel of WHEELS is a cylinder across the vehicle (hub, radius, width):
              there (the photo-built models, whose "wheels" are lumps of the body)
 Every wheel node carries extras the game reads: r (m), w (m), steer (1: a front wheel that steers), make (1: modelled).
 
+BARS: a two-wheeler's handlebar (with its mirrors and levers), the faces inside a box, cut into `wheel_bars` with its
+origin at the steering pivot (r = 0: it turns with the steering, it does not roll), so the rider's hands and the bars
+turn together.
+
 Frame of the table: the game's, x to the vehicle's LEFT, y up, z FORWARD, metres (Blender: x, -z, y).
 """
 import bpy, bmesh, math, os, sys
@@ -52,6 +56,13 @@ WHEELS = {
     'maruti': four(0.62, 0.98, -1.09, 0.26, 0.17, 'replace'),
     'maruti_red': four(0.62, 0.98, -1.09, 0.26, 0.17, 'replace'),
     'maruti_green': four(0.62, 0.98, -1.09, 0.26, 0.17, 'replace'),
+}
+
+# box (game frame: x half-width, y from..to, z from..to) and the steering pivot (x, y, z)
+BARS = {
+    'pulsar': ((0.62, 0.97, 1.55, 0.1, 0.5), (0.0, 1.0, 0.42)),
+    'cycle': ((0.36, 0.985, 1.2, 0.14, 0.46), (0.0, 1.05, 0.39)),
+    'rickshaw': ((0.3, 0.95, 1.14, 0.42, 0.72), (0.0, 1.0, 0.61)),
 }
 
 
@@ -130,7 +141,36 @@ def run(name):
         ob['make'] = 1 if mode == 'replace' or not inside else 0
         made.append(ob)
         print('WHEEL', name, label, mode, len(inside), 'faces', 'make' if ob['make'] else '')
-    # drop materials the body no longer uses from the wheel meshes? (unused slots export as nothing)
+    if name in BARS:
+        (hw, y0, y1, z0, z1), piv = BARS[name]
+        bm = bmesh.new()
+        bm.from_mesh(body.data)
+        bm.faces.ensure_lookup_table()
+        # Blender: x, y = -z, z = y
+        inside = [f for f in bm.faces if all(abs(v.co.x) < hw and y0 < v.co.z < y1 and z0 < -v.co.y < z1 for v in f.verts)]
+        pv = B(*piv)
+        wb = bm.copy()
+        wb.faces.ensure_lookup_table()
+        ids = {f.index for f in inside}
+        bmesh.ops.delete(wb, geom=[f for f in wb.faces if f.index not in ids], context='FACES')
+        bmesh.ops.translate(wb, vec=-pv, verts=wb.verts)
+        me = bpy.data.meshes.new('wheel_bars')
+        wb.to_mesh(me)
+        wb.free()
+        for m in body.data.materials:
+            me.materials.append(m)
+        ob = bpy.data.objects.new('wheel_bars', me)
+        bpy.context.scene.collection.objects.link(ob)
+        ob.location = pv
+        bmesh.ops.delete(bm, geom=inside, context='FACES')
+        bm.to_mesh(body.data)
+        bm.free()
+        ob['r'] = 0
+        ob['w'] = 0
+        ob['steer'] = 1
+        ob['make'] = 0
+        made.append(ob)
+        print('WHEEL', name, 'bars', len(inside), 'faces')
     if PREVIEW:
         preview(name, body, made)
     bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', export_yup=True, export_apply=True, export_animations=False,
@@ -149,6 +189,9 @@ def preview(name, body, made):
     sc.render.resolution_x, sc.render.resolution_y = 900, 500
     rings = []
     for ob in made:
+        if ob.name == 'wheel_bars':
+            ob.rotation_euler.z = math.radians(30)
+            continue
         ob.rotation_euler.x = math.radians(35)
         bpy.ops.mesh.primitive_torus_add(major_radius=ob['r'], minor_radius=0.012, location=ob.location, rotation=(0, math.pi / 2, 0))
         rings.append(bpy.context.object)
@@ -158,12 +201,13 @@ def preview(name, body, made):
     cam.data.type = 'ORTHO'
     sc.camera = cam
     for tag, loc, rot, s in (('side', (30, 0, 0.8), (math.pi / 2, 0, math.pi / 2), 2 * L),
-                             ('q', (14, -16, 9), (math.radians(62), 0, math.radians(41)), 2 * L)):
+                             ('q', (14, -16, 9), (math.radians(62), 0, math.radians(41)), 2 * L),
+                             ('top', (0, 0, 12), (0, 0, math.pi), 2 * L)):
         cam.location, cam.rotation_euler, cam.data.ortho_scale = loc, rot, s
         sc.render.filepath = os.path.join(PREVIEW, f'wheels_{name}_{tag}.png')
         bpy.ops.render.render(write_still=True)
     for ob in made:
-        ob.rotation_euler.x = 0
+        ob.rotation_euler.x = ob.rotation_euler.z = 0
     for r in rings:
         bpy.data.objects.remove(r, do_unlink=True)
     bpy.data.objects.remove(cam, do_unlink=True)

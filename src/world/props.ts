@@ -78,6 +78,8 @@ export interface Vehicle {
   /** the traffic's own: the link it takes at the end of this one (chosen ahead, so it can indicate), and how long it
    * goes on indicating after the turn */
   next: Link | null; blinkT: number;
+  /** body lean (radians, > 0: to the left; a bike into its turn, a car's body out of it) and pitch (> 0: nose up) */
+  roll: number; pitch: number;
 }
 
 export const BRAKE = 1, REVERSE = 2, LEFT = 4, RIGHT = 8;
@@ -299,7 +301,7 @@ export class Traffic {
         this.cars.push({
           kind: ki, slot: i, vmax: k.speed * (0.85 + Math.random() * 0.3), v: 0,
           a: 0, b: 0, link: { to: 0, off: 0, bus: false }, t: 0, len: 1, x: 0, z: 0, heading: 0, fresh: true, near: false,
-          player: false, parked: false, empty: false, dist: 0, steer: 0, sim: null, lamps: 0, dark: false, next: null, blinkT: 0,
+          player: false, parked: false, empty: false, dist: 0, steer: 0, sim: null, lamps: 0, dark: false, next: null, blinkT: 0, roll: 0, pitch: 0,
         });
       }
     });
@@ -426,6 +428,28 @@ export class Traffic {
     c.t = 0;
   }
 
+  /**
+   * The body's lean from its sideways acceleration `ay` (> 0: turning left) and its acceleration `ax`: a two-wheeler
+   * leans into the turn as far as balances it (atan(ay / g)); a car's body rolls out of the turn on its springs a few
+   * degrees and dips its nose under braking.
+   */
+  private lean(c: Vehicle, ay: number, ax: number, dt: number): void {
+    const bike = SPECS[this.kinds[c.kind].name].bike;
+    const roll = bike ? Math.max(-0.65, Math.min(0.65, Math.atan(ay / 9.81))) : Math.max(-0.06, Math.min(0.06, -ay * 0.007));
+    const pitch = bike ? 0 : Math.max(-0.045, Math.min(0.035, ax * 0.006));
+    const k = Math.min(1, dt * (bike ? 5 : 7));
+    c.roll += (roll - c.roll) * k;
+    c.pitch += (pitch - c.pitch) * k;
+  }
+
+  /** The body's world matrix (leaning, pitched), as it is drawn: a bike leans about its tyres, a car's body about its springs. */
+  bodyMatrix(c: Vehicle, out: THREE.Matrix4): THREE.Matrix4 {
+    out.makeRotationY(c.heading).setPosition(c.x, 0.05, c.z);
+    if (!c.roll && !c.pitch) return out;
+    const h = SPECS[this.kinds[c.kind].name].bike ? 0 : 0.45;
+    return out.multiply(WT.makeTranslation(0, h, 0)).multiply(WT.makeRotationZ(-c.roll)).multiply(WT.makeRotationX(-c.pitch)).multiply(WT.makeTranslation(0, -h, 0));
+  }
+
   /** going a -> b -> n: LEFT, RIGHT, or 0 (on ahead) */
   private turnOf(a: number, b: number, n: number): number {
     const A = this.nodes[a], B = this.nodes[b], N = this.nodes[n];
@@ -459,6 +483,7 @@ export class Traffic {
         c.sim = null;
         c.dark = false;
         c.next = null;
+        c.roll = c.pitch = 0;
         this.place(c, fx, fz, SPAWN_MIN, SPAWN_MAX, dirX, dirZ);
       }
       if (c.fresh) continue;
@@ -528,6 +553,7 @@ export class Traffic {
         this.setLink(c, l);
       }
       c.lamps = (slowing ? BRAKE : 0) | side;
+      const v0 = c.v;
       const [tx, tz, th] = this.target(c);
       const s = Math.min(1, dt * 3.5);
       c.x += (tx - c.x) * s;
@@ -538,6 +564,7 @@ export class Traffic {
       // the front wheels point the way it is turning: steer = atan(turn rate × wheelbase / speed)
       const lock = Math.max(-0.55, Math.min(0.55, Math.atan((turn / Math.max(dt, 1e-3)) * this.wheelbase(c.kind) / Math.max(1, c.v))));
       c.steer += (lock - c.steer) * Math.min(1, dt * 6);
+      this.lean(c, c.v * (turn / Math.max(dt, 1e-3)), (c.v - v0) / Math.max(dt, 1e-3), dt);
     }
     this.separate();
     this.write(fx, fz);
@@ -601,9 +628,14 @@ export class Traffic {
 
   /** Ramu gets off: the vehicle rolls to a stop and stays. Returns where he steps down (beside his seat, to its right). */
   leave(c: Vehicle): [number, number] {
-    const k = this.kinds[c.kind], seat = DRIVER[k.name];
     c.player = false;
     c.parked = true;
+    return this.standPoint(c);
+  }
+
+  /** where one stands beside the driver's seat, to its right (out of the way of walls) */
+  standPoint(c: Vehicle): [number, number] {
+    const k = this.kinds[c.kind], seat = DRIVER[k.name];
     let [x, z] = this.toWorld(c, -(k.halfW + 0.55), seat.at[2]);
     if (this.resolve) [x, z] = this.resolve(x, z, 0.35);
     return [x, z];
@@ -625,7 +657,7 @@ export class Traffic {
    * Move a vehicle Ramu drives (or left parked) by its physics (vehicleSim.ts): `throttle` -1..1 (back: brake, then
    * reverse), `steer` -1..1 (to the left), `handbrake`. It bounces off walls and posts, and shoves the vehicles it hits.
    */
-  drive(c: Vehicle, dt: number, throttle: number, steer: number, handbrake: boolean): void {
+  drive(c: Vehicle, dt: number, throttle: number, steer: number, handbrake: boolean, hold = false): void {
     const k = this.kinds[c.kind], spec = SPECS[k.name];
     if (!c.sim) c.sim = newBody(c.x, c.z, c.heading, c.v);
     const b = c.sim;
@@ -638,7 +670,7 @@ export class Traffic {
       for (const [x, z] of this.circles(o)) { circles.push([x, z, ok.halfW, m]); near.push(o); }
     }
     step(b, spec, { wb: this.wheelbase(c.kind), halfL: k.halfL, halfW: k.halfW },
-      { throttle, steer, handbrake, hold: c.parked }, {
+      { throttle, steer, handbrake, hold: hold || c.parked }, {
         grip: (x, z) => (this.onRoad(x, z) ? 1 : 0.6),
         resolve: (x, z, r) => (this.resolve ? this.resolve(x, z, r) : [x, z]),
         others: () => circles,
@@ -653,6 +685,7 @@ export class Traffic {
       }, dt);
     c.x = b.x; c.z = b.z; c.heading = b.heading;
     c.v = b.vx;
+    this.lean(c, b.vx * b.yaw, b.ax, dt);
     // lamps: braking (back against the way it rolls, or the hand brake), reversing, and indicating when steering slowly
     // (pulling out, turning a corner)
     if (c.parked) c.lamps = 0;
@@ -698,8 +731,8 @@ export class Traffic {
   /** front axle to rear axle, m (from the wheels; for a kind without, most of its length) */
   wheelbase(kind: number): number {
     const ws = this.wheels[kind];
-    if (!ws?.length) return this.kinds[kind].halfL * 1.2;
-    const zs = ws.map((w) => w.hub.z);
+    if (!ws?.some((w) => w.r > 0)) return this.kinds[kind].halfL * 1.2;
+    const zs = ws.filter((w) => w.r > 0).map((w) => w.hub.z);
     return Math.max(0.5, Math.max(...zs) - Math.min(...zs));
   }
 
@@ -759,7 +792,11 @@ export class Traffic {
       const d = Math.hypot(c.x - fx, c.z - fz);
       c.near = d < (c.near ? NEAR_OUT : NEAR_IN);
       const m = this.meshes[c.kind], dr = c.near ? m.near : m.far;
-      M.makeRotationY(c.heading).setPosition(c.x, 0.05, c.z);
+      this.bodyMatrix(c, M);
+      const bike = SPECS[this.kinds[c.kind].name].bike;
+      // a car's wheels stay on the road as its body rolls; a bike's lean with it
+      if (bike) M0.copy(M);
+      else M0.makeRotationY(c.heading).setPosition(c.x, 0.05, c.z);
       const i = dr.n++;
       dr.parts.forEach((p, pi) => {
         p.setMatrixAt(i, M);
@@ -770,9 +807,9 @@ export class Traffic {
       this.wheels[c.kind].forEach((w, wi) => {
         const parts = dr.wheels[wi];
         if (!parts.length) return;
-        WM.copy(M).multiply(WT.makeTranslation(w.hub.x, w.hub.y, w.hub.z));
+        WM.copy(w.r > 0 ? M0 : M).multiply(WT.makeTranslation(w.hub.x, w.hub.y, w.hub.z));
         if (w.steer && c.steer) WM.multiply(WT.makeRotationY(c.steer));
-        WM.multiply(WT.makeRotationX(c.dist / w.r));
+        if (w.r > 0) WM.multiply(WT.makeRotationX(c.dist / w.r));      // (a handlebar, r 0, only steers)
         for (const q of parts) {
           q.mesh.setMatrixAt(i, WM);
           if (q.colours) q.mesh.setColorAt(i, q.colours[c.slot]);
@@ -834,7 +871,7 @@ export class Traffic {
     let n = 0;
     const quad = (c: Vehicle, x: number, y: number, z: number, w: number, h: number, back: boolean, col: THREE.Color) => {
       if (n >= this.lamps.count) return;
-      M.makeRotationY(c.heading).setPosition(c.x, 0.05, c.z);
+      this.bodyMatrix(c, M);
       M.multiply(WT.makeTranslation(x, y, z));
       if (back) M.multiply(WT.makeRotationY(Math.PI));
       M.multiply(WT.makeScale(w, h, 1));
@@ -877,7 +914,7 @@ export class Traffic {
   }
 }
 
-const M = new THREE.Matrix4(), M2 = new THREE.Matrix4(), V3 = new THREE.Vector3(), WM = new THREE.Matrix4(), WT = new THREE.Matrix4();
+const M = new THREE.Matrix4(), M0 = new THREE.Matrix4(), M2 = new THREE.Matrix4(), V3 = new THREE.Vector3(), WM = new THREE.Matrix4(), WT = new THREE.Matrix4();
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
 // ---------------------------------------------------------------------------------------------

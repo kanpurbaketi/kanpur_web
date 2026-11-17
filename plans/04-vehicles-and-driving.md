@@ -48,7 +48,7 @@ body roll; forgiving on a keyboard).
   in the scene (no shader recompiles) and dark when unused; the player's car loses its fake light pool. H is bound
   (`Driving.horn`) and sounds in phase 5. `scripts/lampshot.mjs`, `scripts/blinkshot.mjs`.
 
-## Phase 4 — Ramu riding naturally
+## Phase 4 — Ramu riding naturally (done)
 - `tools/blender/build_ramu_rig.py` bakes clips per vehicle with IK: seat, hands on the grips or the wheel, feet on
   pegs / pedals / floor. `veh_<kind>` (steer left / centre / right), `pedal_<kind>` (loop), `mount_<kind>` /
   `dismount_<kind>`.
@@ -56,6 +56,13 @@ body roll; forgiving on a keyboard).
   his head looks into the turn; getting on and off plays the mount clips.
 - Bikes lean into turns (atan(v·yaw rate / g), up to 35°, rider with them); cars roll a little in corners and pitch
   under braking and acceleration.
+- Done as runtime IK instead of baked clips (`src/player/rider.ts`): on the standing idle, the hips go to the seat,
+  the spine leans as far as the hands need (found per kind), two-bone IK puts the hands on the grips (turned about the
+  steering pivot; `split_wheels.py` BARS cuts the handlebar of the Pulsar, cycle and rickshaw so it turns too) or on the
+  wheel at ten to two, and the feet on pegs / floor / pedals going round with the wheels. On a cycle or rickshaw (too big
+  for him) he pedals standing. Getting on / off eases from where he stood to the seat (`Driving` MOUNT / DISMOUNT,
+  the vehicle held still meanwhile). `Traffic.bodyMatrix`: bikes lean into turns, car bodies roll and pitch; the
+  traffic's own too. `scripts/poseshot.mjs`.
 
 ## Phase 5 — feel
 - `src/game/audio.ts` (WebAudio, synthesised): engine note from RPM and throttle per type (car, diesel bus / truck,

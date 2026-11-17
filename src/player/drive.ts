@@ -6,6 +6,8 @@ import { Pedestrians } from '../world/pedestrians';
 
 /** how far from a vehicle's body Ramu can be to get on it, m */
 const REACH = 2.4;
+/** seconds to get on, and off */
+const MOUNT = 0.75, DISMOUNT = 0.55;
 
 /**
  * Ramu takes vehicles. The get-on key on foot: onto the nearest vehicle within reach; whoever was on it is thrown off
@@ -24,6 +26,13 @@ export class Driving {
   lights = true;
   /** the horn is held (H) */
   horn = false;
+  /** how far on he is: 0 beside it .. 1 on it; going up while getting on, down while getting off */
+  private w = 0;
+  private leaving = false;
+  /** where he stood when he got on, in the vehicle's frame (he climbs on from there) */
+  private from: [number, number] = [0, 0];
+  /** the vehicle's body matrix, for the rider */
+  private frame = new THREE.Matrix4();
 
   constructor(scene: THREE.Scene, private traffic: Traffic, private ramu: Ramu, private peds: Pedestrians, private key: () => string) {
     ramu.onUse = () => this.use();
@@ -48,11 +57,8 @@ export class Driving {
   use(): void {
     if (this.ramu.knockedOut || this.ramu.stun > 0) return;
     if (this.car) {
-      this.car.dark = !this.lights;           // left as it was: lamps on or off
+      this.leaving = true;                    // he climbs off (update), then steps down
       this.horn = false;
-      const [x, z] = this.traffic.leave(this.car);
-      this.car = null;
-      this.ramu.stepDown(x, z);
       return;
     }
     const p = this.ramu.position;
@@ -62,6 +68,10 @@ export class Driving {
     for (const t of this.traffic.board(c)) this.peds.throwOut(t.x, t.z, t.vx, t.vz, t.driver);
     this.car = c;
     this.lights = !c.dark;
+    this.w = 0;
+    const dx = p.x - c.x, dz = p.z - c.z, co = Math.cos(c.heading), sn = Math.sin(c.heading);
+    this.from = [dx * co - dz * sn, dx * sn + dz * co];
+    this.leaving = false;
     this.place();
   }
 
@@ -71,14 +81,25 @@ export class Driving {
     this.car.dark = false;
     this.traffic.leave(this.car);
     this.car = null;
+    this.leaving = false;
     this.ramu.ride = null;
   }
 
   update(dt: number): void {
     if (this.car) {
-      const s = this.ramu.stick();
-      this.traffic.drive(this.car, dt, -s.y, -s.x, this.ramu.braking);
+      // getting on or off: the vehicle held still meanwhile; on it: the keys drive
+      const busy = this.w < 1 || this.leaving;
+      this.w = Math.max(0, Math.min(1, this.w + (this.leaving ? -dt / DISMOUNT : dt / MOUNT)));
+      const s = busy ? { x: 0, y: 0 } : this.ramu.stick();
+      this.traffic.drive(this.car, dt, -s.y, -s.x, !busy && this.ramu.braking, busy);
       this.place();
+      if (this.leaving && this.w <= 0) {
+        this.car.dark = !this.lights;         // left as it was: lamps on or off
+        const [x, z] = this.traffic.leave(this.car);
+        this.car = null;
+        this.leaving = false;
+        this.ramu.stepDown(x, z);
+      }
     }
     this.aimBeams();
     document.body.classList.toggle('driving', !!this.car);
@@ -105,17 +126,17 @@ export class Driving {
   /** Ramu on his seat */
   private place(): void {
     const c = this.car!, seat = this.traffic.seatOf(c);
-    const [x, z] = this.traffic.toWorld(c, seat.at[0], seat.at[2]);
+    const [sx, sz] = this.leaving ? this.traffic.standPoint(c) : this.traffic.toWorld(c, this.from[0], this.from[1]);
     this.ramu.ride = {
-      x, y: 0.05 + seat.at[1], z, heading: c.heading, pose: seat.pose,
-      cx: c.x, cz: c.z, speed: c.v, cam: seat.cam, camH: seat.camH,
+      frame: this.traffic.bodyMatrix(c, this.frame), kind: this.traffic.kindOf(c), steer: c.steer, dist: c.dist, w: this.w, sx, sz,
+      heading: c.heading, cx: c.x, cz: c.z, speed: c.v, cam: seat.cam, camH: seat.camH,
     };
   }
 
   /** "E — get on" near a vehicle, "E — get off" on one */
   private showTip(): void {
     let text = '';
-    if (this.car) text = Math.abs(this.car.v) < 0.5 ? `${this.key()} — get off` : '';
+    if (this.car) text = Math.abs(this.car.v) < 0.5 && this.w >= 1 && !this.leaving ? `${this.key()} — get off` : '';
     else {
       const p = this.ramu.position;
       const c = !this.ramu.knockedOut && p.y < 0.6 ? this.traffic.nearest(p.x, p.z, REACH) : null;

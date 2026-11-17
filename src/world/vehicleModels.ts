@@ -44,7 +44,7 @@ function load(name: string): Promise<Loaded> {
         if (!o.name.startsWith('wheel_') || o.parent?.name.startsWith('wheel_')) return;
         const u = o.userData as { r?: number; w?: number; steer?: number; make?: number };
         const hub = new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
-        const r = u.r ?? 0.3, w = u.w ?? 0.2, right = hub.x < 0;
+        const r = u.r ?? 0.3, w = u.w ?? 0.2, right = hub.x < 0;     // r 0: a handlebar (split_wheels.py BARS)
         const wheel: Wheel = { name: o.name, hub, r, w, steer: !!u.steer, made: !!u.make, parts: [], far: [] };
         if (wheel.made) {
           wheel.parts = madeWheel(r, w, right, 20);

@@ -2,7 +2,10 @@
 Prepares the rigged Ramu (assets/ramu_teen/ramu_rigged.fbx: a Mixamo skeleton on the generated mesh) for the game
 and bakes procedural idle / walk / jog / run / jump animations onto it. Output: public/models/ramu_rig.glb.
 
-  /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_ramu_rig.py -- [--preview DIR]
+  /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_ramu_rig.py -- [--char NAME] [--preview DIR]
+
+--char picks the character (default ramu): the same steps and the same clips make the people of the crowd
+(uncle -> uncle_rig.glb, security -> security_rig.glb, college_girl -> college_girl_rig.glb, college_boy -> college_boy_rig.glb, aunty -> aunty_rig.glb), so they move exactly as Ramu does.
 
 Steps: import the FBX, bring it to metres and to a 1.52 m teenager, bake the transforms into the mesh and bones,
 make a plain single-texture material (2048 px JPEG), key the animations in armature space (so they do not depend on the
@@ -13,16 +16,26 @@ import bpy, math, os, sys
 from mathutils import Matrix, Vector, Quaternion, Euler
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SRC = os.path.join(ROOT, 'assets', 'ramu_teen', 'ramu_rigged.fbx')
 OUT = os.path.join(ROOT, 'public', 'models')
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 PREVIEW = argv[argv.index('--preview') + 1] if '--preview' in argv else None
-HEIGHT = 1.52
-TEX = 2048
+# character -> (rigged FBX, output file, height in metres, texture size)
+CHARS = {
+    'ramu': ('ramu_teen/ramu_rigged.fbx', 'ramu_rig.glb', 1.52, 2048),
+    'uncle': ('uncle/uncle_rigged.fbx', 'uncle_rig.glb', 1.66, 1024),
+    'security': ('security/security_fat_rigged.fbx', 'security_rig.glb', 1.72, 1024),
+    'college_girl': ('college_girl/college_girl_rigged.fbx', 'college_girl_rig.glb', 1.58, 1024),
+    'college_boy': ('college_boy/college_boy_rigged.fbx', 'college_boy_rig.glb', 1.70, 1024),
+    'aunty': ('aunty/aunty_rigged.fbx', 'aunty_rig.glb', 1.56, 1024),
+}
+CHAR = argv[argv.index('--char') + 1] if '--char' in argv else 'ramu'
+SRC, OUT_NAME, HEIGHT, TEX = CHARS[CHAR]
+SRC = os.path.join(ROOT, 'assets', SRC)
 FPS = 30
 SKIN_LIFT = 1.0        # skin is left as generated: the game's Settings > Skin tone slider lightens / darkens it live
 BODY_LIFT = 0.92       # <1 lightens everything a little
-ANIMS = os.path.join(ROOT, 'assets', 'ramu_teen', 'anims')   # Mixamo FBX clips go here (see import_mixamo_clips)
+ANIMS = os.path.join(ROOT, 'assets', 'anims')   # Mixamo FBX clips, shared by every character (see import_mixamo_clips)
+KEEP_ROOT = {'fall', 'fall2', 'get_up'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.fbx(filepath=SRC)
@@ -75,12 +88,12 @@ import tempfile
 edited = bpy.data.images.new('ramu_tex_edit', TEX, TEX, alpha=False)
 edited.colorspace_settings.name = 'Non-Color'
 edited.pixels.foreach_set(px.ravel())
-tmp = os.path.join(tempfile.gettempdir(), 'ramu_tex_edit.png')
+tmp = os.path.join(tempfile.gettempdir(), CHAR + '_tex_edit.png')
 edited.filepath_raw = tmp
 edited.file_format = 'PNG'
 edited.save()
 img = bpy.data.images.load(tmp)
-img.name = 'ramu_tex'
+img.name = CHAR + '_tex'
 img.colorspace_settings.name = 'sRGB'
 img.pack()
 mat = mesh.data.materials[0]
@@ -96,7 +109,8 @@ for n in nt.nodes:
     if n.type == 'TEX_IMAGE':
         n.image = img
         nt.links.new(n.outputs['Color'], bsdf.inputs['Base Color'])
-mat.name = 'ramu'
+mat.name = CHAR
+mat.blend_method = 'OPAQUE'        # the FBX comes in as alpha-hashed; the texture has no real transparency
 
 # ---- animation helpers -------------------------------------------------------------------------------------
 bpy.context.view_layer.objects.active = arm
@@ -113,12 +127,16 @@ UP = Vector((0, 0, 1))
 
 def rot(name, axis, deg):
     """Rotate a bone by `deg` about an armature-space axis (accumulates down the chain like a real skeleton)."""
+    if name not in REST:              # a lighter rig (no toes / fingers): nothing to turn
+        return
     q = Quaternion(axis, math.radians(deg))
     r = REST[name]
     P['mixamorig:' + name].rotation_quaternion = r.inverted() @ q @ r
 
 
 def rot_multi(name, parts):
+    if name not in REST:
+        return
     q = Quaternion((1, 0, 0, 0))
     for axis, deg in parts:
         q = Quaternion(axis, math.radians(deg)) @ q
@@ -256,13 +274,27 @@ bpy.ops.object.mode_set(mode='OBJECT')
 arm.animation_data.action = bpy.data.actions['idle']
 
 # ---- Mixamo clips: bake any FBX in assets/ramu_teen/anims onto this skeleton ----------------------------------
+# file name (lower case) contains ... -> clip name in the game. First match wins, so the particular come before the general
+# ("Fighting Idle" is not the idle, "Taking Punch" is not the punch, "Shove Reaction" is not a hit).
+CLIP_RULES = (
+    (('crouch', 'walk'), 'crouch_walk'), (('crouched',), 'crouch_walk'), (('crouch',), 'crouch'), (('sneak',), 'crouch'),
+    (('fighting idle',), 'fight_idle'), (('fight idle',), 'fight_idle'), (('boxing idle',), 'fight_idle'),
+    (('shove',), 'shove'), (('stumble',), 'shove'),
+    (('block',), 'block'),
+    (('getting up',), 'get_up'), (('get up',), 'get_up'), (('stand up',), 'get_up'),
+    (('forward', 'death'), 'fall2'), (('falling forward',), 'fall2'),
+    (('knocked',), 'fall'), (('death',), 'fall'), (('dying',), 'fall'), (('falling',), 'fall'),
+    (('taking punch',), 'hit'), (('hit to body',), 'hit2'), (('body hit',), 'hit2'), (('reaction',), 'hit'), (('hit',), 'hit'),
+    (('kick',), 'kick'), (('punch',), 'punch'), (('jump',), 'jump'), (('run',), 'run'), (('walk',), 'walk'),
+    (('looking around',), 'look_around'), (('arguing',), 'argue'), (('phone',), 'phone'),
+    (('idle',), 'idle'),
+)
+
+
 def clip_name(stem):
     s = stem.lower()
-    has = lambda *w: any(x in s for x in w)
-    if has('crouch', 'sneak'):
-        return 'crouch_walk' if has('walk', 'move') else 'crouch'
-    for key, name in (('punch', 'punch'), ('jump', 'jump'), ('run', 'run'), ('walk', 'walk'), ('idle', 'idle'), ('kick', 'kick')):
-        if key in s:
+    for words, name in CLIP_RULES:
+        if all(w in s for w in words):
             return name
     return ''.join(ch if ch.isalnum() else '_' for ch in s).strip('_')
 
@@ -306,7 +338,9 @@ def import_mixamo_clips():
         if samples:
             ds = [hips_rest @ (m['Hips'].translation * ratio) for m in samples]
             drift = max(max(d.x for d in ds) - min(d.x for d in ds), max(d.y for d in ds) - min(d.y for d in ds))
+        keep = name in KEEP_ROOT
         for i, m in enumerate(samples):
+            pose_rest()                             # bones the clip does not have (fingers, on a lighter rig) stay at rest
             for pb in P:
                 short = pb.name.split(':')[-1]
                 if short not in m:
@@ -315,7 +349,7 @@ def import_mixamo_clips():
                 pb.rotation_quaternion = mb.to_quaternion()
                 if short == 'Hips':
                     loc = mb.translation * ratio
-                    if drift > 0.25:
+                    if drift > 0.25 and not keep:
                         d = hips_rest @ loc
                         loc = hips_rest.inverted() @ Vector((0, 0, d.z))
                     pb.location = loc
@@ -323,7 +357,7 @@ def import_mixamo_clips():
                     pb.location = (0, 0, 0)
             key_all(1 + i)
         new_act.frame_range = (1, 1 + max(1, f1 - f0))
-        print(f'RIG clip {name}: {f1 - f0 + 1} frames from {os.path.basename(f)}' + (' (root motion removed)' if drift > 0.25 else ''))
+        print(f'RIG clip {name}: {f1 - f0 + 1} frames from {os.path.basename(f)}' + (' (root motion removed)' if drift > 0.25 and not keep else f' (travels {drift:.2f} m)' if drift > 0.25 else ''))
         for o in new:
             bpy.data.objects.remove(o, do_unlink=True)
         for a in list(bpy.data.actions):
@@ -356,7 +390,8 @@ def preview():
     for act in sorted(bpy.data.actions, key=lambda a: a.name):
         name = act.name
         lo, hi = int(act.frame_range[0]), int(act.frame_range[1])
-        frames = sorted({lo, lo + (hi - lo) // 3, lo + 2 * (hi - lo) // 3, hi})
+        n = 9 if name in ('hit', 'fall', 'punch', 'hit2', 'fall2', 'get_up', 'kick', 'shove', 'block') else 3
+        frames = sorted({lo + (hi - lo) * k // n for k in range(n + 1)})
         arm.animation_data.action = act
         for f in frames:
             sc.frame_set(f)
@@ -376,7 +411,7 @@ if PREVIEW:
 os.makedirs(OUT, exist_ok=True)
 for ob in bpy.context.scene.objects:
     ob.select_set(True)
-path = os.path.join(OUT, 'ramu_rig.glb')
+path = os.path.join(OUT, OUT_NAME)
 bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=False, export_yup=True, export_apply=False,
                           export_skins=True, export_animations=True, export_animation_mode='ACTIONS',
                           export_image_format='JPEG', export_jpeg_quality=88, export_materials='EXPORT')

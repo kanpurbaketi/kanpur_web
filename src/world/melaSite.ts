@@ -19,6 +19,36 @@ export function inMela(x: number, z: number, margin = 0): boolean {
   return x > MELA.x0 - margin && x < MELA.x1 + margin && z > MELA.z0 - margin && z < MELA.z1 + margin;
 }
 
+/**
+ * The map has a park path running across this ground. Cut every road off just outside the cloth wall: left in, its asphalt
+ * lay in the same plane as the mela's dirt (flickering dark patches across the aisles) and led passers-by through the cloth.
+ */
+export function clipRoadsToMela<T extends { pts: [number, number][] }>(roads: T[]): T[] {
+  const inside = (p: [number, number]) => inMela(p[0], p[1], 3);
+  const out: T[] = [];
+  for (const r of roads) {
+    if (!r.pts.some(inside)) { out.push(r); continue; }
+    let run: [number, number][] = [];
+    const flush = () => { if (run.length > 1) out.push({ ...r, pts: run }); run = []; };
+    for (let i = 0; i < r.pts.length; i++) {
+      const p = r.pts[i];
+      if (i && inside(r.pts[i - 1]) !== inside(p)) {
+        // where this stretch crosses the line: close in on it from both sides, keep the point on the outside
+        let a = r.pts[i - 1], b = p;
+        for (let k = 0; k < 16; k++) {
+          const m: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+          if (inside(m) === inside(a)) a = m; else b = m;
+        }
+        run.push(inside(a) ? b : a);
+        if (inside(p)) flush();
+      }
+      if (!inside(p)) run.push(p);
+    }
+    flush();
+  }
+  return out;
+}
+
 /** The torn place in the boundary cloth, west side, level with the stage entry. */
 export const TEAR = { x: -9.5, z: mz(620) };
 /** The mela gate, in the middle of the south wall (a real opening, `half` metres each side of x). */
@@ -36,8 +66,8 @@ export const AUDIENCE = rect(355, 384, 553, 675);         // people sitting, cla
 
 export const WHEEL = circle(926, 329, 122);
 export const INFLATABLE = circle(1232, 272, 59.5);
-export const KUAN = circle(1437, 800, 145);               // maut ka kuan; its stair runs north
-export const KUAN_STAIRS = rect(1371, 602, 1530, 681);
+/** maut ka kuan: far bigger than the map drew it, so it has the whole south-east corner (the radius takes in the round stair) */
+export const KUAN = { x: 90.5, z: 184.5, r: 16.5 };
 
 /** each box on the map is a block of stalls (a row, or two rows back to back) */
 export const STALL_BLOCKS: Rect[] = [

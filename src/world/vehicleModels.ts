@@ -51,6 +51,9 @@ export function cloneCar(parts: PBRPart[], paint: string): THREE.Group {
     if (mat.name === 'paint') {
       m = mat.clone();
       m.color.set(paint);
+    } else if (mat.map) {
+      m = mat.clone();                       // a photo-textured model: tint it lightly toward the colour asked for
+      m.color.set(paint).lerp(new THREE.Color('#ffffff'), 0.55);
     }
     const mesh = new THREE.Mesh(geo, m);
     mesh.castShadow = mat.name !== 'glass';

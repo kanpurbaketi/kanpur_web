@@ -20,12 +20,12 @@ export interface Settings {
   punchSpeed: number;
 }
 
-export const CROWD_MAX = 300;
-export const DEFAULTS: Settings = { crowd: 90, skinTone: 52, walkSpeed: 2.2, runSpeed: 5.6, jumpSpeed: 5, punchSpeed: 2.4 };
+export const CROWD_MAX = 60;       // every one of them is a rigged model now
+export const DEFAULTS: Settings = { crowd: 24, skinTone: 52, walkSpeed: 2.2, runSpeed: 5.6, jumpSpeed: 5, punchSpeed: 2.4 };
 
 /** min, max, step for each setting (the admin sliders and the validation use the same table) */
 export const LIMITS: Record<keyof Settings, [number, number, number]> = {
-  crowd: [0, CROWD_MAX, 5],
+  crowd: [0, CROWD_MAX, 2],
   skinTone: [0, 100, 1],
   walkSpeed: [1, 6, 0.1],
   runSpeed: [3, 12, 0.1],

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { figure } from './figures';
 import { Bulbs, BULB, Geo, litMat, rnd } from './geo';
 
 /*
@@ -6,12 +7,9 @@ import { Bulbs, BULB, Geo, litMat, rnd } from './geo';
  Local frame: centred on (0, 0); the entrance (a ramp and an arch) faces south (+z), towards the mela gate.
 */
 
-type Spec = { top: string; bottom: string; skin: string; hair: string; woman: boolean; pose: 'sit' | 'stand'; wave?: boolean };
-export type PersonFactory = (s: Spec) => THREE.BufferGeometry;
-
 export const INFLATABLE_R = 4.4;
 
-export function buildInflatable(person: PersonFactory, personMat: THREE.Material) {
+export function buildInflatable() {
   const group = new THREE.Group();
   const R = INFLATABLE_R, WALL_H = 3.0;
   const COL = ['#e63946', '#ffd23f', '#2a9d8f', '#3a86ff', '#f77f00', '#9b5de5'];
@@ -58,14 +56,10 @@ export function buildInflatable(person: PersonFactory, personMat: THREE.Material
   group.add(bulbs.object(0.8));
 
   // kids bouncing inside
-  const skins = ['#8a5a3c', '#a9714b', '#b98058', '#c08d66', '#96633f'];
-  const shirts = ['#e63946', '#ffd23f', '#2a9d8f', '#3a86ff', '#f77f00', '#9b5de5', '#ff6fa8'];
-  const kids: { m: THREE.Mesh; x: number; z: number; ph: number; sp: number; vx: number; vz: number }[] = [];
+  const kids: { m: THREE.Object3D; x: number; z: number; ph: number; sp: number; vx: number; vz: number }[] = [];
   for (let i = 0; i < 7; i++) {
     const a = rnd(i * 3.3) * Math.PI * 2, r = rnd(i * 5.1) * (R - 1.4);
-    const geo = person({ top: shirts[i % 7], bottom: i % 3 ? '#2c3646' : '#e8e3d6', skin: skins[i % 5], hair: '#0d0c0f', woman: i % 4 === 3, pose: 'stand', wave: i % 2 === 0 });
-    const m = new THREE.Mesh(geo, personMat);
-    m.scale.setScalar(0.58 + rnd(i) * 0.1);
+    const m = figure(i % 2 ? 'girl' : 'boy', i * 3 + 1, i % 3 ? 'hop' : 'talk_b', 0.58 + rnd(i) * 0.1);      // children (figures.ts)
     m.rotation.y = rnd(i * 9) * 6.28;
     group.add(m);
     kids.push({ m, x: Math.cos(a) * r, z: Math.sin(a) * r, ph: rnd(i * 7) * 6.28, sp: 4.5 + rnd(i * 11) * 2.5, vx: (rnd(i * 13) - 0.5) * 0.5, vz: (rnd(i * 17) - 0.5) * 0.5 });

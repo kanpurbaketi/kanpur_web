@@ -2,6 +2,7 @@ import { MapData, P2 } from '../world/types';
 
 interface Seg {
   ax: number; az: number; bx: number; bz: number; h: number; cam: boolean;
+  camH: number;   // the camera is stopped below this height (a railing is low for a walker, but the camera must not cross it)
 }
 
 const CELL = 8;
@@ -33,8 +34,8 @@ export class CollisionWorld {
     }
   }
 
-  addWall(ring: P2[], h: number, cam = true): void {
-    this.addRing(ring, h, cam);
+  addWall(ring: P2[], h: number, cam = true, camH = h): void {
+    this.addRing(ring, h, cam, camH);
   }
 
   addFloor(f: (x: number, z: number) => number | null): void {
@@ -57,10 +58,10 @@ export class CollisionWorld {
     return (cx + 4096) * 8192 + (cz + 4096);
   }
 
-  private addRing(pts: P2[], h: number, cam = true): void {
+  private addRing(pts: P2[], h: number, cam = true, camH = h): void {
     for (let i = 0; i < pts.length; i++) {
       const a = pts[i], b = pts[(i + 1) % pts.length];
-      const s: Seg = { ax: a[0], az: a[1], bx: b[0], bz: b[1], h, cam };
+      const s: Seg = { ax: a[0], az: a[1], bx: b[0], bz: b[1], h, cam, camH };
       const x0 = Math.floor(Math.min(a[0], b[0]) / CELL), x1 = Math.floor(Math.max(a[0], b[0]) / CELL);
       const z0 = Math.floor(Math.min(a[1], b[1]) / CELL), z1 = Math.floor(Math.max(a[1], b[1]) / CELL);
       for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) {
@@ -120,7 +121,7 @@ export class CollisionWorld {
       const t = ((s.ax - x0) * sz - (s.az - z0) * sx) / den;
       const u = ((s.ax - x0) * rz - (s.az - z0) * rx) / den;
       if (t < 0 || t > best || u < 0 || u > 1) continue;
-      if (y0 + (y1 - y0) * t < s.h) best = t;
+      if (y0 + (y1 - y0) * t < s.camH) best = t;
     }
     return best;
   }

@@ -1,21 +1,20 @@
 import * as THREE from 'three';
+import { addFigures, figure, ONLOOKER, Spot } from './figures';
 import { banner, Bulbs, Geo, litMat, rnd } from './geo';
 import { beamMaterial } from './night';
 import { cloneCar, loadPBR } from './vehicleModels';
 
 /*
  Maut ka kuan (the Well of Death): a tall round wooden drum with a railed gallery on top where the crowd leans over,
- an outside stair and ticket booth, flood lights, and motorbikes and cars that circle on the wall.
+ a round stair that winds up the outside to it, a ticket booth, flood lights, and motorbikes and cars that circle on the wall.
  Built as a Ride (see mela.ts): a group at the well's centre, an update(t) that moves the vehicles, collision posts.
- Local frame: the well is centred on (0, 0); the stair runs west (-x).
+ Local frame: the well is centred on (0, 0).
 */
 
-export const WELL_R = 8.0;     // inner radius of the drum
-const H = 8.2;                 // wall height (the gallery floor)
+export const WELL_R = 12.0;    // inner radius of the drum
+const H = 13;                  // wall height (the gallery floor)
+const YK = H / 8.2;            // the vehicles' heights on the wall were set for a wall 8.2 m high
 const TAU = Math.PI * 2;
-
-type Spec = { top: string; bottom: string; skin: string; hair: string; woman: boolean; pose: 'sit' | 'stand'; wave?: boolean };
-export type PersonFactory = (s: Spec) => THREE.BufferGeometry;
 
 const wallPoint = (a: number, r: number, y: number) => new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
 /** y-rotation that turns a box's x axis along the circle's tangent at angle a */
@@ -23,88 +22,51 @@ const tangentRy = (a: number) => -(a + Math.PI / 2);
 
 // ---- vehicles (local frame: x right, y up, z forward; the origin is where the wheels touch) ----------
 
-const TIRE = '#171717', CHROME = '#c9ccd1';
-
-function addTorus(g: Geo, r: number, tube: number, y: number, z: number, x = 0): void {
-  g.add(new THREE.TorusGeometry(r, tube, 6, 14), TIRE, new THREE.Matrix4().makeRotationY(Math.PI / 2).setPosition(x, y, z));
-  g.add(new THREE.CylinderGeometry(r * 0.92, r * 0.92, tube * 1.2, 12), '#3b3b3f', new THREE.Matrix4().makeRotationZ(Math.PI / 2).setPosition(x, y, z));
-  g.add(new THREE.CylinderGeometry(r * 0.2, r * 0.2, tube * 2.6, 8), CHROME, new THREE.Matrix4().makeRotationZ(Math.PI / 2).setPosition(x, y, z));
-}
-
-function tiltBox(g: Geo, sx: number, sy: number, sz: number, x: number, y: number, z: number, rx: number, color: string): void {
-  g.add(new THREE.BoxGeometry(sx, sy, sz), color, new THREE.Matrix4().makeRotationX(rx).setPosition(x, y, z));
-}
-
-function limb(g: Geo, ax: number, ay: number, az: number, bx: number, by: number, bz: number, r: number, color: string): void {
-  g.rod(new THREE.Vector3(ax, ay, az), new THREE.Vector3(bx, by, bz), r, color, 5);
-}
-
-function bikeModel(shirt: string, helmet: string, tank: string): THREE.Group {
-  const g = new Geo(), lamps = new Bulbs();
-  addTorus(g, 0.32, 0.065, 0.33, 0.58);
-  addTorus(g, 0.32, 0.075, 0.33, -0.58);
-  limb(g, 0, 0.33, 0.58, 0, 0.9, 0.36, 0.028, CHROME);
-  limb(g, 0.06, 0.33, 0.58, 0.06, 0.9, 0.36, 0.02, CHROME);
-  limb(g, 0, 0.33, -0.58, 0, 0.58, -0.12, 0.03, '#2a2a2a');
-  limb(g, 0, 0.46, -0.12, 0, 0.7, 0.28, 0.04, '#2a2a2a');
-  g.box(0, 0.42, 0.05, 0.24, 0.3, 0.34, '#4a4a50');
-  g.sphere(0, 0.84, 0.12, 0.14, tank, 0.9, 0.85, 2.0);
-  g.box(0, 0.75, -0.3, 0.2, 0.07, 0.46, '#161616');
-  limb(g, -0.36, 0.97, 0.34, 0.36, 0.97, 0.34, 0.016, CHROME);
-  limb(g, 0.15, 0.24, -0.55, 0.15, 0.27, 0.0, 0.03, CHROME);
-  g.sphere(0, 0.9, 0.5, 0.08, '#fff4d6');
-  g.sphere(0, 0.68, -0.6, 0.04, '#d62828');
-  lamps.add(0, 0.9, 0.56, '#fff4d6', -1, 1.1);
-  lamps.add(0, 0.68, -0.64, '#ff3030', -1, 0.6);
-  // rider: leaning forward, arms to the bar, legs to the pegs
-  tiltBox(g, 0.36, 0.52, 0.22, 0, 1.17, -0.1, -0.35, shirt);
-  g.sphere(0, 1.55, 0.06, 0.115, '#a9714b');
-  g.sphere(0, 1.58, 0.045, 0.14, helmet, 1, 0.95, 1.08);
-  for (const s of [-1, 1]) {
-    limb(g, s * 0.2, 1.33, 0.0, s * 0.35, 0.97, 0.34, 0.04, shirt);
-    limb(g, s * 0.12, 0.84, -0.3, s * 0.21, 0.6, 0.12, 0.07, '#2c3a52');
-    limb(g, s * 0.21, 0.6, 0.12, s * 0.2, 0.26, 0.02, 0.055, '#2c3a52');
-  }
+function bikeModel(rider: number, tank: string): THREE.Group {
+  const lamps = new Bulbs();
   const root = new THREE.Group();
-  root.add(new THREE.Mesh(g.build(), litMat({ metalness: 0.3, roughness: 0.55 })));
+  // the motorbike is a photo-built model (tools/triposr); the rider sits on it
+  loadPBR('bike').then((parts) => root.add(cloneCar(parts, tank)));
+  lamps.add(0, 0.82, 0.86, '#fff4d6', -1, 1.1);
+  lamps.add(0, 0.7, -0.98, '#ff3030', -1, 0.6);
+  // rider (figures.ts): leaning forward, arms to the bar, feet on the pegs
+  const man = figure('boy', rider, 'ride');
+  man.position.set(0, 0.3, -0.33);
+  man.rotation.y = Math.PI;                  // the bike's front is +z
+  root.add(man);
   root.add(lamps.object(0.8));
   return root;
 }
 
-function carModel(body: string, stunt: boolean): THREE.Group {
+function carModel(file: string, stunt: boolean): THREE.Group {
   const root = new THREE.Group();
-  loadPBR('maruti').then((parts) => root.add(cloneCar(parts, body)));
-  if (stunt) {   // a daredevil standing on the roof with an arm up
-    const g = new Geo();
-    for (const s of [-1, 1]) limb(g, s * 0.12, 1.43, -0.45, s * 0.08, 1.95, -0.45, 0.07, '#1d2a44');
-    tiltBox(g, 0.38, 0.55, 0.22, 0, 2.2, -0.45, 0, '#e0a526');
-    g.sphere(0, 2.62, -0.45, 0.12, '#96633f');
-    g.sphere(0, 2.68, -0.45, 0.12, '#15110f', 1, 0.7, 1);
-    limb(g, -0.2, 2.4, -0.45, -0.42, 2.1, -0.45, 0.04, '#e0a526');
-    limb(g, 0.2, 2.4, -0.45, 0.45, 2.85, -0.45, 0.04, '#e0a526');
-    root.add(new THREE.Mesh(g.build(), litMat({ metalness: 0.2, roughness: 0.6 })));
+  loadPBR(file).then((parts) => root.add(cloneCar(parts, '#ffffff')));
+  if (stunt) {   // a daredevil standing on the roof with his arms up
+    const man = figure('boy', 2, 'talk_b');
+    man.position.set(0, 1.43, -0.45);
+    man.rotation.y = Math.PI;
+    root.add(man);
   }
   return root;
 }
 
 // ---- the well ------------------------------------------------------------------------------------------
 
-export function buildMautKuan(person: PersonFactory, personMat: THREE.Material) {
+export function buildMautKuan() {
   const group = new THREE.Group();
   const posts: [number, number, number, number?][] = [];
   const g = new Geo(), bulbs = new Bulbs();
   const R = WELL_R;
-  const STAIR_A = Math.PI;
 
   // the wooden drum: dark upright planks, steel hoops on the outside
-  const PL = 96;
+  const PL = 144;
   const wood = ['#3a2c21', '#43352a', '#2c211a', '#3d2d22', '#4a1c16'];   // dark, with a few blood-stained planks
   for (let i = 0; i < PL; i++) {
     const a = ((i + 0.5) / PL) * TAU, p = wallPoint(a, R + 0.07, H / 2);
     g.box(p.x, p.y, p.z, (TAU * R) / PL + 0.02, H, 0.14, wood[rnd(i * 3.1) < 0.09 ? 4 : (i * 7 + Math.floor(rnd(i) * 3)) % 4], tangentRy(a));
   }
-  for (const y of [0.7, 3.0, 5.4, 7.7]) for (let i = 0; i < 48; i++) {
-    const a0 = (i / 48) * TAU, a1 = ((i + 1) / 48) * TAU;
+  for (const y of [0.7, H * 0.36, H * 0.66, H - 0.5]) for (let i = 0; i < 72; i++) {
+    const a0 = (i / 72) * TAU, a1 = ((i + 1) / 72) * TAU;
     g.rod(wallPoint(a0, R + 0.2, y), wallPoint(a1, R + 0.2, y), 0.05, '#555a60', 4);
   }
   g.cyl(0, 0, 0, R + 0.1, 0.1, '#8d7048', 48);      // sand floor
@@ -112,23 +74,29 @@ export function buildMautKuan(person: PersonFactory, personMat: THREE.Material) 
   g.cyl(0, 0.1, 0, R * 0.5, 0.03, '#7d6240', 40);
 
   // gallery: a ring floor on a scaffold, a railing with X lattice, a plain outer rail the banners hang from
-  const RG0 = R + 0.05, RG1 = R + 1.6, NG = 64;
+  const RG0 = R + 0.05, RG1 = R + 1.8, NG = 96;
+  // the round stair: it winds up the outside of the scaffold from its foot (at A0) to a landing level with the gallery (ending
+  // at A1). The angle falls as it climbs; the last LAND of the way is the landing, where the gallery's outer rail is open.
+  const RS0 = RG1 + 0.1, RS1 = RS0 + 2.0;
+  const A0 = 2.356, SPAN = 3.5, LAND = 0.17, A1 = A0 - SPAN, STEPS = 72, DA = (SPAN - LAND) / STEPS;
+  const wrap = (a: number) => ((a % TAU) + TAU) % TAU;
+  const inGap = (a: number, m = 0) => { const d = wrap(a - A1); return d < LAND + m || d > TAU - m; };
   for (let i = 0; i < NG; i++) {
     const a = ((i + 0.5) / NG) * TAU, rm = (RG0 + RG1) / 2, p = wallPoint(a, rm, H - 0.06);
     g.box(p.x, p.y, p.z, (TAU * rm) / NG + 0.03, 0.1, RG1 - RG0, i % 2 ? '#7a6a55' : '#6f5f4b', tangentRy(a));
   }
-  for (let i = 0; i < 20; i++) {
-    const a = (i / 20) * TAU;
-    if (Math.abs(Math.atan2(Math.sin(a - STAIR_A), Math.cos(a - STAIR_A))) < 0.1) continue;   // the stair comes down here
-    g.rod(wallPoint(a, RG1 + 0.5, 0), wallPoint(a, RG1 - 0.1, H - 0.1), 0.07, '#6e747b', 5);
-    const b = ((i + 1) / 20) * TAU;
-    g.rod(wallPoint(a, RG1 + 0.5, 0.2), wallPoint(b, RG1 + 0.5, 4.4), 0.025, '#8d939a', 4);
-    g.rod(wallPoint(a, RG1 + 0.5, 4.4), wallPoint(b, RG1 + 0.5, 0.2), 0.025, '#8d939a', 4);
+  for (let i = 0; i < 28; i++) {          // scaffold: upright posts under the gallery's outer edge (the stair passes outside them)
+    const a = (i / 28) * TAU, b = ((i + 1) / 28) * TAU;
+    g.rod(wallPoint(a, RG1 - 0.05, 0), wallPoint(a, RG1 - 0.05, H - 0.1), 0.08, '#6e747b', 5);
+    for (const [y0, y1] of [[0.2, H * 0.48], [H * 0.5, H - 0.3]]) {
+      g.rod(wallPoint(a, RG1 - 0.05, y0), wallPoint(b, RG1 - 0.05, y1), 0.025, '#8d939a', 4);
+      g.rod(wallPoint(a, RG1 - 0.05, y1), wallPoint(b, RG1 - 0.05, y0), 0.025, '#8d939a', 4);
+    }
   }
   for (let i = 0; i < NG; i++) {
     const a0 = (i / NG) * TAU, a1 = ((i + 1) / NG) * TAU;
     const am = (a0 + a1) / 2;
-    const skip = Math.abs(Math.atan2(Math.sin(am - STAIR_A), Math.cos(am - STAIR_A))) < 0.105;   // gap in the outer rail for the stair
+    const skip = inGap(am);   // gap in the outer rail where the stair's landing meets the gallery
     {
       const ri = R + 0.2, tall = i % 4 === 0;
       for (const [y, rr] of [[1.12, 0.04], [0.62, 0.028], [0.14, 0.028]] as const) g.rod(wallPoint(a0, ri, H + y), wallPoint(a1, ri, H + y), rr, '#d9541e', 4);
@@ -164,21 +132,33 @@ export function buildMautKuan(person: PersonFactory, personMat: THREE.Material) 
   }
   // central pole
   g.cyl(0, 0.1, 0, 0.11, H + 1.4, '#1a1a1d', 8);
-  for (let k = 0; k < 5; k++) g.cyl(0, 0.8 + k * 1.7, 0, 0.125, 0.55, '#a31515', 8);
+  for (let k = 0; k < 8; k++) g.cyl(0, 0.8 + k * 1.7, 0, 0.125, 0.55, '#a31515', 8);
 
-  // stair from the gallery down to the west (-x), with rails
-  const STEPS = 26, RUN = 0.58, X0 = -(RG1 + 0.0);
+  // the round stair: treads on two stringers, posts under it, a handrail each side with bulbs along the outer one
+  const top = (i: number) => (H - 0.01) * ((i + 1) / STEPS);
   for (let i = 0; i < STEPS; i++) {
-    const top = H - 0.06 - i * ((H - 0.06) / STEPS), x = X0 - (i + 0.5) * RUN;
-    g.box(x, top - 0.04, 0, RUN, 0.08, 2.0, '#8a7a64');
-    if (i % 3 === 0) g.rod(new THREE.Vector3(x, 0, -0.97), new THREE.Vector3(x, top, -0.97), 0.04, '#6e747b', 4), g.rod(new THREE.Vector3(x, 0, 0.97), new THREE.Vector3(x, top, 0.97), 0.04, '#6e747b', 4);
+    const a = A0 - (i + 0.5) * DA, an = A0 - (i + 1.5) * DA, y = top(i), yn = top(Math.min(i + 1, STEPS - 1));
+    const p = wallPoint(a, (RS0 + RS1) / 2, y - 0.04);
+    g.box(p.x, p.y, p.z, ((RS0 + RS1) / 2) * DA + 0.06, 0.08, RS1 - RS0, i % 2 ? '#8a7a64' : '#7f705b', tangentRy(a));
+    for (const [r, rail] of [[RS0 + 0.04, 0.028], [RS1 - 0.04, 0.035]] as const) {
+      g.rod(wallPoint(a, r, y - 0.14), wallPoint(an, r, yn - 0.14), 0.06, '#6e747b', 4);              // stringer
+      g.rod(wallPoint(a, r, y + 1.0), wallPoint(an, r, yn + 1.0), rail, '#d9541e', 4);                 // handrail
+      if (i % 3 === 0) g.rod(wallPoint(a, r, y), wallPoint(a, r, y + 1.0), 0.022, '#d9541e', 4);
+      if (i % 6 === 3 && y > 0.6) g.rod(wallPoint(a, r, 0), wallPoint(a, r, y - 0.1), 0.05, '#6e747b', 5);
+    }
+    if (i % 4 === 0) { const q = wallPoint(a, RS1, y + 1.12); bulbs.add(q.x, q.y, q.z, (i / 4) % 2 ? '#ff3a22' : '#fff2d8', (i % 16) / 16, 1.0); }
   }
-  for (const sz of [-1.02, 1.02]) {
-    g.rod(new THREE.Vector3(X0, H + 0.95, sz), new THREE.Vector3(X0 - STEPS * RUN, 0.95, sz), 0.035, '#d9541e', 4);
-    g.rod(new THREE.Vector3(X0, H - 0.06, sz), new THREE.Vector3(X0 - STEPS * RUN, 0, sz), 0.05, '#6e747b', 4);
+  for (let k = 0; k < 4; k++) {            // the landing, level with the gallery
+    const a = A1 + LAND * (1 - (k + 0.5) / 4), p = wallPoint(a, (RG1 + RS1) / 2, H - 0.06);
+    g.box(p.x, p.y, p.z, ((RG1 + RS1) / 2) * (LAND / 4) + 0.06, 0.1, RS1 - RG1 + 0.1, '#7a6a55', tangentRy(a));
   }
-  // ticket booth at the foot of the stair
-  const BX = X0 - STEPS * RUN - 2.0, BZ = -3.2;
+  for (const y of [1.0, 0.5]) {
+    g.rod(wallPoint(A1 + LAND, RS1 - 0.04, H + y), wallPoint(A1, RS1 - 0.04, H + y), 0.03, '#d9541e', 4);
+    g.rod(wallPoint(A1, RS1 - 0.04, H + y), wallPoint(A1, RG1, H + y), 0.03, '#d9541e', 4);              // closed at the far end
+  }
+  for (const r of [RS1 - 0.04, RG1 + 0.3]) g.rod(wallPoint(A1, r, 0), wallPoint(A1, r, H + 1.0), 0.06, '#6e747b', 5);
+  // ticket booth by the foot of the stair
+  const BA = A0 + 0.5, BX = Math.cos(BA) * (RS1 + 1.8), BZ = Math.sin(BA) * (RS1 + 1.8);
   g.box(BX, 1.3, BZ, 1.8, 2.6, 1.6, '#c9a34a');
   g.box(BX, 2.65, BZ, 2.2, 0.12, 2.0, '#b3261e');
   g.box(BX + 0.92, 1.1, BZ, 0.1, 0.9, 1.0, '#26323d');
@@ -205,8 +185,8 @@ export function buildMautKuan(person: PersonFactory, personMat: THREE.Material) 
     m.position.y = y0 + h / 2;
     group.add(m);
   };
-  arcBand(Math.PI / 2, 1.3, R - 0.005, 4.0, 2.2, pmat);
-  arcBand(-Math.PI / 2, 1.3, R - 0.005, 4.0, 2.2, pmat);
+  arcBand(Math.PI / 2, 1.3, R - 0.005, H * 0.5, 3.4, pmat);
+  arcBand(-Math.PI / 2, 1.3, R - 0.005, H * 0.5, 3.4, pmat);
   // a painted skull and crossbones, glowing red eyes
   const sc = document.createElement('canvas');
   sc.width = 1024; sc.height = 640;
@@ -235,8 +215,8 @@ export function buildMautKuan(person: PersonFactory, personMat: THREE.Material) 
   stex.repeat.x = -1;
   stex.offset.x = 1;
   const smat = new THREE.MeshStandardMaterial({ map: stex, emissiveMap: stex, emissive: new THREE.Color(0.18, 0.1, 0.08), transparent: true, roughness: 1, side: THREE.BackSide, depthWrite: false });
-  arcBand(0, 0.85, R - 0.006, 2.6, 4.2, smat);
-  arcBand(Math.PI, 0.85, R - 0.006, 2.6, 4.2, smat);
+  arcBand(0, 0.85, R - 0.006, H * 0.3, 6.4, smat);
+  arcBand(Math.PI, 0.85, R - 0.006, H * 0.3, 6.4, smat);
   // opaque cladding behind the planks, so nothing that rides the wall can show through from outside
   const skin = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.17, R + 0.17, H, 64, 1, true), new THREE.MeshStandardMaterial({ color: '#2a2018', roughness: 1, side: THREE.DoubleSide }));
   skin.position.y = H / 2;
@@ -245,9 +225,9 @@ export function buildMautKuan(person: PersonFactory, personMat: THREE.Material) 
   cap.position.y = H - 0.02;
   group.add(cap);
   const outer = (a: number, tex: THREE.Texture) => arcBand(a, 1.2, RG1 - 0.02, H + 0.1, 1.0, new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: new THREE.Color(0.55, 0.55, 0.55), roughness: 0.8 }));
-  outer(0, banner(1024, 128, '#120a0a', '#a31515', [{ text: 'सिर्फ एक गलती सीधे यमराज के दर्शन', size: 70, color: '#ff4a2e', y: 66 }]));
-  outer(Math.PI / 2, banner(1024, 128, '#6e0d0d', '#e0a526', [{ text: 'मौत का कुआँ', size: 96, color: '#ffe14d', y: 66 }]));
-  outer(-Math.PI / 2, banner(1024, 128, '#120a0a', '#a31515', [{ text: 'WALL OF DEATH  ·  टिकट ₹30', size: 70, color: '#ff4a2e', y: 66 }]));
+  outer(0.2, banner(1024, 128, '#120a0a', '#a31515', [{ text: 'सिर्फ एक गलती सीधे यमराज के दर्शन', size: 70, color: '#ff4a2e', y: 66 }]));
+  outer(2.2, banner(1024, 128, '#6e0d0d', '#e0a526', [{ text: 'मौत का कुआँ', size: 96, color: '#ffe14d', y: 66 }]));
+  outer(-2.6, banner(1024, 128, '#120a0a', '#a31515', [{ text: 'WALL OF DEATH  ·  टिकट ₹30', size: 70, color: '#ff4a2e', y: 66 }]));
   const sign = banner(256, 128, '#b3261e', '#fcbf49', [{ text: 'टिकट', size: 60, color: '#ffe14d', y: 38 }, { text: '₹30', size: 60, color: '#ffffff', y: 92 }]);
   const sm = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), new THREE.MeshStandardMaterial({ map: sign, emissiveMap: sign, emissive: new THREE.Color(0.6, 0.6, 0.6) }));
   sm.position.set(BX + 0.99, 2.15, BZ);
@@ -255,49 +235,34 @@ export function buildMautKuan(person: PersonFactory, personMat: THREE.Material) 
   group.add(sm);
 
   // the crowd leaning on the rail, and a few waiting at the booth
-  const skins = ['#8a5a3c', '#a9714b', '#b98058', '#7a4e34', '#c08d66', '#96633f'];
-  const hairs = ['#0d0c0f', '#15110f', '#0d0c0f', '#5c5a58', '#b9b6b0'];
-  const outfits: Spec[] = [
-    { top: '#f4f0e6', bottom: '#2c3646', woman: false }, { top: '#8aa4c8', bottom: '#2c3646', woman: false }, { top: '#e07b39', bottom: '#3a3a40', woman: false },
-    { top: '#2a8a7a', bottom: '#2a8a7a', woman: true }, { top: '#c2185b', bottom: '#c2185b', woman: true }, { top: '#d9d4c4', bottom: '#5a4a3a', woman: false },
-    { top: '#3a5a40', bottom: '#2c3646', woman: false }, { top: '#7b3fa0', bottom: '#7b3fa0', woman: true }, { top: '#c62828', bottom: '#1d1d22', woman: false, wave: true },
-  ].map((o, i) => ({ ...o, skin: skins[i % 6], hair: o.woman ? '#0d0c0f' : hairs[i % 5], pose: 'stand' as const }));
-  const spots: { x: number; y: number; z: number; ry: number; s: number; v: number }[] = [];
-  for (let i = 0; i < 72; i++) {
-    const a = ((i + 0.5) / 72) * TAU + (rnd(i) - 0.5) * 0.04;
-    if (Math.abs(Math.atan2(Math.sin(a - STAIR_A), Math.cos(a - STAIR_A))) < 0.16) continue;
+  const spots: Spot[] = [];
+  for (let i = 0; i < 112; i++) {
+    const a = ((i + 0.5) / 112) * TAU + (rnd(i) - 0.5) * 0.03;
+    if (inGap(a, 0.06)) continue;                     // the way in from the stair is kept clear
     if (rnd(i * 3 + 1) < 0.12) continue;
     const r = R + 0.55 + rnd(i * 5) * 0.35, p = wallPoint(a, r, H - 0.01);
     const kid = rnd(i * 9 + 2) < 0.12;
-    spots.push({ x: p.x, y: H - 0.01, z: p.z, ry: Math.atan2(Math.cos(a), Math.sin(a)) + (rnd(i * 7) - 0.5) * 0.5, s: kid ? 0.68 : 0.93 + rnd(i) * 0.12, v: Math.floor(rnd(i * 13) * outfits.length) });
-  }
-  for (let i = 0; i < 12; i++) {
-    const x = BX + 2.4 + rnd(i * 3) * 2.8, z = BZ - 1.8 + rnd(i * 5) * 3.6;
-    spots.push({ x, y: 0.02, z, ry: Math.PI / 2 + (rnd(i * 7) - 0.5) * 0.9, s: 0.94 + rnd(i) * 0.1, v: Math.floor(rnd(i * 17 + 3) * outfits.length) });
-  }
-  outfits.forEach((o, v) => {
-    const mine = spots.filter((s) => s.v === v);
-    if (!mine.length) return;
-    const im = new THREE.InstancedMesh(person(o), personMat, mine.length);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0);
-    mine.forEach((s, i) => {
-      q.setFromAxisAngle(UP, s.ry);
-      im.setMatrixAt(i, m.compose(new THREE.Vector3(s.x, s.y, s.z), q, new THREE.Vector3(s.s, s.s, s.s)));
-      im.setColorAt(i, new THREE.Color().setScalar(0.85 + rnd(i * 11 + v) * 0.25));
+    spots.push({
+      x: p.x, y: H - 0.01, z: p.z, ry: Math.atan2(Math.cos(a), Math.sin(a)) + (rnd(i * 7) - 0.5) * 0.5, n: i,
+      pose: ONLOOKER[Math.floor(rnd(i * 13) * ONLOOKER.length)], ...(kid ? { s: 0.66, kind: i % 2 ? 'boy' : 'girl' } as const : {}),
     });
-    im.frustumCulled = false;
-    group.add(im);
-  });
+  }
+  for (let i = 0; i < 14; i++) {       // waiting at the foot of the stair, by the booth
+    const a = A0 + 0.06 + rnd(i * 3) * 0.34, rr = RS1 + 0.9 + rnd(i * 5) * 2.6;
+    const x = Math.cos(a) * rr, z = Math.sin(a) * rr;
+    spots.push({ x, y: 0.02, z, ry: Math.atan2(Math.cos(a), Math.sin(a)) + Math.PI / 2 + (rnd(i * 7) - 0.5) * 1.2, n: 100 + i, pose: ONLOOKER[Math.floor(rnd(i * 17 + 3) * ONLOOKER.length)] });
+  }
+  addFigures(group, spots);
 
   // moving vehicles: bikes ride near-horizontal bands high on the wall, cars lower and tilted
   interface Veh { obj: THREE.Group; a0: number; w: number; y0: number; amp: number; sp: number; phi: number; ph: number; off: number }
   const vehicles: Veh[] = [
-    { obj: bikeModel('#c62828', '#f4f0e6', '#d62828'), a0: 0.0, w: 1.55, y0: 5.6, amp: 0.9, sp: 0.5, phi: 0.1, ph: 0.0, off: 0.04 },
-    { obj: bikeModel('#2b4c8c', '#1d1d22', '#1f4aa6'), a0: 2.2, w: 1.4, y0: 4.4, amp: 1.0, sp: 0.4, phi: 0.08, ph: 1.7, off: 0.04 },
-    { obj: bikeModel('#e0a526', '#c62828', '#2a2a30'), a0: 4.1, w: 1.7, y0: 6.2, amp: 0.8, sp: 0.6, phi: 0.12, ph: 3.1, off: 0.04 },
-    { obj: carModel('#a72a2a', false), a0: 1.0, w: 0.9, y0: 2.4, amp: 0.4, sp: 0.3, phi: 0.12, ph: 0.6, off: 0.32 },
-    { obj: carModel('#e9e7e0', true), a0: 3.3, w: 0.85, y0: 2.7, amp: 0.5, sp: 0.35, phi: 0.1, ph: 2.4, off: 0.32 },
-    { obj: carModel('#2b6e3a', false), a0: 5.4, w: 0.95, y0: 2.2, amp: 0.35, sp: 0.25, phi: 0.14, ph: 4.2, off: 0.32 },
+    { obj: bikeModel(1, '#d62828'), a0: 0.0, w: 1.55, y0: 5.6, amp: 0.9, sp: 0.5, phi: 0.1, ph: 0.0, off: 0.04 },
+    { obj: bikeModel(4, '#1f4aa6'), a0: 2.2, w: 1.4, y0: 4.4, amp: 1.0, sp: 0.4, phi: 0.08, ph: 1.7, off: 0.04 },
+    { obj: bikeModel(6, '#2a2a30'), a0: 4.1, w: 1.7, y0: 6.2, amp: 0.8, sp: 0.6, phi: 0.12, ph: 3.1, off: 0.04 },
+    { obj: carModel('maruti_red', false), a0: 1.0, w: 0.9, y0: 2.4, amp: 0.4, sp: 0.3, phi: 0.12, ph: 0.6, off: 0.32 },
+    { obj: carModel('maruti', true), a0: 3.3, w: 0.85, y0: 2.7, amp: 0.5, sp: 0.35, phi: 0.1, ph: 2.4, off: 0.32 },
+    { obj: carModel('maruti_green', false), a0: 5.4, w: 0.95, y0: 2.2, amp: 0.35, sp: 0.25, phi: 0.14, ph: 4.2, off: 0.32 },
   ];
   for (const v of vehicles) group.add(v.obj);
   // each headlight throws a soft pool of light on the wall ahead of it (a curved strip, so it hugs the drum)
@@ -328,7 +293,7 @@ export function buildMautKuan(person: PersonFactory, personMat: THREE.Material) 
   const f = new THREE.Vector3(), n = new THREE.Vector3(), u = new THREE.Vector3(), r = new THREE.Vector3(), mm = new THREE.Matrix4();
   const place = (t: number) => {
     for (const v of vehicles) {
-      const a = v.a0 + v.w * t, y = v.y0 + Math.sin(t * v.sp + v.ph) * v.amp;
+      const a = v.a0 + v.w * t, y = (v.y0 + Math.sin(t * v.sp + v.ph) * v.amp) * YK;
       f.set(-Math.sin(a), 0, Math.cos(a));
       n.set(-Math.cos(a), 0, -Math.sin(a));
       u.copy(n).multiplyScalar(Math.cos(v.phi)).addScaledVector(new THREE.Vector3(0, 1, 0), Math.sin(v.phi)).normalize();
@@ -345,27 +310,33 @@ export function buildMautKuan(person: PersonFactory, personMat: THREE.Material) 
   place(0);
 
   // collision: the drum and its scaffold (only up to the gallery floor, so the gallery is clear), the booth
-  for (let i = 0; i < 56; i++) {
-    const a = (i / 56) * TAU;
-    if (Math.abs(Math.atan2(Math.sin(a - STAIR_A), Math.cos(a - STAIR_A))) < 0.16) continue;
+  for (let i = 0; i < 84; i++) {
+    const a = (i / 84) * TAU;
     posts.push([Math.cos(a) * (R + 0.9), Math.sin(a) * (R + 0.9), 0.9, H - 0.35]);
   }
   posts.push([BX, BZ, 1.35]);
   // railings: the inner rail all round, the outer rail with a gap at the stair, and the stair's two handrails
   const arc = (a0: number, a1: number, r: number, n: number) => Array.from({ length: n + 1 }, (_, k) => { const a = a0 + ((a1 - a0) * k) / n; return [Math.cos(a) * r, Math.sin(a) * r] as [number, number]; });
-  const GAP = 0.105;
   const loop = (pts: [number, number][], back: [number, number][]) => [...pts, ...back.reverse()];
   const rails = [
-    { ring: arc(0, TAU, R + 0.22, 64).slice(0, 64), h: H + 1.1 },
-    { ring: loop(arc(STAIR_A + GAP, STAIR_A + TAU - GAP, RG1 - 0.05, 64), arc(STAIR_A + GAP, STAIR_A + TAU - GAP, RG1 - 0.1, 64)), h: H + 1.1 },
-    ...[-1, 1].map((sz) => ({ ring: [[X0, sz * 1.02], [X0 - STEPS * RUN, sz * 1.02], [X0 - STEPS * RUN, sz * 1.08], [X0, sz * 1.08]] as [number, number][], h: H + 1.1 })),
+    // the two gallery rails also hold the camera in (camH): from outside, the rail and the banners came between it and Ramu
+    { ring: arc(0, TAU, R + 0.22, 96).slice(0, 96), h: H + 1.1, camH: H + 6 },
+    { ring: loop(arc(A1 + LAND, A1 + TAU, RG1 - 0.05, 96), arc(A1 + LAND, A1 + TAU, RG1 - 0.1, 96)), h: H + 1.1, camH: H + 6 },
+    // the stair's outer handrail, in lengths that rise with it, and the closed end of the landing
+    ...Array.from({ length: 14 }, (_, k) => {
+      const a0 = A0 - (SPAN * k) / 14, a1 = A0 - (SPAN * (k + 1)) / 14;
+      return { ring: loop(arc(a0, a1, RS1, 4), arc(a0, a1, RS1 + 0.06, 4)), h: Math.min(H, (H * (A0 - a1)) / (SPAN - LAND)) + 1.1, camH: 0 };
+    }),
+    { ring: [wallPoint(A1, RG1, 0), wallPoint(A1, RS1 + 0.06, 0), wallPoint(A1 - 0.004, RS1 + 0.06, 0), wallPoint(A1 - 0.004, RG1, 0)].map((p) => [p.x, p.z] as [number, number]), h: H + 1.1, camH: 0 },
   ];
-  // walkable: the gallery ring, and the stair (a smooth ramp through the treads)
-  const XE = X0 - STEPS * RUN;
+  // walkable: the gallery ring, and the stair (a smooth ramp through the treads) with its landing
   const floor = (x: number, z: number): number | null => {
     const rr = Math.hypot(x, z);
     if (rr >= RG0 + 0.1 && rr <= RG1) return H - 0.01;
-    if (x <= X0 && x >= XE && Math.abs(z) <= 1.0) return Math.max(0, (H - 0.1) * ((x - XE) / (X0 - XE)));
+    if (rr > RG1 && rr <= RS1) {
+      const da = wrap(A0 - Math.atan2(z, x));
+      if (da <= SPAN) return Math.min(H - 0.01, (H - 0.01) * (da / (SPAN - LAND)));
+    }
     return null;
   };
 

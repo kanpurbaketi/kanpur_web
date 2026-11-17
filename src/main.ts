@@ -25,7 +25,7 @@ import { Controls } from './game/controls';
 import { Mela } from './world/mela';
 import { Vendors } from './world/vendors';
 import { HOME, loadManifest, playable } from './game/parts';
-import { TEAR } from './world/melaSite';
+import { clipRoadsToMela, TEAR } from './world/melaSite';
 
 /*
  Debug URL params:
@@ -50,6 +50,7 @@ async function main() {
   let AREA = params.get('area') ?? HOME;
   if (AREA !== HOME && !open.has(AREA)) AREA = HOME;
   const map: MapData = await (await fetch(`data/${AREA}/map.json`)).json();
+  if (map.area === 'moti_jheel') map.roads = clipRoadsToMela(map.roads);   // no park path across the mela ground
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('cam') || params.has('at') });
   renderer.setPixelRatio(Math.min(2, devicePixelRatio));
@@ -115,7 +116,7 @@ async function main() {
   if (mela) {
     scene.add(mela.group);
     for (const [x, z, r, h] of mela.posts) world.addPost(x, z, r, h);
-    for (const w of mela.rails) world.addWall(w.ring, w.h, false);
+    for (const w of mela.rails) world.addWall(w.ring, w.h, w.camH > 0, w.camH);
     for (const f of mela.floors) world.addFloor(f);
     for (const ring of mela.walls) world.addWall(ring, 3.4);
   }
@@ -133,10 +134,11 @@ async function main() {
   // Crowd size comes from the admin portal (admin.html); ?peds=N overrides it for testing.
   const forced = params.has('peds') ? Number(params.get('peds')) || 0 : null;
   const crowdFor = (n: number) => Math.round(n * (desktop ? 1 : 0.5)); // half on touch devices
-  const peds = new Pedestrians(map, Math.max(crowdFor(CROWD_MAX), forced ?? 0));
+  const peds = new Pedestrians(map);
   peds.setCount(forced ?? crowdFor(loadSettings().crowd));
   if (forced === null) onSettingsChange((s) => peds.setCount(crowdFor(s.crowd)));
   scene.add(peds.group);
+  peds.populate(Math.max(crowdFor(CROWD_MAX), forced ?? 0));      // uncles, aunties, college girls and boys, security guards and a few goons, in all their looks
   const lookDir = new THREE.Vector3();
   const hud = new Hud(map);
   const stats = new Stats(city.roadPoints);
@@ -175,19 +177,29 @@ async function main() {
   const health = new Health(() => { ramu.position.set(spawnAt[0], 0, spawnAt[1]); ramu.releaseKeys(); });
   if (params.has('debug')) (window as unknown as { __health: Health }).__health = health;
   // goons (dark-clothed men in the crowd) run at Ramu and punch / kick; his own punch staggers them
-  const mugged = (d: number) => health.hurt(d);
+  const mugged = (d: number) => { const was = health.value; health.hurt(d); if (health.value < was) ramu.flinch(); };
   const away = (x: number, z: number): [number, number] => world.resolve(x, z, 0.35, 0);
   peds.onHurt = mugged;
   peds.resolve = away;
   peds.vehicleAt = null;   // set once the traffic exists
   if (mela) { mela.crowd.onHurt = mugged; mela.crowd.resolve = away; }
   if (params.has('debug')) (window as unknown as { __peds: Pedestrians }).__peds = peds;
+  if (params.has('debug') && mela) (window as unknown as { __melaCrowd: Pedestrians }).__melaCrowd = mela.crowd;
   let punchesSeen = 0;
+  let punchLand = -1;      // seconds until the punch now in the air lands (-1: none)
+  /** whoever a punch of Ramu's would land on now, in the street crowd or the mela's: the nearer of the two */
+  const punchTarget = () => {
+    const fx = -Math.sin(ramu.facing), fz = -Math.cos(ramu.facing);
+    const a = peds.aim(ramu.position.x, ramu.position.z, fx, fz), b = mela?.crowd.aim(ramu.position.x, ramu.position.z, fx, fz) ?? null;
+    const crowd = a && (!b || a.d <= b.d) ? peds : b ? mela!.crowd : null;
+    return crowd ? { crowd, fx, fz, at: (crowd === peds ? a : b)! } : null;
+  };
 
   // Blender-built props: traffic (buses, autos, e-rickshaws) and panipuri stalls. ?traffic=0 turns traffic off.
   const traffic = params.get('traffic') === '0' ? null : await Traffic.create(map, desktop);
   if (traffic) { scene.add(traffic.group); peds.vehicleAt = (x, z, r) => traffic.hit(x, z, r); }
   if (traffic && params.has('debug')) (window as unknown as { __traffic: Traffic }).__traffic = traffic;
+  if (params.has('debug')) (window as unknown as { __camera: THREE.Camera }).__camera = camera;   // test scripts aim it at things
   const solid: [number, number, number][] = [...detail.obstacles, ...landmarks.posts,
     ...city.pillars.map(([x, z]) => [x, z, 0.9] as [number, number, number])];
   const stalls = await makeStalls(map, occupied, solid, best);
@@ -285,12 +297,16 @@ void main() {
     const dt = Math.min(0.05, clock.getDelta());
     if (!fixed && ramu.punches !== punchesSeen) {
       punchesSeen = ramu.punches;
-      const fx = -Math.sin(ramu.facing), fz = -Math.cos(ramu.facing);
-      peds.hit(ramu.position.x, ramu.position.z, fx, fz);
-      mela?.crowd.hit(ramu.position.x, ramu.position.z, fx, fz);
-      const target = peds.lastHit ?? mela?.crowd.lastHit;
-      if (target) ramu.faceTowards(target.x, target.z);
+      const t = punchTarget();
+      if (t) ramu.faceTowards(t.at.x, t.at.z);       // he squares up to whoever is in front of him
+      punchLand = ramu.punchDelay;                   // and the blow lands when the fist gets there, not when it starts
     }
+    if (punchLand >= 0 && (punchLand -= dt) < 0) {
+      punchLand = -1;
+      const t = ramu.isPunching ? punchTarget() : null;
+      if (t) t.crowd.hit(ramu.position.x, ramu.position.z, t.fx, t.fz);
+    }
+    ramu.knockedOut = health.knockedOut;
     if (!fixed) { health.update(dt); ramu.enabled = !paused && !health.knockedOut; ramu.update(dt); }
     if (!fixed && !paused) stats.update(dt, ramu.position.x, ramu.position.z, ramu.speed, ramu.jumps);
     const focus = fixed ? camera.position : ramu.position;

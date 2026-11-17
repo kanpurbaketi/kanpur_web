@@ -5,6 +5,7 @@ import { Controls } from '../game/controls';
 import { NIGHT } from '../world/night';
 import { loadSettings, onSettingsChange, Settings } from '../game/settings';
 import { skinParams } from '../game/skin';
+import { CLIP_SECS, ONCE, prepareClips, PUNCH_LANDS } from '../world/actors';
 
 const CROUCH = 1.2, ACCEL = 12, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
 const CAM_DIST = 3.2, EYE = 1.35;
@@ -23,6 +24,13 @@ export class Ramu {
   punches = 0;
   /** seconds left of being knocked about (no control while it runs) */
   stun = 0;
+  /** laid out (the life bar ran out): he falls and lies there until the game wakes him */
+  knockedOut = false;
+  private reel = 0;        // seconds left of taking a blow
+  private punchT = 0;      // seconds since the punch in the air began
+  private reelClip = 'hit';   // which way he takes this blow (head / body, turn about)
+  private wake = 0;        // seconds left of getting up after a knock-out (no control while it runs)
+  private wasOut = false;
   private grounded = true;
   private keys = new Set<string>();
   private touchMove = new THREE.Vector2();
@@ -76,6 +84,24 @@ export class Ramu {
     this.punching = false;
   }
 
+  /** true while a punch of his is in the air */
+  get isPunching(): boolean {
+    return this.punching;
+  }
+
+  /** how long after a punch starts the fist lands, seconds (at the admin's punch speed) */
+  get punchDelay(): number {
+    return PUNCH_LANDS / this.cfg.punchSpeed;
+  }
+
+  /** He has been hit: a short recoil (a punch of his own already in the air still goes through). */
+  flinch(): void {
+    if (this.punching) return;
+    this.reel = 0.5;
+    this.reelClip = this.reelClip === 'hit' && this.actions.hit2 ? 'hit2' : 'hit';
+    this.actions[this.reelClip]?.reset();
+  }
+
   /** forget held keys (e.g. when a menu takes focus) */
   releaseKeys(): void {
     this.keys.clear();
@@ -85,7 +111,7 @@ export class Ramu {
   update(dt: number): void {
     const input = new THREE.Vector2();
     this.stun = Math.max(0, this.stun - dt);
-    if (this.enabled && this.stun <= 0) {
+    if (this.enabled && this.stun <= 0 && this.wake <= 0) {
       const c = this.controls;
       if (c.held('forward', this.keys)) input.y -= 1;
       if (c.held('back', this.keys)) input.y += 1;
@@ -100,8 +126,9 @@ export class Ramu {
     }
     this.jumpQueued = false;
     const crouching = this.enabled && this.controls.held('crouch', this.keys);
-    if (this.punchQueued && this.enabled && this.stun <= 0 && this.grounded && !this.punching && this.actions.punch) {
+    if (this.punchQueued && this.enabled && this.stun <= 0 && this.wake <= 0 && this.grounded && !this.punching && this.actions.punch) {
       this.punching = true;
+      this.punchT = 0;
       this.punches++;
       const a = this.actions.punch;
       a.reset();
@@ -154,7 +181,10 @@ export class Ramu {
     const bx = Math.sin(this.yaw) * cp, by = -Math.sin(this.pitch), bz = Math.cos(this.yaw) * cp;
     const t = this.world.raycast(px, py, pz, px + bx * CAM_DIST, py + by * CAM_DIST, pz + bz * CAM_DIST);
     const d = Math.max(0.4, CAM_DIST * t - 0.25);
-    this.camera.position.set(px + bx * d, Math.max(0.3, py + by * d), pz + bz * d);
+    // squeezed against something (a wall behind him, the rail of a narrow gallery): rise as it closes in, to look over
+    // his head rather than into the back of it
+    const lift = Math.max(0, 1.7 - d) * 0.28;
+    this.camera.position.set(px + bx * d, Math.max(0.3, py + by * d + lift), pz + bz * d);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
   }
 
@@ -270,7 +300,8 @@ export class Ramu {
         const m = o as THREE.SkinnedMesh;
         if (!m.isMesh) return;
         m.castShadow = false;                    // no dark shadow blob under / around him
-        m.userData.noAO = true;                  // and no ambient-occlusion halo from the post pass
+        // He stays in the ambient-occlusion pass: left out of it, the shading of whatever stood behind him (a railing,
+        // a lattice) was drawn across his body, as if he were see-through.
         m.frustumCulled = false;                 // the skinned bounds do not follow the animation
         const mat = m.material as THREE.MeshStandardMaterial;
         mat.roughness = 0.82;
@@ -287,11 +318,10 @@ export class Ramu {
         this.root.add(glow);
       }
       this.mixer = new THREE.AnimationMixer(gltf.scene);
-      for (const clip of gltf.animations) {
-        const name = clip.name.replace(/^.*\|/, '');
+      for (const clip of prepareClips(gltf.animations)) {
         const a = this.mixer.clipAction(clip);
-        if (name === 'jump' || name === 'punch') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
-        this.actions[name] = a;
+        if (ONCE.has(clip.name)) { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+        this.actions[clip.name] = a;
       }
       this.mixer.addEventListener('finished', (e) => { if (e.action === this.actions.punch) this.punching = false; });
       this.play('idle', 0);
@@ -385,8 +415,25 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
       const act = this.play(A[name] ? name : fallback);
       if (act) act.timeScale = scale;
     };
-    if (this.punching) {
+    this.reel = Math.max(0, this.reel - dt);
+    // A punch must play to its end to be over (its 'finished' event clears `punching`), so nothing but a knock-out cuts
+    // into it; the timer is a backstop in case the clip is ever faded out before it finishes.
+    if (this.punching && (this.knockedOut || (this.punchT += dt) > 2.6 / this.cfg.punchSpeed)) this.punching = false;
+    // woken after a knock-out: he gets up off the ground before he can do anything else
+    if (this.wasOut && !this.knockedOut && A.get_up) { this.wake = CLIP_SECS.get_up / 1.6; A.get_up.reset(); }
+    this.wasOut = this.knockedOut;
+    this.wake = Math.max(0, this.wake - dt);
+    if (this.knockedOut) {
+      const f = this.play(A.fall ? 'fall' : 'idle', 0.08);
+      if (f) f.timeScale = 1.5;
+    } else if (this.wake > 0) {
+      const g = this.play('get_up', 0);
+      if (g) g.timeScale = 1.6;
+    } else if (this.punching) {
       this.play('punch', 0.05);
+    } else if (this.reel > 0 && A[this.reelClip]) {
+      const h = this.play(this.reelClip, 0.06);
+      if (h) h.timeScale = this.reelClip === 'hit' ? 2.4 : 2.0;
     } else if (!this.grounded) {
       // the jump clip is ~2.2 s with a wind-up; the game's jump is ~1 s, hence the double speed
       if (this.wasGrounded) { const j = this.play('jump', 0.08); if (j) { j.reset().play(); j.timeScale = 2.0; } }

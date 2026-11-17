@@ -1,49 +1,75 @@
 import * as THREE from 'three';
 import { MapData } from './types';
-import {
-  BODY, torsoGeo, thighGeo, shinGeo, footGeo, upperArmGeo, forearmGeo, handGeo, skirtGeo, headGeo, HEAD,
-  shortHairGeo, longHairGeo, drapeGeo,
-} from './body';
+import { Actor, CLIP_SECS, KICK_LANDS, makeActors, PUNCH_LANDS, RigName } from './actors';
 
 /*
  Random pedestrians.
  A fixed pool of people is kept around the player: they walk the street network (footpath where a road
  has one, otherwise the edge of the carriageway), pick a random turn at each junction, pause now and then,
  and some just stand around. Anyone left far behind is moved to a street ahead / out of sight.
- Rendering: one InstancedMesh per body part (a dozen draw calls for everybody), per-person colours and height.
+ Meeting the player: brushed against, a person takes a step back and aside, waits a moment and walks on. Punched, they
+ reel (take the punch), turn on him and hit back for a while. The third punch (the fifth, for a security guard) lays them
+ out: they stay down, and are only put back on their feet somewhere else once the player is long gone.
+ Everybody is a rigged model (see actors.ts): uncles, aunties, college girls and boys, security guards and a few goons, each kind in several looks.
 */
 
 const SPAWN_MIN = 60, SPAWN_MAX = 170, DESPAWN = 195; // metres from the player
 const SIDEWALK_Y = 0.16;
-// goons: a few men in dark clothes who run at the player and punch / kick
+// the hostile ones run at the player and punch / kick: the security guards, and a few goons (men in dark clothes)
 const AGGRO = 14, CHASE = 3.4, REACH = 1.6, PUNCH_DMG = 8, KICK_DMG = 12;
+// anybody else, once punched: hits back for a while (not as hard as a goon, and does not follow as far or as fast)
+const ANGRY = 9, ANGRY_RANGE = 8, ANGRY_CHASE = 2.3, ANGRY_DMG = 0.6;
+const FLINCH = 0.95;          // seconds spent taking a punch
+const TOUGH = 3;              // punches it takes to lay an ordinary person out
+const OUT_SECS = 40, OUT_AWAY = 45;   // a laid-out person is put back on the streets after this long, once the player is this far off
+// an attack: [the moment the blow lands, how long the whole thing takes], seconds. The rigged punch clip is played at
+// ACTOR_PUNCH times its speed.
+const ACTOR_PUNCH = 1.8, ACTOR_KICK = 1.5;
+const ACTOR_ATK: [number, number] = [PUNCH_LANDS / ACTOR_PUNCH, CLIP_SECS.punch / ACTOR_PUNCH];
+const ACTOR_KICK_ATK: [number, number] = [KICK_LANDS / ACTOR_KICK, CLIP_SECS.kick / ACTOR_KICK];
+const BLOCK = 0.7;            // seconds a blocked punch holds them
+// a rigged person thrown by a vehicle: the fall and a moment on the ground, then the get-up (seconds, and clip speeds)
+const V_FALL = 2.6, V_FALL_SPEED = 1.7, V_GETUP_SPEED = 1.4, V_GETUP = CLIP_SECS.get_up / V_GETUP_SPEED;
 
 interface Link { to: number; off: number; y: number }
 interface Node { x: number; z: number; links: Link[] }
 
 interface Ped {
-  kind: number;       // 0 shirt + trousers, 1 kurta-pyjama, 2 salwar kameez, 3 sari
-  scale: number;
-  skirt: number;      // length of the kurta / sari below the waist (0 = none)
   speed: number;
   jitter: number;     // personal sideways offset
   a: number; b: number; link: Link; t: number; len: number;
   x: number; y: number; z: number; heading: number;
-  phase: number; moving: number; wait: number;
+  moving: number; wait: number;
   fresh: boolean;     // not on a street yet
   hostile: boolean;   // a goon
   mode: number;       // 0 normal, 1 after the player
   atkKind: number;    // 0 none, 1 punch, 2 kick
   atkT: number; atkE: number; struck: boolean; cool: number; stun: number; guard: number;
   down: number; downT: number; kvx: number; kvz: number; panic: number;   // knocked down: time left, time since the fall, knock velocity, running away
+  hits: number; tough: number;      // punches taken, and how many lay them out
+  flinch: number;     // seconds left of reeling from a punch
+  angry: number;      // seconds left of wanting to hit back
+  out: boolean;       // laid out for good (until put back, far from the player)
+  atkN: number;       // attacks thrown so far (names each punch for the rigged clip)
+  block: number; blockN: number;    // seconds left of holding a block, and blocks so far
+  fwd: boolean;       // laid out face down (hit from behind)
+  falls: number; bumpN: number;     // times thrown by a vehicle / brushed against (name those clips)
+  rig: RigName; idleClip: string;   // which kind of person, and how they are standing while they wait
+  ox: number; oz: number; hold: number; bump: number;   // step back when brushed against: offset from their line, pause, time before the next
+  linger: number;     // chance of stopping for a while at a junction
+  actor: Actor;       // the rigged model
 }
 
-const SKIN = ['#8a5a3c', '#a9714b', '#b98058', '#7a4e34', '#c08d66', '#96633f'];
-const HAIR = ['#0d0c0f', '#15110f', '#1e1612', '#0d0c0f', '#5c5a58', '#b9b6b0'];
-const SHIRTS = ['#e9e6dc', '#b9c7d8', '#6f8fb3', '#c9b48a', '#8a9a6a', '#d8d2c4', '#a34a3a', '#3f5a78', '#e2c36b', '#7b7f86', '#cfd8c0'];
-const TROUSERS = ['#2c3646', '#3a3a3c', '#4a4238', '#5b6470', '#2a2a2e', '#6b5d4a'];
-const KURTAS = ['#f0ebdd', '#e4dcc6', '#d8c9a3', '#cfd6dc', '#e8a94a', '#c9d2b4'];
-const BRIGHT = ['#c2185b', '#e0652a', '#2a8a7a', '#d4a017', '#7b3fa0', '#1f6fb5', '#c0392b', '#2e8b57', '#e84a8a', '#3a4fb0', '#b5651d'];
+/** how the rigged kinds carry themselves: walking speed (m/s, from .. to) and how often they stop and stand */
+const RIGGED: Record<RigName, { speed: [number, number]; linger: number; tough: number }> = {
+  uncle: { speed: [0.95, 1.25], linger: 0.12, tough: TOUGH },
+  security: { speed: [0.8, 1.0], linger: 0.45, tough: 5 },     // on his round until he sees Ramu, then after him; a harder man to put down
+  goon: { speed: [1.05, 1.35], linger: 0.08, tough: TOUGH },
+  girl: { speed: [1.0, 1.3], linger: 0.15, tough: TOUGH },
+  boy: { speed: [1.1, 1.45], linger: 0.12, tough: TOUGH },
+  aunty: { speed: [0.8, 1.05], linger: 0.25, tough: TOUGH },     // in no hurry, and stops to talk
+};
+const ACTOR_RANGE = 95;   // metres from the player beyond which a rigged person is not drawn or animated
 
 export class Pedestrians {
   readonly group = new THREE.Group();
@@ -58,34 +84,15 @@ export class Pedestrians {
   lastHit: { x: number; z: number } | null = null;
   /** a moving vehicle at a point, if one is there: its velocity (so a car can knock people over) */
   vehicleAt: ((x: number, z: number, r: number) => { vx: number; vz: number; speed: number } | null) | null = null;
-  private parts: Record<'thigh' | 'shin' | 'torso' | 'skirt' | 'drape' | 'sleeve' | 'forearm' | 'hand' | 'head' | 'hair' | 'longHair' | 'feet', THREE.InstancedMesh>;
+  private rigged: number[] = [];     // indices of everybody (test scripts read it)
+  private want = 0;
+  private dt = 0;
+  private fx = 0;
+  private fz = 0;
 
   /** `local`: a fixed crowd on a small street graph (the mela): people stay on it and never get recycled around the player */
-  constructor(map: MapData, readonly capacity: number, private local = false, private goonRate = 0.06) {
-    const count = capacity;
+  constructor(map: MapData, private local = false) {
     this.buildGraph(map);
-    const face = faceTexture();
-    const mat = (roughness: number, extra: THREE.MeshStandardMaterialParameters = {}) =>
-      new THREE.MeshStandardMaterial({ roughness, ...extra });
-    const im = (g: THREE.BufferGeometry, n: number, rough = 0.85, extra: THREE.MeshStandardMaterialParameters = {}) => {
-      const m = new THREE.InstancedMesh(g, mat(rough, extra), n);
-      m.castShadow = true;
-      m.receiveShadow = true;
-      m.frustumCulled = false; // instances move around the whole map
-      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      this.group.add(m);
-      return m;
-    };
-    const G = geometries();
-    this.parts = {
-      thigh: im(G.thigh, count * 2, 0.9), shin: im(G.shin, count * 2, 0.9), torso: im(G.torso, count),
-      skirt: im(G.skirt, count, 0.9, { side: THREE.DoubleSide }), drape: im(G.drape, count, 0.8, { side: THREE.DoubleSide }),
-      sleeve: im(G.sleeve, count * 2), forearm: im(G.forearm, count * 2, 0.65), hand: im(G.hand, count * 2, 0.6),
-      head: im(G.head, count, 0.6, { map: face }), hair: im(G.hair, count, 0.45), longHair: im(G.longHair, count, 0.45),
-      feet: im(G.feet, count * 2, 0.7),
-    };
-    for (let i = 0; i < count; i++) this.peds.push(this.makePerson(i));
-    this.setCount(0);
   }
 
   /** number of people currently on the streets */
@@ -93,14 +100,36 @@ export class Pedestrians {
     return this.active;
   }
 
-  /** Change the crowd size (0 .. capacity). Takes effect on the next update. */
+  /** Change the crowd size (up to the number made by populate). Takes effect on the next update. */
   setCount(n: number): void {
-    n = Math.max(0, Math.min(this.capacity, Math.round(n) || 0));
+    this.want = Math.max(0, Math.round(n) || 0);
+    n = Math.min(this.want, this.peds.length);
     for (let i = this.active; i < n; i++) this.peds[i].fresh = true;
     this.active = n;
-    const P = this.parts;
-    for (const m of [P.torso, P.skirt, P.drape, P.head, P.hair, P.longHair]) m.count = n;
-    for (const m of [P.thigh, P.shin, P.sleeve, P.forearm, P.hand, P.feet]) m.count = n * 2;
+  }
+
+  /**
+   * Make the crowd: `n` people: uncles, aunties, college girls and boys, some security guards and a few goons, mixed up so that a smaller crowd
+   * (setCount) keeps the same mix. The models load in the background; the people appear when they have.
+   */
+  async populate(n: number): Promise<void> {
+    if (n <= 0) return;
+    const goons = Math.round(n * 0.06), guards = Math.round(n * 0.1), girls = Math.round(n * 0.2), boys = Math.round(n * 0.16), aunties = Math.round(n * 0.16);
+    try {
+      const made: [RigName, Actor][] = [];
+      for (const [name, k] of [['uncle', n - goons - guards - girls - boys - aunties], ['aunty', aunties], ['girl', girls], ['boy', boys], ['security', guards], ['goon', goons]] as [RigName, number][])
+        for (const a of await makeActors(name, k)) made.push([name, a]);
+      for (let i = made.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [made[i], made[j]] = [made[j], made[i]]; }
+      for (const [name, actor] of made) {
+        actor.root.visible = false;
+        this.group.add(actor.root);
+        this.rigged.push(this.peds.length);
+        this.peds.push(this.makePerson(name, actor));
+      }
+      this.setCount(this.want);
+    } catch (e) {
+      console.error('crowd failed to load', e);
+    }
   }
 
   /** Street network: one node per distinct road vertex, links along the roads. */
@@ -131,47 +160,18 @@ export class Pedestrians {
     }
   }
 
-  private makePerson(i: number): Ped {
-    const r = Math.random();
-    const kind = r < 0.45 ? 0 : r < 0.6 ? 1 : r < 0.82 ? 2 : 3;
-    const child = kind === 0 && Math.random() < 0.12;
-    const woman = kind >= 2;
-    const scale = child ? 0.62 + Math.random() * 0.12 : (woman ? 0.9 : 0.96) + Math.random() * 0.1;
-    const p: Ped = {
-      kind, scale,
-      skirt: kind === 1 ? 0.42 : kind === 2 ? 0.5 : kind === 3 ? 0.84 : 0,
-      speed: (child ? 1.5 : kind === 3 ? 1.0 : 1.15) + Math.random() * 0.45,
+  private makePerson(rig: RigName, actor: Actor): Ped {
+    const style = RIGGED[rig];
+    return {
+      speed: style.speed[0] + Math.random() * (style.speed[1] - style.speed[0]),
       jitter: (Math.random() - 0.5) * 0.7,
       a: 0, b: 0, link: { to: 0, off: 0, y: 0 }, t: 0, len: 1,
-      x: 0, y: 0, z: 0, heading: 0, phase: Math.random() * 6, moving: 1, wait: 0, fresh: true,
-      hostile: false, mode: 0, atkKind: 0, atkT: 0, atkE: 0, struck: false, cool: 0, stun: 0, guard: 0, down: 0, downT: 0, kvx: 0, kvz: 0, panic: 0,
+      x: 0, y: 0, z: 0, heading: 0, moving: 1, wait: 0, fresh: true,
+      hostile: rig === 'goon' || rig === 'security', mode: 0, atkKind: 0, atkT: 0, atkE: 0, struck: false, cool: 0, stun: 0, guard: 0, down: 0, downT: 0, kvx: 0, kvz: 0, panic: 0,
+      hits: 0, tough: style.tough, flinch: 0, angry: 0, out: false, atkN: 0, ox: 0, oz: 0, hold: 0, bump: 0,
+      block: 0, blockN: 0, fwd: false, falls: 0, bumpN: 0, rig, idleClip: 'idle',
+      linger: style.linger, actor,
     };
-    if (!child && kind <= 1 && Math.random() < this.goonRate) { p.hostile = true; p.scale = 0.98 + Math.random() * 0.08; }
-    // colours
-    const c = new THREE.Color();
-    const pick = (list: string[]) => c.set(list[Math.floor(Math.random() * list.length)]).clone();
-    const skin = pick(SKIN), hair = pick(HAIR.slice(0, child || woman ? 4 : 6));
-    const top = p.hostile ? pick(['#161616', '#241414', '#4a1414', '#1b2430']) : pick(kind === 0 ? SHIRTS : kind === 1 ? KURTAS : BRIGHT);
-    const accent = pick(BRIGHT); // sari blouse / dupatta
-    const bottom = p.hostile ? pick(['#161618', '#202226']) : kind === 0 ? pick(TROUSERS) : kind === 1 ? pick(['#ece8dc', '#e0dccf', '#d9d4c4'])
-      : kind === 2 ? (Math.random() < 0.5 ? top.clone().multiplyScalar(0.7) : pick(['#e8e3d6', '#2f2f35', '#d9b44a'])) : top;
-    const longSleeve = kind === 1 || (kind === 0 && Math.random() < 0.35);
-    const P = this.parts;
-    P.torso.setColorAt(i, kind === 3 ? accent : top);
-    P.skirt.setColorAt(i, top);
-    P.drape.setColorAt(i, kind === 3 ? top : accent);
-    P.head.setColorAt(i, skin);
-    P.hair.setColorAt(i, hair);
-    P.longHair.setColorAt(i, hair);
-    for (const k of [i * 2, i * 2 + 1]) {
-      P.thigh.setColorAt(k, bottom);
-      P.shin.setColorAt(k, bottom);
-      P.sleeve.setColorAt(k, kind === 3 ? accent : top);
-      P.forearm.setColorAt(k, longSleeve ? top : skin);
-      P.hand.setColorAt(k, skin);
-      P.feet.setColorAt(k, skin.clone().multiplyScalar(0.55)); // sandals / dusty feet
-    }
-    return p;
   }
 
   /** Put a person on a random street segment in the given distance band around (fx, fz). */
@@ -188,16 +188,26 @@ export class Pedestrians {
       cands.push(i);
     }
     if (!cands.length) return false;
+    // a fresh start: whatever happened to them where they were is forgotten
+    p.hits = 0; p.flinch = 0; p.angry = 0; p.out = false; p.down = 0; p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; p.stun = 0; p.panic = 0;
+    p.ox = 0; p.oz = 0; p.hold = 0; p.block = 0; p.fwd = false;
     p.a = cands[Math.floor(Math.random() * cands.length)];
     const links = this.nodes[p.a].links;
     this.setLink(p, links[Math.floor(Math.random() * links.length)]);
     p.t = Math.random() * p.len;
     p.wait = Math.random() < (this.local ? 0.35 : 0.14) ? 8 + Math.random() * 40 : 0; // some people just stand around
+    this.pickIdle(p);
     const [x, y, z, h] = this.target(p);
     p.x = x; p.y = y; p.z = z;
     p.heading = p.wait ? h + Math.PI / 2 + (Math.random() - 0.5) : h;
     p.moving = p.wait ? 0 : 1;
     return true;
+  }
+
+  /** How a person stands while they wait: a guard keeps looking about, an uncle looks about or holds forth. */
+  private pickIdle(p: Ped): void {
+    const r = Math.random();
+    p.idleClip = p.rig === 'security' ? (r < 0.6 ? 'look_around' : 'idle') : p.rig === 'uncle' || p.rig === 'boy' || p.rig === 'aunty' ? (r < 0.4 ? 'look_around' : r < 0.6 ? 'argue' : 'idle') : p.rig === 'girl' ? (r < 0.5 ? 'look_around' : 'idle') : 'idle';
   }
 
   private setLink(p: Ped, l: Link): void {
@@ -221,6 +231,7 @@ export class Pedestrians {
    * (px, pz): somebody to make way for (the player), if any.
    */
   update(dt: number, fx: number, fz: number, dirX: number, dirZ: number, px = Infinity, pz = Infinity, py = 0): void {
+    this.dt = dt; this.fx = fx; this.fz = fz;
     for (let i = 0; i < this.active; i++) {
       const p = this.peds[i];
       if (p.fresh) {
@@ -229,6 +240,24 @@ export class Pedestrians {
         p.fresh = false;
       }
       if (!this.local && Math.hypot(p.x - fx, p.z - fz) > DESPAWN) this.place(p, fx, fz, SPAWN_MIN, SPAWN_MAX, dirX, dirZ);
+      if (p.out) {                            // laid out: lying where they fell
+        p.downT += dt;
+        if (Math.hypot(p.kvx, p.kvz) > 0.05) {
+          let nx = p.x + p.kvx * dt, nz = p.z + p.kvz * dt;
+          if (this.resolve) [nx, nz] = this.resolve(nx, nz);
+          p.x = nx; p.z = nz;
+          const f = Math.exp(-5 * dt);
+          p.kvx *= f; p.kvz *= f;
+        }
+        p.moving += (0 - p.moving) * Math.min(1, dt * 10);
+        // long after, with the player well away, they are back on their feet on some other street
+        if (p.downT > OUT_SECS && Math.hypot(p.x - fx, p.z - fz) > OUT_AWAY) {
+          const was = [p.x, p.z];
+          for (let k = 0; k < 8; k++) if (this.place(p, fx, fz, SPAWN_MIN, SPAWN_MAX, dirX, dirZ) && Math.hypot(p.x - fx, p.z - fz) > OUT_AWAY * 0.7) break;
+          if (p.out) { p.x = was[0]; p.z = was[1]; }      // nowhere to go yet: stay down
+        }
+        continue;
+      }
       if (p.down > 0) {                       // lying where they fell, then getting up
         p.down -= dt;
         p.downT += dt;
@@ -242,22 +271,54 @@ export class Pedestrians {
         }
         p.moving += (0 - p.moving) * Math.min(1, dt * 10);
         p.guard = 0; p.atkKind = 0; p.atkE = 0;
-        if (p.down <= 0) { p.mode = 0; p.stun = 0; if (!p.hostile) p.panic = 6; this.snapToGraph(p); }
+        if (p.down <= 0) {
+          // on their feet where the fall left them, not where they stood
+          const l = p.actor.lie, c = Math.cos(p.heading), s = Math.sin(p.heading);
+          p.x += l.x * c + l.z * s;
+          p.z += -l.x * s + l.z * c;
+          p.mode = 0; p.stun = 0; if (!p.hostile) p.panic = 6; this.snapToGraph(p);
+        }
         continue;
       }
       if (this.vehicleAt && !p.fresh) {
         const v = this.vehicleAt(p.x, p.z, 0.4);
         if (v && v.speed > 1.2) { this.knockDown(p, v.vx * 0.9, v.vz * 0.9, 3.6); continue; }
       }
-      if (p.hostile && this.fight(p, dt, px, pz, py)) {
-        p.phase += CHASE * dt * 4.2 * p.moving / p.scale;
+      if (p.flinch > 0 || p.block > 0) {      // reeling from a punch, or holding a block against one
+        p.flinch -= dt;
+        p.block -= dt;
+        p.moving += (0 - p.moving) * Math.min(1, dt * 10);
+        if (Math.hypot(p.kvx, p.kvz) > 0.05) {
+          let nx = p.x + p.kvx * dt, nz = p.z + p.kvz * dt;
+          if (this.resolve) [nx, nz] = this.resolve(nx, nz);
+          p.x = nx; p.z = nz;
+          const f = Math.exp(-7 * dt);
+          p.kvx *= f; p.kvz *= f;
+        }
         continue;
       }
-      const blocked = Math.hypot(p.x - px, p.z - pz) < 0.9;
+      if (p.angry > 0) p.angry -= dt;
+      if ((p.hostile || p.angry > 0) && this.fight(p, dt, px, pz, py)) continue;
+      if (p.mode && !p.hostile) { p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; this.snapToGraph(p); }   // calmed down: back to their walk
+      // brushed against by the player: a step back and aside, a moment's pause, then on their way
+      p.bump = Math.max(0, p.bump - dt);
+      const dP = Math.hypot(p.x - px, p.z - pz);
+      if (dP < 0.75 && p.bump <= 0 && Math.abs(py - p.y) < 1.2) {
+        const ax = dP > 1e-3 ? (p.x - px) / dP : -Math.sin(p.heading), az = dP > 1e-3 ? (p.z - pz) / dP : -Math.cos(p.heading);
+        let sx = -Math.cos(p.heading), sz = Math.sin(p.heading);          // across their line of walk
+        if (sx * ax + sz * az < 0) { sx = -sx; sz = -sz; }               // ... to the side away from him
+        p.ox += ax * 0.55 + sx * 0.4;
+        p.oz += az * 0.55 + sz * 0.4;
+        p.hold = 0.95;                        // as long as the stumble takes
+        p.bump = p.hold + 0.75;
+        p.bumpN++;
+      }
       let walking = false;
       if (p.wait > 0) p.wait -= dt;
-      else if (!blocked) {
+      else if (p.hold > 0) p.hold -= dt;
+      else {
         walking = true;
+        if (p.panic > 0) p.panic -= dt;
         p.t += p.speed * (p.panic > 0 ? 1.8 : 1) * dt;
         if (p.t >= p.len) {
           // junction: any street except straight back, unless it is a dead end
@@ -265,20 +326,20 @@ export class Pedestrians {
           const opts = this.nodes[here].links.filter((l) => l.to !== from);
           p.a = here;
           this.setLink(p, opts.length ? opts[Math.floor(Math.random() * opts.length)] : this.nodes[here].links[0]);
-          if (Math.random() < 0.05) p.wait = 2 + Math.random() * 6;
+          if (Math.random() < p.linger) { p.wait = (2 + Math.random() * 6) * (p.linger > 0.2 ? 2.5 : 1); this.pickIdle(p); }
         }
       }
       const [tx, ty, tz, th] = this.target(p);
       const k = Math.min(1, dt * 5);
-      p.x += (tx - p.x) * k;
+      if (p.hold <= 0) { const f = Math.exp(-0.7 * dt); p.ox *= f; p.oz *= f; }   // drifting back onto their line as they go
+      p.x += (tx + p.ox - p.x) * k;
       p.y += (ty - p.y) * k;
-      p.z += (tz - p.z) * k;
+      p.z += (tz + p.oz - p.z) * k;
       if (p.wait <= 0) {
         const d = Math.atan2(Math.sin(th - p.heading), Math.cos(th - p.heading));
         p.heading += d * Math.min(1, dt * 6);
       }
       p.moving += ((walking ? 1 : 0) - p.moving) * Math.min(1, dt * 6);
-      p.phase += p.speed * dt * 4.2 * p.moving / p.scale;
     }
     this.write();
   }
@@ -289,6 +350,10 @@ export class Pedestrians {
   }
 
   private knockDown(p: Ped, vx: number, vz: number, secs: number): void {
+    secs = V_FALL + V_GETUP;                  // the fall goes backwards: their back to the way they are thrown
+    p.heading = Math.atan2(vx, vz);
+    p.falls++;
+    p.flinch = 0; p.block = 0;
     p.down = secs;
     p.downT = 0;
     p.kvx = vx;
@@ -298,41 +363,64 @@ export class Pedestrians {
     p.wait = 0;
   }
 
-  /**
-   * A punch from (x, z) facing (fx, fz): everyone within arm's reach in front is knocked off their feet and shoved back.
-   * Goons get up angrier; other people get up and run. Returns how many were hit.
-   */
-  hit(x: number, z: number, fx: number, fz: number): number {
-    let n = 0, best = Infinity;
-    this.lastHit = null;
+  /** The person a punch from (x, z) facing (fx, fz) would land on: the nearest one standing within arm's reach, not behind. */
+  private inReach(x: number, z: number, fx: number, fz: number): { p: Ped; d: number } | null {
+    let best: Ped | null = null, bd = Infinity;
     for (let i = 0; i < this.active; i++) {
       const p = this.peds[i];
-      if (p.down > 0 || p.fresh) continue;
+      if (p.out || p.down > 0 || p.fresh) continue;
       const dx = p.x - x, dz = p.z - z, d = Math.hypot(dx, dz);
-      if (d > 1.9 || d < 1e-3) continue;
+      if (d > 1.9 || d < 1e-3 || d >= bd) continue;
       if ((dx * fx + dz * fz) / d < -0.3) continue;      // anyone but directly behind
-      this.knockDown(p, (dx / d) * 4.2, (dz / d) * 4.2, p.hostile ? 1.8 : 3.4);
-      if (d < best) { best = d; this.lastHit = { x: p.x, z: p.z }; }
-      n++;
+      best = p; bd = d;
     }
-    return n;
+    return best ? { p: best, d: bd } : null;
   }
 
-  /** The player punched: any goon within arm's reach is staggered and shoved back. Returns how many. */
-  punchAt(x: number, z: number): number {
-    let n = 0;
-    for (let i = 0; i < this.active; i++) {
-      const p = this.peds[i];
-      if (!p.hostile || p.mode === 0) continue;
-      const dx = p.x - x, dz = p.z - z, d = Math.hypot(dx, dz);
-      if (d > 2.0) continue;
-      p.stun = 1.5;
-      p.atkKind = 0; p.atkE = 0;
-      const k = 1.1 / (d || 1);
-      [p.x, p.z] = this.resolve ? this.resolve(p.x + dx * k, p.z + dz * k) : [p.x + dx * k, p.z + dz * k];
-      n++;
+  /** Who a punch thrown now would land on (so the puncher can square up to them), and how far off they are. */
+  aim(x: number, z: number, fx: number, fz: number): { x: number; z: number; d: number } | null {
+    const t = this.inReach(x, z, fx, fz);
+    return t ? { x: t.p.x, z: t.p.z, d: t.d } : null;
+  }
+
+  /**
+   * A punch from (x, z) facing (fx, fz) lands on the nearest person in reach. They turn on the puncher and reel from it,
+   * then hit back; the last punch they can take lays them out. Returns true if it landed on somebody.
+   */
+  hit(x: number, z: number, fx: number, fz: number): boolean {
+    const t = this.inReach(x, z, fx, fz);
+    this.lastHit = null;
+    if (!t) return false;
+    const p = t.p, dx = (p.x - x) / t.d, dz = (p.z - z) / t.d;
+    this.lastHit = { x: p.x, z: p.z };
+    const behind = Math.sin(p.heading) * dx + Math.cos(p.heading) * dz < -0.3;   // the puncher is at their back
+    // already squared up to him and not in the middle of a blow of their own: some punches are blocked
+    if (p.mode === 1 && !p.atkKind && p.flinch <= 0 && p.block <= 0 && !behind && Math.random() < (p.tough > TOUGH ? 0.4 : 0.28)) {
+      p.heading = Math.atan2(dx, dz);
+      p.block = BLOCK;
+      p.blockN++;
+      p.kvx = dx * 1.1; p.kvz = dz * 1.1;
+      p.angry = ANGRY;
+      p.cool = Math.min(p.cool, 0.3);
+      return true;
     }
-    return n;
+    p.hits++;
+    p.atkKind = 0; p.atkE = 0; p.wait = 0; p.hold = 0; p.ox = 0; p.oz = 0; p.panic = 0; p.block = 0;
+    p.fwd = behind && p.hits >= p.tough;     // the last blow, from behind: they go down on their face, away from him
+    if (!p.fwd) p.heading = Math.atan2(dx, dz);          // otherwise they turn to face the one who hit them
+    if (p.hits >= p.tough) {                 // laid out
+      p.out = true;
+      p.downT = 0;
+      p.flinch = 0; p.angry = 0; p.mode = 0; p.guard = 0;
+      p.kvx = 0; p.kvz = 0;                    // the fall carries the body back by itself
+      return true;
+    }
+    p.flinch = FLINCH;
+    p.kvx = dx * 2.2; p.kvz = dz * 2.2;      // knocked back half a step
+    p.angry = ANGRY;
+    p.mode = 1;
+    p.cool = 0.15 + Math.random() * 0.35;    // and the answer comes quickly
+    return true;
   }
 
   /** Goon behaviour: true while the goon is busy with the player (running at, hitting, or staggered). */
@@ -345,7 +433,7 @@ export class Pedestrians {
       return true;
     }
     const dx = px - p.x, dz = pz - p.z, d = Math.hypot(dx, dz);
-    if (!(d < AGGRO) || py > 1.0) {                           // nobody to chase (or he is out of reach, up on the gallery)
+    if (!(d < (p.hostile ? AGGRO : ANGRY_RANGE)) || Math.abs(py - p.y) > 1.0) {   // nobody to chase (or he is out of reach, up on the gallery)
       if (p.mode) { p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; this.snapToGraph(p); }
       return false;
     }
@@ -356,17 +444,17 @@ export class Pedestrians {
     if (p.atkKind) {
       p.moving += (0 - p.moving) * Math.min(1, dt * 8);
       p.atkT += dt;
-      const t = p.atkT;
-      p.atkE = t < 0.38 ? t / 0.38 : Math.max(0, 1 - (t - 0.38) / 0.4);
-      if (!p.struck && t >= 0.38) {
+      const t = p.atkT, [land, total] = p.atkKind === 2 ? ACTOR_KICK_ATK : ACTOR_ATK;
+      p.atkE = t < land ? t / land : Math.max(0, 1 - (t - land) / (total - land));
+      if (!p.struck && t >= land) {
         p.struck = true;
-        if (d < REACH) this.onHurt?.(p.atkKind === 1 ? PUNCH_DMG : KICK_DMG);
+        if (d < REACH) this.onHurt?.(Math.round((p.atkKind === 1 ? PUNCH_DMG : KICK_DMG) * (p.hostile || p.tough > TOUGH ? 1 : ANGRY_DMG)));
       }
-      if (t >= 0.8) { p.atkKind = 0; p.atkE = 0; p.cool = 0.5 + Math.random() * 0.6; }
+      if (t >= total) { p.atkKind = 0; p.atkE = 0; p.cool = 0.5 + Math.random() * 0.6; }
       return true;
     }
     if (d > 1.15) {
-      const s = Math.min(CHASE * dt, d - 1.0);
+      const s = Math.min((p.hostile ? CHASE : ANGRY_CHASE) * dt, d - 1.0);
       let nx = p.x + (dx / d) * s, nz = p.z + (dz / d) * s;
       if (this.resolve) [nx, nz] = this.resolve(nx, nz);
       p.x = nx; p.z = nz; p.y = 0.05;
@@ -374,7 +462,7 @@ export class Pedestrians {
       return true;
     }
     p.moving += (0 - p.moving) * Math.min(1, dt * 8);
-    if (p.cool <= 0) { p.atkKind = Math.random() < 0.55 ? 1 : 2; p.atkT = 0; p.atkE = 0; p.struck = false; }
+    if (p.cool <= 0) { p.atkKind = Math.random() < 0.55 ? 1 : 2; p.atkT = 0; p.atkE = 0; p.struck = false; p.atkN++; }
     return true;
   }
 
@@ -395,133 +483,36 @@ export class Pedestrians {
   }
 
   private write(): void {
-    const P = this.parts;
-    for (let i = 0; i < this.active; i++) {
-      const p = this.peds[i];
-      const swing = Math.sin(p.phase) * 0.55 * p.moving;
-      const bob = Math.abs(Math.cos(p.phase)) * 0.025 * p.moving;
-      ROOT.compose(V.set(p.x, p.y + bob * p.scale, p.z), Q.setFromAxisAngle(UP, p.heading), S.setScalar(p.scale));
-      if (p.down > 0) {
-        // knocked flat onto their back (pivoting about the feet), lying a moment, then getting up
-        const fall = Math.min(1, p.downT / 0.3), rise = Math.min(1, p.down / 0.5);
-        const e = fall * rise;
-        const tilt = (Math.PI / 2) * e;
-        ROOT.compose(V.set(p.x, p.y + 0.2 * e * p.scale, p.z), Q.setFromAxisAngle(UP, p.heading).multiply(Q2.setFromAxisAngle(AX, tilt)), S.setScalar(p.scale));
-      }
-      const woman = p.kind >= 2;
-      P.torso.setMatrixAt(i, ROOT);
-      P.head.setMatrixAt(i, ROOT);
-      P.hair.setMatrixAt(i, woman ? ZERO : ROOT);
-      P.longHair.setMatrixAt(i, woman ? ROOT : ZERO);
-      P.drape.setMatrixAt(i, woman ? ROOT : ZERO);
-      if (p.skirt) P.skirt.setMatrixAt(i, M.copy(ROOT).multiply(L.makeTranslation(0, BODY.hipY + 0.04, 0)).scale(V.set(1, p.skirt, 1)));
-      else P.skirt.setMatrixAt(i, ZERO);
-      const legSwing = p.kind === 3 ? swing * 0.45 : swing; // short steps in a sari
-      for (const s of [0, 1]) {
-        const sign = s ? 1 : -1, k = i * 2 + s;
-        // leg: thigh swings from the hip, the knee flexes as the leg comes through
-        const legA = p.atkKind === 2 && s === 1 ? 1.4 * p.atkE : legSwing * sign;   // a kick swings the right leg up and forward
-        M.copy(ROOT).multiply(L.makeTranslation(sign * BODY.hipX, BODY.hipY, 0)).multiply(R.makeRotationX(legA));
-        P.thigh.setMatrixAt(k, M);
-        let knee = 0.9 * Math.max(0, sign * Math.cos(p.phase)) * p.moving * (p.kind === 3 ? 0.45 : 1);
-        if (p.atkKind === 2 && s === 1) knee = 1.1 * Math.sin(Math.min(1, p.atkE) * Math.PI);
-        M.multiply(L.makeTranslation(0, -BODY.thigh, 0)).multiply(R.makeRotationX(-knee));
-        P.shin.setMatrixAt(k, M);
-        P.feet.setMatrixAt(k, M);
-        // arm: swings opposite to the leg, elbow bent a little more as the hand comes forward
-        const punch = p.atkKind === 1 && s === 1;
-        const armA = punch ? 1.45 * p.atkE : p.guard ? 0.85 : -swing * 0.75 * sign;
-        M.copy(ROOT).multiply(L.makeTranslation(sign * BODY.shoulderX, BODY.shoulderY, 0)).multiply(R.makeRotationX(armA));
-        P.sleeve.setMatrixAt(k, M);
-        const flex = punch ? 0.1 + 0.9 * (1 - p.atkE) : p.guard ? 1.15 : 0.18 + 0.55 * Math.max(0, armA / 0.42) * p.moving;
-        M.multiply(L.makeTranslation(0, -BODY.upperArm, 0)).multiply(R.makeRotationX(flex));
-        P.forearm.setMatrixAt(k, M);
-        P.hand.setMatrixAt(k, M);
-      }
-    }
-    for (const m of Object.values(P)) {
-      m.instanceMatrix.needsUpdate = true;
-      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    for (const i of this.rigged) {
+      const p = this.peds[i], a = p.actor;
+      const show = i < this.active && !p.fresh && Math.hypot(p.x - this.fx, p.z - this.fz) < ACTOR_RANGE;
+      a.root.visible = show;
+      if (!show) continue;
+      Q.setFromAxisAngle(UP, p.heading);
+      a.root.position.set(p.x, p.y, p.z);
+      a.root.quaternion.copy(Q);
+      if (p.out) a.once(p.fwd ? 'fall2' : 'fall', 'out', p.fwd ? 1.1 : 1.25);
+      else if (p.down > V_GETUP) a.once('fall', 'thrown' + p.falls, V_FALL_SPEED);       // thrown by a vehicle: down ...
+      else if (p.down > 0) {                                                             // ... and up again
+        // The fall left the body lying behind where it stood, and the get-up clip starts at its own origin: the model moves
+        // over as the one fades into the other, so the body itself stays where it lies.
+        const FADE = 0.3, w = Math.min(1, (V_GETUP - p.down) / FADE);
+        a.once('get_up', 'getup' + p.falls, V_GETUP_SPEED, FADE);
+        a.root.position.add(V.copy(a.lie).multiplyScalar(w).applyQuaternion(Q));
+      } else if (p.flinch > 0) {
+        // two ways of taking a punch, turn about: to the head, to the body
+        if (p.hits % 2) a.once('hit', 'hit' + p.hits, CLIP_SECS.hit / FLINCH, 0.06);
+        else a.once('hit2', 'hit' + p.hits, CLIP_SECS.hit2 / FLINCH, 0.06);
+      } else if (p.block > 0) a.once('block', 'block' + p.blockN, CLIP_SECS.block / BLOCK, 0.06);
+      else if (p.atkKind === 2) a.once('kick', 'atk' + p.atkN, ACTOR_KICK);
+      else if (p.atkKind) a.once('punch', 'atk' + p.atkN, ACTOR_PUNCH);
+      else if (p.mode) a.move(p.moving > 0.5 ? (p.hostile ? CHASE : ANGRY_CHASE) : 0, 'fight_idle');   // on guard between blows
+      else if (p.hold > 0) a.once('shove', 'shove' + p.bumpN, CLIP_SECS.shove / 0.95);                  // brushed against: a stumble
+      else a.move(p.speed * (p.panic > 0 ? 1.8 : 1) * (p.moving > 0.5 ? 1 : 0), p.wait > 0 ? p.idleClip : 'idle');
+      a.update(this.dt);
     }
   }
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
-const V = new THREE.Vector3(), S = new THREE.Vector3(), Q = new THREE.Quaternion(), Q2 = new THREE.Quaternion();
-const AX = new THREE.Vector3(1, 0, 0);
-const ROOT = new THREE.Matrix4(), M = new THREE.Matrix4(), L = new THREE.Matrix4(), R = new THREE.Matrix4();
-const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
-
-/** Body parts in model space: 1.8 m tall at scale 1, facing -Z, limbs hanging from their pivot at the origin. */
-function geometries() {
-  return {
-    thigh: thighGeo(), shin: shinGeo(), feet: footGeo(), torso: torsoGeo(), skirt: skirtGeo(), drape: drapeGeo(),
-    sleeve: upperArmGeo(), forearm: forearmGeo(), hand: handGeo(), head: headGeo(), hair: shortHairGeo(), longHair: longHairGeo(),
-  };
-}
-
-/**
- * Face for the head loft, painted in greys so the per-person skin colour tints it (multiply).
- * The face sits at u = 0.75; the corner at (0.02, 0.98) must stay white (the nose, ears and neck sample it).
- */
-export function faceTexture(): THREE.CanvasTexture {
-  const W = 512, H = 256, cx = W * 0.75;
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = H;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#fff';
-  g.fillRect(0, 0, W, H);
-  const y = (worldY: number) => (1 - (worldY - HEAD.y0) / (HEAD.y1 - HEAD.y0)) * H;
-  const blob = (x: number, py: number, rx: number, ry: number, rgba: string, fade = 0) => {
-    g.save();
-    g.translate(x, py);
-    g.scale(rx, ry);
-    const r = g.createRadialGradient(0, 0, fade, 0, 0, 1);
-    r.addColorStop(0, rgba);
-    r.addColorStop(1, rgba.replace(/[\d.]+\)$/, '0)'));
-    g.fillStyle = r;
-    g.beginPath();
-    g.arc(0, 0, 1, 0, Math.PI * 2);
-    g.fill();
-    g.restore();
-  };
-  for (const s of [-1, 1]) {
-    const ex = cx + s * 30, ey = y(1.68);
-    blob(ex, ey + 1, 22, 11, 'rgba(90,60,50,.35)');              // eye socket shadow
-    g.fillStyle = 'rgba(25,18,16,.95)';                           // eye
-    g.beginPath();
-    g.ellipse(ex, ey, 11, 4.6, 0, 0, Math.PI * 2);
-    g.fill();
-    g.strokeStyle = 'rgba(30,20,16,.9)';                          // upper lid
-    g.lineWidth = 2;
-    g.beginPath();
-    g.ellipse(ex, ey - 0.5, 12, 5.4, 0, Math.PI * 1.05, Math.PI * 1.95);
-    g.stroke();
-    g.strokeStyle = 'rgba(25,18,15,.8)';                          // brow
-    g.lineWidth = 4.5;
-    g.lineCap = 'round';
-    g.beginPath();
-    g.moveTo(ex - s * 14, y(1.704));
-    g.quadraticCurveTo(ex, y(1.715), ex + s * 15, y(1.699));
-    g.stroke();
-    blob(cx + s * 38, y(1.625), 22, 18, 'rgba(160,90,80,.3)');   // cheek
-  }
-  blob(cx, y(1.64), 7, 12, 'rgba(110,70,60,.28)');                // nose shadow
-  g.fillStyle = 'rgba(95,40,38,.85)';                             // lips
-  g.beginPath();
-  g.ellipse(cx, y(1.597), 18, 4.5, 0, 0, Math.PI * 2);
-  g.fill();
-  g.strokeStyle = 'rgba(40,15,15,.9)';
-  g.lineWidth = 1.6;
-  g.beginPath();
-  g.moveTo(cx - 17, y(1.597));
-  g.lineTo(cx + 17, y(1.597));
-  g.stroke();
-  g.fillStyle = '#fff';
-  g.fillRect(0, 0, 14, 14);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
-}
+const V = new THREE.Vector3(), Q = new THREE.Quaternion();

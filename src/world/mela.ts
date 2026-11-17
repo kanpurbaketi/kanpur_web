@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { drapeGeo, flatUv, footGeo, forearmGeo, handGeo, headGeo, longHairGeo, shinGeo, shortHairGeo, thighGeo,
-  torsoGeo, upperArmGeo, BODY } from './body';
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
-import { faceTexture, Pedestrians } from './pedestrians';
+import { cloneCar, loadPBR } from './vehicleModels';
+import { Pedestrians } from './pedestrians';
+import { addFigures, FigureKind, ONLOOKER, someone, Spot } from './figures';
 import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, GATE, HINDOLA, INFLATABLE, KUAN, MELA, Rect, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
 import { buildInflatable } from './inflatable';
 import { buildMautKuan } from './mautKuan';
@@ -27,7 +27,7 @@ const C = (h: string) => new THREE.Color(h);
 
 interface Ride {
   group: THREE.Group; update(t: number, dt: number): void; post: [number, number, number, number?][]; light: [number, number, number, string];
-  rails?: { ring: [number, number][]; h: number }[]; floor?: (x: number, z: number) => number | null;
+  rails?: { ring: [number, number][]; h: number; camH?: number }[]; floor?: (x: number, z: number) => number | null;
 }
 
 /** Giant wheel: legs, two rims with chasing bulbs, 16 hanging cabins that stay upright. Wheel plane = the z-y plane. */
@@ -76,7 +76,7 @@ function giantWheel(): Ride {
     const g = new Geo();
     g.box(0, -1.35, 0, 1.9, 0.1, 1.2, '#3a3a3c');
     g.box(0, -1.0, -0.55, 1.9, 0.7, 0.08, canopy);
-    g.box(0, -1.15, 0.45, 1.7, 0.1, 0.4, '#8a5a2a');
+    g.box(0, -0.93, 0.45, 1.7, 0.1, 0.4, '#8a5a2a');           // the bench
     g.box(-0.93, -0.95, 0, 0.06, 0.8, 1.2, canopy);
     g.box(0.93, -0.95, 0, 0.06, 0.8, 1.2, canopy);
     for (const sx of [-0.9, 0.9]) for (const sz of [-0.55, 0.55]) g.rod(new THREE.Vector3(sx, -1.3, sz), new THREE.Vector3(sx, -0.1, sz), 0.03, '#dddddd');
@@ -98,6 +98,12 @@ function giantWheel(): Ride {
     g.position.set(0, Math.cos(a) * R, Math.sin(a) * R);
     g.add(new THREE.Mesh(variants[k % 4], cm));
     g.add(cabinGlow.clone());
+    for (const sx of [-0.42, 0.42]) {            // riders on the bench (figures.ts); a few seats are empty
+      if (rnd(k * 7 + sx * 3 + 1) < 0.25) continue;
+      const p = someone(k * 5 + sx * 9 + 40, 'chair', 0.9);
+      p.position.set(sx, -1.3, 0.38);
+      g.add(p);
+    }
     wheel.add(g);
     cabins.push(g);
   }
@@ -139,7 +145,7 @@ function columbus(): Ride {
     arm.box(0, y0 + 1.2, sz * 5.1, 1.8, 0.8, 0.9, '#f2c21b', 0);
   }
   for (const sx of [-1.75, 1.75]) arm.box(sx, y0 + 1.0, 0, 0.12, 0.9, 8.6, '#ffffff');
-  for (let r = -3; r <= 3; r++) arm.box(0, y0 + 0.9, r * 1.05, 2.6, 0.1, 0.5, '#7a4a22');
+  for (let r = -3; r <= 3; r++) arm.box(0, y0 + 1.12, r * 1.05, 2.6, 0.1, 0.5, '#7a4a22');      // benches
   for (const sx of [-1.7, 1.7]) arm.rod(new THREE.Vector3(sx, y0 + 0.9, -4), new THREE.Vector3(sx, y0 + 2.0, -4), 0.05, '#ffffff');
   arm.cyl(0, y0 + 1.0, -5.4, 0.08, 2.6, '#dddddd');                      // bow pole with a flag
   arm.box(0.45, y0 + 3.2, -5.4, 0.9, 0.5, 0.04, '#ff6a00');
@@ -148,6 +154,13 @@ function columbus(): Ride {
   for (let i = 0; i < 20; i++) { const z = -4.2 + i * 0.44; bb.add(-1.78, y0 + 1.5, z, BULB[i % 6], (i % 6) / 6, 1.1); bb.add(1.78, y0 + 1.5, z, BULB[(i + 1) % 6], (i % 6) / 6, 1.1); }
   for (let i = 0; i < 10; i++) bb.add(0, y0 + 0.18, -3.2 + i * 0.7, '#ffd68a', -1, 1.0);
   pend.add(bb.object(0.7));
+  for (let r = -3; r <= 3; r++) for (const sx of [-0.85, 0, 0.85]) {      // people on the benches, facing the middle of the boat
+    if (r === 0 || rnd(r * 13 + sx * 7 + 3) < 0.35) continue;
+    const p = someone(r * 11 + sx * 5 + 200, 'chair', 0.9);
+    p.position.set(sx, y0 + 0.75, r * 1.05 + (r < 0 ? -0.05 : 0.05));
+    if (r < 0) p.rotation.y = Math.PI;
+    pend.add(p);
+  }
   group.add(pend);
   return {
     group, post: [[-3.4, -5.2, 0.9], [3.4, -5.2, 0.9], [-3.4, 5.2, 0.9], [3.4, 5.2, 0.9], [0, 0, 1.5]], light: [0, 3, 0, '#ffc870'],
@@ -204,6 +217,11 @@ function chairSwing(): Ride {
     g.rotation.y = -a;
     g.userData.a = a;
     g.add(new THREE.Mesh(chairGeo(FEST[k % FEST.length]), cmat));
+    if (rnd(k * 3 + 2) > 0.25) {                 // somebody in the chair
+      const p = someone(k * 7 + 300, 'chair', 0.85, ['boy', 'girl', 'boy', 'girl', 'uncle']);
+      p.position.set(0, -5.11, 0.02);
+      g.add(p);
+    }
     head.add(g);
     chairs.push(g);
   }
@@ -274,6 +292,11 @@ function carousel(): Ride {
     hg.rotation.y = -a;
     hg.userData.k = k;
     hg.add(new THREE.Mesh(horse(['#f4f0e6', '#7a4a22', '#2a2522', '#c9a06a'][k % 4]), hm));
+    if (k !== 5) {                               // a child on the horse
+      const p = someone(k * 9 + 400, 'ride', 0.62, ['boy', 'girl']);
+      p.position.set(0, 0.95, -0.02);
+      hg.add(p);
+    }
     spin.add(hg);
     horses.push(hg);
   }
@@ -321,6 +344,12 @@ function hindola(): Ride {
     const g = new THREE.Group();
     g.position.set(0, Math.cos(a) * R, Math.sin(a) * R);
     g.add(new THREE.Mesh(cradle(FEST[(k * 3) % FEST.length]), cm));
+    for (const sx of [-0.3, 0.3]) {              // children sitting in the cradle
+      if (rnd(k * 5 + sx * 9 + 7) < 0.3) continue;
+      const p = someone(k * 3 + sx * 10 + 500, 'sit', 0.6, ['boy', 'girl']);
+      p.position.set(sx, -0.71, 0.05);
+      g.add(p);
+    }
     wheel.add(g);
     cabins.push(g);
   }
@@ -332,63 +361,6 @@ function hindola(): Ride {
       for (const c of cabins) c.rotation.x = -wheel.rotation.x;
     },
   };
-}
-
-// ---- people ---------------------------------------------------------------------------------------
-
-type PersonStyle = { top: string; bottom: string; skin: string; hair: string; woman: boolean; pose: 'sit' | 'stand'; wave?: boolean };
-
-/** A person as one merged, vertex-coloured geometry (position, normal, uv, colour): cross-legged on the floor or standing. */
-function person(st: PersonStyle): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-  const put = (g: THREE.BufferGeometry, color: string, m: THREE.Matrix4, face = false) => {
-    const x = g.index ? g.toNonIndexed() : g.clone();
-    if (!face) flatUv(x, 0.02, 0.98);
-    x.applyMatrix4(m);
-    const c = new THREE.Color(color), n = x.getAttribute('position').count;
-    x.setAttribute('color', new THREE.Float32BufferAttribute(Array.from({ length: n * 3 }, (_, i) => [c.r, c.g, c.b][i % 3]), 3));
-    for (const k of Object.keys(x.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) x.deleteAttribute(k);
-    parts.push(x);
-  };
-  const sit = st.pose === 'sit';
-  const down = sit ? -(BODY.hipY - 0.07) : 0;
-  const T = (x = 0, y = 0, z = 0) => new THREE.Matrix4().makeTranslation(x, y + down, z);
-  put(torsoGeo(10), st.top, T());
-  put(headGeo(10), st.skin, T(), true);
-  put(st.woman ? longHairGeo() : shortHairGeo(), st.hair, T());
-  if (st.woman) put(drapeGeo(), st.pose === 'sit' ? st.top : st.bottom, T());
-  for (const s of [-1, 1]) {
-    // arms
-    const sh = new THREE.Vector3(s * BODY.shoulderX, BODY.shoulderY + down, 0);
-    const raised = !sit && st.wave && s === 1;
-    const upRot = new THREE.Matrix4().makeRotationX(raised ? -2.3 : sit ? -0.25 : 0.0);
-    put(upperArmGeo(6), st.top, new THREE.Matrix4().makeTranslation(sh.x, sh.y, sh.z).multiply(upRot));
-    const el = new THREE.Vector3(0, -BODY.upperArm, 0).applyMatrix4(upRot).add(sh);
-    const foreRot = new THREE.Matrix4().makeRotationX(raised ? -2.5 : sit ? 1.3 : 0.15);
-    const fm = new THREE.Matrix4().makeTranslation(el.x, el.y, el.z).multiply(foreRot);
-    put(forearmGeo(6), st.top, fm);
-    put(handGeo(), st.skin, fm);
-    // legs
-    if (sit) {
-      const a = -s * 0.5;
-      const hip = new THREE.Vector3(s * BODY.hipX, 0.07, 0);
-      const tm = new THREE.Matrix4().makeTranslation(hip.x, hip.y, hip.z).multiply(new THREE.Matrix4().makeRotationY(a)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
-      put(thighGeo(6), st.bottom, tm);
-      const knee = new THREE.Vector3(0, 0, -BODY.thigh).applyMatrix4(new THREE.Matrix4().makeRotationY(a)).add(hip);
-      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(-s * 0.9, -0.05, 0.5).normalize());
-      const sm = new THREE.Matrix4().compose(knee, q, new THREE.Vector3(1, 1, 1));
-      put(shinGeo(6), st.bottom, sm);
-      put(footGeo(), st.skin, sm);
-    } else {
-      const hm = T(s * BODY.hipX, BODY.hipY);
-      put(thighGeo(6), st.bottom, hm);
-      const km = hm.clone().multiply(new THREE.Matrix4().makeTranslation(0, -BODY.thigh, 0));
-      put(shinGeo(6), st.bottom, km);
-      put(footGeo(), st.skin, km);
-    }
-  }
-  const g = mergeGeometries(parts)!;
-  return g;
 }
 
 /** Woven cloth for the boundary: 0 maroon-and-gold shamiana stripes, 1 faded blue tarpaulin, 2 old printed blanket. */
@@ -437,7 +409,7 @@ export class Mela {
   /** solid circles for collision: [x, z, r] */
   readonly posts: [number, number, number, number?][] = [];   // [x, z, r, height (default: tall)]
   /** railings you can't climb over, and walkable surfaces such as the well's stair and gallery */
-  readonly rails: { ring: [number, number][]; h: number }[] = [];
+  readonly rails: { ring: [number, number][]; h: number; camH: number }[] = [];   // camH: the camera cannot cross below this height (0 = it can)
   readonly floors: ((x: number, z: number) => number | null)[] = [];
   /** collision rings for the boundary cloth (thin quads; none across the tear) */
   readonly walls: [number, number][][] = [];
@@ -452,17 +424,18 @@ export class Mela {
     this.addRide(chairSwing(), CHAIR_SWING.x, CHAIR_SWING.z, 0, lights);
     this.addRide(carousel(), CAROUSEL.x, CAROUSEL.z, 0, lights);
     this.addRide(hindola(), HINDOLA.x, HINDOLA.z, 0, lights);
-    const wellMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: faceTexture(), roughness: 0.85 });
-    this.addRide(buildMautKuan(person, wellMat), KUAN.x, KUAN.z, -Math.PI / 2, lights);   // its stair runs north, between the stall blocks
-    this.addRide(buildInflatable(person, wellMat), INFLATABLE.x, INFLATABLE.z, 0, lights);
+    this.addRide(buildMautKuan(), KUAN.x, KUAN.z, -Math.PI / 2, lights);   // the foot of its stair is to the north-west, towards the aisles
+    this.addRide(buildInflatable(), INFLATABLE.x, INFLATABLE.z, 0, lights);
     this.buildStage(lights, desktop);
     this.buildStalls(lights);
     this.buildGate(lights);
+    this.buildParking();
     this.buildMasts(lights);
     this.buildWalls(lights);
 
-    this.crowd = new Pedestrians(this.aisles(map), desktop ? 90 : 45, true);
-    this.crowd.setCount(desktop ? 90 : 45);
+    this.crowd = new Pedestrians(this.aisles(map), true);
+    this.crowd.setCount(desktop ? 24 : 12);
+    this.crowd.populate(desktop ? 24 : 12);
     this.group.add(this.crowd.group);
   }
 
@@ -473,7 +446,7 @@ export class Mela {
     this.rides.push(r);
     const c = Math.cos(ry), s = Math.sin(ry);
     for (const [px, pz, pr, ph] of r.post) this.posts.push([x + px * c + pz * s, z - px * s + pz * c, pr, ph]);
-    if (r.rails) for (const w of r.rails) this.rails.push({ h: w.h, ring: w.ring.map(([px, pz]) => [x + px * c + pz * s, z - px * s + pz * c] as [number, number]) });
+    if (r.rails) for (const w of r.rails) this.rails.push({ h: w.h, camH: w.camH ?? 0, ring: w.ring.map(([px, pz]) => [x + px * c + pz * s, z - px * s + pz * c] as [number, number]) });
     if (r.floor) { const f = r.floor; this.floors.push((wx, wz) => f((wx - x) * c - (wz - z) * s, (wx - x) * s + (wz - z) * c)); }
     lights?.add(x, r.light[1], z, r.light[3], 230, 34);
   }
@@ -514,8 +487,8 @@ export class Mela {
     const post = (x: number, z: number, r: number, h?: number) => { const [wx, wz] = toW(x, z); this.posts.push([wx, wz, r, h]); };
     const g = new Geo(), bulbs = new Bulbs();
     g.box(cx, SH / 2, cz, W, SH, D, '#6b4a2a');
-    g.box(cx, SH + 0.04, cz, W - 0.4, 0.08, D - 0.4, '#e9e6dc');                                     // white gaddi
-    g.box(cx, SH + 0.04, cz + 1.5, 10, 0.1, 2.8, '#d8d3c4');                                          // second sheet
+    g.box(cx, SH + 0.04, cz, W - 0.4, 0.08, D - 0.4, '#bdb8a8');                                     // white gaddi (a dull white: under the stage lights a true white burns out)
+    g.box(cx, SH + 0.04, cz + 1.5, 10, 0.1, 2.8, '#aca697');                                          // second sheet
     for (let i = 0; i < 9; i++) g.cyl(cx - 6 + i * 1.5, SH + 0.1, cz - 2.6, 0.2, 1.2, i % 2 ? '#b3261e' : '#e9c46a', 8, 0.2); // takiya
     for (const sx of [-1, 1]) {
       g.box(cx + sx * 6, 0.5, cz + D / 2 + 1.0, 1.4, 1.0, 0.5, '#8a5a2a');                          // steps
@@ -569,60 +542,33 @@ export class Mela {
       stage.add(new THREE.Mesh(pole.build(), litMat()));
     }
     stage.add(bulbs.object(0.9));
-    L(cx, 5.5, cz + 4.5, '#ffb877', 300, 30);
-    L(cx - 8, 5, cz + 3, '#ffd29a', 200, 26);
-    L(cx + 8, 5, cz + 3, '#ffd29a', 200, 26);
-    L(cx, 4, cz + 16, '#ffcf9a', 160, 28);
+    // Light for the poets, not the floor: the lamps hang out in front of the stage and above head height, so they reach the
+    // people and the banner at a slant and the gaddi only at a glancing angle.
+    L(cx, 6.6, cz + D / 2 + 3.5, '#ffb877', 110, 30);
+    L(cx - 8, 6.4, cz + D / 2 + 2.5, '#ffd29a', 60, 26);
+    L(cx + 8, 6.4, cz + D / 2 + 2.5, '#ffd29a', 60, 26);
+    L(cx, 7, cz + 17, '#ffcf9a', 120, 28);
     for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) post(cx + sx * 9.5, cz + 2.4, 0.9);
     for (let i = -3; i <= 3; i++) for (const k of [-1, -0.5, 0, 0.5, 1]) post(cx + i * 2.4, cz + k * (D / 2 - 1.3), 1.3, SH);   // the platform: jump up on it
     post(cx - W / 2, cz + D / 2 - 0.5, 0.5);
     post(cx + W / 2, cz + D / 2 - 0.5, 0.5);
 
-    // people: poets on the gaddi, one at the mic, audience on the floor and on chairs
-    const poetColours = [['#f4f0e6', '#f4f0e6'], ['#e9d8a6', '#f4f0e6'], ['#3a5a40', '#f4f0e6'], ['#8a5a2a', '#e9e6dc'], ['#f4f0e6', '#2a2a30'], ['#c98b2b', '#f4f0e6'], ['#b3261e', '#f4f0e6'], ['#f4f0e6', '#f4f0e6']];
-    const skins = ['#8a5a3c', '#a9714b', '#b98058', '#7a4e34', '#c08d66', '#96633f'];
-    const hairs = ['#0d0c0f', '#15110f', '#0d0c0f', '#5c5a58', '#b9b6b0'];
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, map: faceTexture(), roughness: 0.85 });
-    const place = (geo: THREE.BufferGeometry, x: number, y: number, z: number, ry: number) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      m.rotation.y = ry;
-      stage.add(m);
-    };
-    poetColours.forEach(([top, bot], i) => {
-      const woman = i === 3;
-      const x = cx - 6 + i * 1.7, z = cz - 1.1 + (i % 2) * 0.4;
-      place(person({ top: woman ? '#c2185b' : top, bottom: woman ? '#c2185b' : bot, skin: skins[i % 6], hair: hairs[i % 5], woman, pose: 'sit' }), x, SH + 0.09, z, Math.PI);
+    // people (figures.ts): poets on the gaddi, one at the mic, the audience on the floor
+    const people: Spot[] = [];
+    const poets: FigureKind[] = ['uncle', 'uncle', 'boy', 'aunty', 'uncle', 'girl', 'uncle', 'boy'];
+    poets.forEach((kind, i) => {
+      people.push({ x: cx - 6 + i * 1.7, y: SH + 0.09, z: cz - 1.1 + (i % 2) * 0.4, ry: Math.PI, pose: 'sit', kind, look: i * 3 + 1 });
     });
-    place(person({ top: '#f4f0e6', bottom: '#f4f0e6', skin: skins[1], hair: '#15110f', woman: false, pose: 'stand', wave: true }), cx - 3.6, SH + 0.08, cz + 3.6, Math.PI);
-
-    // audience: instanced per outfit
-    const outfits: PersonStyle[] = [
-      { top: '#f4f0e6', bottom: '#f4f0e6', woman: false }, { top: '#e9d8a6', bottom: '#d9d4c4', woman: false }, { top: '#8aa4c8', bottom: '#2c3646', woman: false },
-      { top: '#e07b39', bottom: '#f4f0e6', woman: false }, { top: '#c2185b', bottom: '#c2185b', woman: true }, { top: '#2a8a7a', bottom: '#2a8a7a', woman: true },
-      { top: '#7b3fa0', bottom: '#7b3fa0', woman: true },
-    ].map((o, i) => ({ ...o, skin: skins[i % 6], hair: o.woman ? '#0d0c0f' : hairs[i % 5], pose: 'sit' as const }));
-    const spots: { x: number; z: number; v: number; s: number }[] = [];
+    people.push({ x: cx - 3.6, y: SH + 0.08, z: cz + 3.6, ry: Math.PI, pose: 'talk_b', kind: 'uncle', look: 4 });      // reciting, arms raised
     const cols = Math.floor((AUDIENCE.z1 - AUDIENCE.z0) / 0.86), rowsN = Math.floor((AUDIENCE.x1 - AUDIENCE.x0) / 0.95);
     const aud0 = AUDIENCE.x0 - sx0 + 0.5;       // first row, in the stage frame
     for (let r = 0; r < rowsN; r++) for (let c = 0; c < cols; c++) {
       if (rnd(r * 97 + c * 13 + 5) < 0.4 || (!desktop && (r + c) % 2)) continue;
       const x = cx - (cols - 1) * 0.43 + c * 0.86 + (rnd(r * 7 + c) - 0.5) * 0.15, z = aud0 + r * 0.95 + (rnd(c * 5 + r) - 0.5) * 0.12;
-      spots.push({ x, z, v: Math.floor(rnd(r * 31 + c * 17) * outfits.length), s: 0.9 + rnd(r + c * 3) * 0.14 });
+      // facing the stage (-z) with a little turn
+      people.push({ x, y: 0.09, z, ry: (rnd(r * 3 + c * 11) - 0.5) * 0.5, pose: 'sit', n: r * 131 + c * 17 });
     }
-    outfits.forEach((o, v) => {
-      const mine = spots.filter((s) => s.v === v);
-      if (!mine.length) return;
-      const im = new THREE.InstancedMesh(person(o), mat, mine.length);
-      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0);
-      mine.forEach((s, i) => {
-        q.setFromAxisAngle(UP, (rnd(i * 3 + v) - 0.5) * 0.5);   // facing the stage (-z) with a little turn
-        im.setMatrixAt(i, m.compose(new THREE.Vector3(s.x, 0.09, s.z), q, new THREE.Vector3(s.s, s.s, s.s)));
-        im.setColorAt(i, new THREE.Color().setScalar(0.85 + rnd(i * 11 + v) * 0.25));
-      });
-      im.frustumCulled = false;
-      stage.add(im);
-    });
+    addFigures(stage, people);
     // the white dari sheets under the audience
     const d = new Geo();
     const dw = AUDIENCE.z1 - AUDIENCE.z0, dd = AUDIENCE.x1 - AUDIENCE.x0, dcz = (AUDIENCE.x0 + AUDIENCE.x1) / 2 - sx0;
@@ -643,11 +589,12 @@ export class Mela {
     ex.box(doorX, SH + 2.7, -D / 2 - 0.1, 2.8, 0.1, 0.1, '#b8b8bc');
     for (const sx of [-1, 1]) ex.box(doorX + sx * 0.7, SH + 1.3, -D / 2 - 0.12, 1.3, 2.4, 0.04, '#7b1113');   // curtain halves
     stage.add(new THREE.Mesh(ex.build(), litMat({ metalness: 0.1, roughness: 0.8 })));
-    L(doorX, 3.4, -D / 2 - 1.5, '#ffbf7a', 140, 16);
+    L(doorX, 3.6, -D / 2 - 2.2, '#ffbf7a', 26, 14);
   }
 
   private buildStalls(lights: LightPool | null): void {
     const g = new Geo(), bulbs = new Bulbs();
+    const keepers: Spot[] = [];
     const types = 4;
     const stall = (x: number, z: number, ry: number, seed: number) => {
       const type = Math.floor(rnd(seed) * types), col = FEST[Math.floor(rnd(seed + 1) * FEST.length)], col2 = FEST[Math.floor(rnd(seed + 2) * FEST.length)];
@@ -690,6 +637,14 @@ export class Mela {
         g.cyl(mx, 1.0, mz, 0.4, 0.3, '#d8d8de', 12);
       }
       this.posts.push([x, z, 1.35]);
+      // the stall keeper behind the counter, and now and then somebody buying
+      const [kx, kz] = P((rnd(seed + 5) - 0.5) * 1.2, -0.58);
+      keepers.push({ x: kx, y: 0.05, z: kz, ry: ry + Math.PI, pose: rnd(seed + 6) < 0.5 ? 'stand' : 'talk', n: seed * 3 + 1 });
+      const buyers = rnd(seed + 7) < 0.45 ? (rnd(seed + 8) < 0.4 ? 2 : 1) : 0;
+      for (let b = 0; b < buyers; b++) {
+        const [px, pz] = P((rnd(seed + 9 + b) - 0.5) * 1.6 + (b ? 0.7 : 0), 1.25 + rnd(seed + 11 + b) * 0.3);
+        keepers.push({ x: px, y: 0.05, z: pz, ry: ry + (rnd(seed + 13 + b) - 0.5) * 0.6, pose: ONLOOKER[Math.floor(rnd(seed + 15 + b) * ONLOOKER.length)], n: seed * 7 + b + 2 });
+      }
     };
     // the blocks of the map: stalls in a row along the long side, two rows back to back when the block is deep enough;
     // the fronts face outward, into the aisles
@@ -728,6 +683,25 @@ export class Mela {
     this.group.add(new THREE.Mesh(g.build(), litMat({ metalness: 0.05, roughness: 0.8 })));
     this.group.add(new THREE.Mesh(bunting.build(), litMat({ metalness: 0, roughness: 0.9, side: THREE.DoubleSide })));
     this.group.add(bulbs.object(0.7));
+    addFigures(this.group, keepers);
+  }
+
+  /** Bikes and cycles left outside the gate, nose to the cloth wall (downloaded models: tools/blender/import_vehicle.py). */
+  private buildParking(): void {
+    const row: [string, number][] = [];
+    const names = ['enfield', 'pulsar', 'cycle', 'pulsar', 'enfield', 'cycle', 'pulsar', 'cycle', 'enfield', 'pulsar'];
+    names.forEach((n, i) => row.push([n, (i < 5 ? GATE.x - GATE.half - 2.5 - i * 1.15 : GATE.x + GATE.half + 2.5 + (i - 5) * 1.15)]));
+    const tints = ['#ffffff', '#d9d9d9', '#ffe9d0', '#cfd8e6', '#f0f0f0'];
+    row.forEach(([name, x], i) => {
+      const z = GATE.z + 1.9 + rnd(i * 3.7) * 0.35;
+      this.posts.push([x, z, 0.55, 1.3]);
+      loadPBR(name).then((parts) => {
+        const bike = cloneCar(parts, tints[i % tints.length]);
+        bike.position.set(x, 0.05, z);
+        bike.rotation.y = Math.PI + (rnd(i * 9.1) - 0.5) * 0.25;      // the front toward the wall (-z)
+        this.group.add(bike);
+      }).catch((e) => console.error('parked bike failed to load', e));
+    });
   }
 
   private buildGate(lights: LightPool | null): void {

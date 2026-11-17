@@ -15,7 +15,7 @@ body roll; forgiving on a keyboard).
 - Driving is kinematic: no mass, grip or slides; brakes and handbrake only take speed off; collisions only push out.
   No brake / reverse / indicator lights, no headlights on the player's vehicle.
 
-## Phase 1 — wheels
+## Phase 1 — wheels (done)
 - `tools/blender/import_vehicle.py`: a `wheels` table per vehicle (name, hub x / y / z, radius, width, steers). Each
   wheel is cut out of the mesh (the faces in its cylinder) into its own mesh, its origin at the hub, in the same atlas.
   Models whose wheels are part of a scan (auto, cycle, truck, Enfield, the TripoSR bus / tirri / Maruti) get a
@@ -25,7 +25,7 @@ body roll; forgiving on a keyboard).
 - Game: one InstancedMesh per wheel (near models only); instance = vehicle × hub × steer × spin. Every vehicle gets
   `spin` (+= v·dt / r) and `steer` (AI: from its turn rate; the player's: from the physics).
 
-## Phase 2 — physics (`src/world/vehicleSim.ts`)
+## Phase 2 — physics (`src/world/vehicleSim.ts`) (done)
 - A rigid-body bicycle model at 120 Hz: velocity, yaw rate, steer angle, wheel spin, gear, RPM.
 - Per kind: mass, wheelbase, centre of gravity, max steer, power and torque, gears, brakes, grip, cornering
   stiffness, drag. Two-wheelers don't drift; cycles and rickshaws are pedalled (~200 W).
@@ -34,6 +34,9 @@ body roll; forgiving on a keyboard).
 - Steering rate-limited, less lock at speed, self-aligning in a slide. Grip × 0.6 off the road (`Traffic.onRoad`).
 - Collisions by impulse: walls (restitution 0.2, friction, spin from an off-centre hit), vehicles (by mass), people
   knocked over as now. AI traffic stays on its paths.
+- Done as: steering lock limited to what the grip can use at the speed, and a stability help (yaw rate held near
+  μg/v; 1.8× in a hand-brake slide) so it is drivable on keys. A bike's Space is its brakes. `scripts/simcheck.mjs`
+  prints the sim's state through a drill (throttle, turn, hand brake, brakes).
 
 ## Phase 3 — lights
 - Brake, tail, reverse and indicator lamps per kind (the `LAMPS` table), drawn as small glowing instanced quads with

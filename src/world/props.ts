@@ -6,6 +6,7 @@ import { beamMaterial, NIGHT } from './night';
 import { loadPBR, loadWheels, PBRPart, Wheel } from './vehicleModels';
 import { FigureKind, Pose, riderParts } from './figures';
 import { inMela } from './melaSite';
+import { Body, newBody, SPECS, step } from './vehicleSim';
 
 /*
  Street props modelled in Blender (tools/blender/build_models.py -> public/models/*.glb):
@@ -68,30 +69,32 @@ export interface Vehicle {
   empty: boolean;
   /** metres rolled (the wheels turn by dist / radius), and the front wheels' steer angle (radians, to the left) */
   dist: number; steer: number;
+  /** the physics of one Ramu drives or left parked (vehicleSim.ts); null for the traffic's own */
+  sim: Body | null;
 }
 
 /**
  * Ramu on a vehicle: how he sits (pose, and the seat in the vehicle's frame: x to its left, y up, z forward; the cars are
- * right-hand drive), how it goes (top speed m/s, acceleration m/s², turn rate rad/s at speed), and the chase camera
- * (distance and height of the point it looks at).
+ * right-hand drive) and the chase camera (distance and height of the point it looks at). How it goes: SPECS
+ * (vehicleSim.ts).
  */
-export interface DriverSeat { pose: 'ride' | 'drive'; at: [number, number, number]; vmax: number; acc: number; turn: number; cam: number; camH: number }
-const car = (at: [number, number, number], vmax: number, acc: number): DriverSeat => ({ pose: 'drive', at, vmax, acc, turn: 1.25, cam: 6.2, camH: 1.7 });
+export interface DriverSeat { pose: 'ride' | 'drive'; at: [number, number, number]; cam: number; camH: number }
+const car = (at: [number, number, number]): DriverSeat => ({ pose: 'drive', at, cam: 6.2, camH: 1.7 });
 export const DRIVER: Record<string, DriverSeat> = {
-  bus: { pose: 'drive', at: [-0.82, 1.05, 3.95], vmax: 14, acc: 2.2, turn: 0.85, cam: 10, camH: 2.6 },
-  bus_green: { pose: 'drive', at: [-0.82, 1.05, 3.95], vmax: 14, acc: 2.2, turn: 0.85, cam: 10, camH: 2.6 },
-  truck: { pose: 'drive', at: [-0.55, 1.15, 1.95], vmax: 14, acc: 2.0, turn: 0.9, cam: 9.5, camH: 2.6 },
-  autorickshaw: { pose: 'drive', at: [0, 0.42, 0.28], vmax: 13, acc: 3.6, turn: 1.5, cam: 5.2, camH: 1.6 },
-  tirri: { pose: 'drive', at: [0, 0.56, 0.42], vmax: 9, acc: 3.0, turn: 1.5, cam: 5.2, camH: 1.6 },
-  maruti: car([-0.32, 0.16, -0.05], 20, 4.5),
-  maruti_red: car([-0.32, 0.16, -0.05], 20, 4.5),
-  maruti_green: car([-0.32, 0.16, -0.05], 20, 4.5),
-  swift: car([-0.36, 0.2, -0.1], 25, 5.5),
-  ambassador: car([-0.4, 0.24, -0.1], 19, 3.5),
-  bolero: car([-0.42, 0.42, 0.0], 21, 4.0),
-  pulsar: { pose: 'ride', at: [0, 0.13, -0.3], vmax: 24, acc: 7.0, turn: 1.7, cam: 4.6, camH: 1.5 },
-  cycle: { pose: 'ride', at: [0, 0.35, -0.24], vmax: 7.5, acc: 2.6, turn: 1.9, cam: 4.2, camH: 1.5 },
-  rickshaw: { pose: 'ride', at: [0, 0.36, -0.02], vmax: 6, acc: 1.6, turn: 1.3, cam: 5.6, camH: 1.7 },
+  bus: { pose: 'drive', at: [-0.82, 1.05, 3.95], cam: 10, camH: 2.6 },
+  bus_green: { pose: 'drive', at: [-0.82, 1.05, 3.95], cam: 10, camH: 2.6 },
+  truck: { pose: 'drive', at: [-0.55, 1.15, 1.95], cam: 9.5, camH: 2.6 },
+  autorickshaw: { pose: 'drive', at: [0, 0.42, 0.28], cam: 5.2, camH: 1.6 },
+  tirri: { pose: 'drive', at: [0, 0.56, 0.42], cam: 5.2, camH: 1.6 },
+  maruti: car([-0.32, 0.16, -0.05]),
+  maruti_red: car([-0.32, 0.16, -0.05]),
+  maruti_green: car([-0.32, 0.16, -0.05]),
+  swift: car([-0.36, 0.2, -0.1]),
+  ambassador: car([-0.4, 0.24, -0.1]),
+  bolero: car([-0.42, 0.42, 0.0]),
+  pulsar: { pose: 'ride', at: [0, 0.13, -0.3], cam: 4.6, camH: 1.5 },
+  cycle: { pose: 'ride', at: [0, 0.35, -0.24], cam: 4.2, camH: 1.5 },
+  rickshaw: { pose: 'ride', at: [0, 0.36, -0.02], cam: 5.6, camH: 1.7 },
 };
 
 /** a person thrown off a vehicle Ramu takes: where they land from, and how they fly (m/s) */
@@ -146,6 +149,8 @@ export class Traffic {
   /** the walls and posts of the world, for a vehicle Ramu drives: the corrected [x, z] for a circle of radius r */
   resolve: ((x: number, z: number, r: number) => [number, number]) | null = null;
   private pools: THREE.InstancedMesh | null = null;
+  /** every road's segments in 24 m cells: [x0, z0, x1, z1, half width] (onRoad) */
+  private roadCells = new Map<string, [number, number, number, number, number][]>();
 
   static async create(map: MapData, desktop: boolean): Promise<Traffic> {
     const kinds: Kind[] = [
@@ -265,7 +270,7 @@ export class Traffic {
         this.cars.push({
           kind: ki, slot: i, vmax: k.speed * (0.85 + Math.random() * 0.3), v: 0,
           a: 0, b: 0, link: { to: 0, off: 0, bus: false }, t: 0, len: 1, x: 0, z: 0, heading: 0, fresh: true, near: false,
-          player: false, parked: false, empty: false, dist: 0, steer: 0,
+          player: false, parked: false, empty: false, dist: 0, steer: 0, sim: null,
         });
       }
     });
@@ -315,6 +320,20 @@ export class Traffic {
       }
       return i;
     };
+    for (const r of map.roads) {
+      for (let i = 0; i < r.pts.length - 1; i++) {
+        const [a, b] = [r.pts[i], r.pts[i + 1]], hw = r.w / 2 + 0.6;
+        const cs = new Set<string>();
+        for (let t = 0; t <= 1.0001; t += 0.1) for (const ox of [-hw, hw]) for (const oz of [-hw, hw]) {
+          cs.add(`${Math.floor((a[0] + (b[0] - a[0]) * t + ox) / 24)},${Math.floor((a[1] + (b[1] - a[1]) * t + oz) / 24)}`);
+        }
+        for (const k of cs) {
+          let l = this.roadCells.get(k);
+          if (!l) this.roadCells.set(k, (l = []));
+          l.push([a[0], a[1], b[0], b[1], hw]);
+        }
+      }
+    }
     for (const r of map.roads) {
       if (r.bridge || r.w < 3.5) continue;
       const off = r.oneway ? 0 : Math.max(0.9, Math.min(2.2, r.w / 4));
@@ -385,6 +404,7 @@ export class Traffic {
       else if (Math.hypot(c.x - fx, c.z - fz) > DESPAWN) {
         c.fresh = true;
         c.parked = c.empty = false;           // back in the traffic, with its people
+        c.sim = null;
         this.place(c, fx, fz, SPAWN_MIN, SPAWN_MAX, dirX, dirZ);
       }
       if (c.fresh) continue;
@@ -523,51 +543,52 @@ export class Traffic {
     return [x, z];
   }
 
+  /** on a road (or its verge): full grip; off it (dirt, grass) less */
+  onRoad(x: number, z: number): boolean {
+    const l = this.roadCells.get(`${Math.floor(x / 24)},${Math.floor(z / 24)}`);
+    if (!l) return false;
+    for (const [x0, z0, x1, z1, hw] of l) {
+      const dx = x1 - x0, dz = z1 - z0, L2 = dx * dx + dz * dz;
+      const t = L2 ? Math.max(0, Math.min(1, ((x - x0) * dx + (z - z0) * dz) / L2)) : 0;
+      if ((x - x0 - dx * t) ** 2 + (z - z0 - dz * t) ** 2 < hw * hw) return true;
+    }
+    return false;
+  }
+
   /**
-   * Move a vehicle Ramu drives: `throttle` -1..1 (back: brake, then reverse), `steer` -1..1 (to the left), `brake` the
-   * hand brake. It runs into walls, posts and the other vehicles, and loses its speed doing so.
+   * Move a vehicle Ramu drives (or left parked) by its physics (vehicleSim.ts): `throttle` -1..1 (back: brake, then
+   * reverse), `steer` -1..1 (to the left), `handbrake`. It bounces off walls and posts, and shoves the vehicles it hits.
    */
-  drive(c: Vehicle, dt: number, throttle: number, steer: number, brake: boolean): void {
-    const k = this.kinds[c.kind], s = DRIVER[k.name];
-    if (brake) c.v -= Math.sign(c.v) * Math.min(Math.abs(c.v), 14 * dt);
-    else if (throttle > 0) c.v = c.v < -0.2 ? c.v + 12 * dt : Math.min(s.vmax, c.v + s.acc * throttle * (1 - 0.5 * Math.max(0, c.v) / s.vmax) * dt);
-    else if (throttle < 0) c.v = c.v > 0.2 ? c.v - 12 * dt : Math.max(-s.vmax * 0.3, c.v - s.acc * 0.7 * dt);
-    else c.v -= Math.sign(c.v) * Math.min(Math.abs(c.v), (0.9 + Math.abs(c.v) * 0.04) * dt);   // rolling and air
-    // turns the way the wheels point, the sharper the slower it goes (none standing still)
-    const grip = Math.min(1, Math.abs(c.v) / 3) / (1 + Math.abs(c.v) / (s.vmax * 1.5));
-    c.heading += steer * s.turn * grip * Math.sign(c.v) * dt;
-    c.steer += (steer * 0.5 / (1 + Math.abs(c.v) / 12) - c.steer) * Math.min(1, dt * 7);
-    const fx = Math.sin(c.heading), fz = Math.cos(c.heading);
-    c.x += fx * c.v * dt;
-    c.z += fz * c.v * dt;
-    c.dist += c.v * dt;
-    // the body as circles along its length
-    const r = k.halfW, n = Math.max(1, Math.round((k.halfL - r) / r) + 1), span = Math.max(0, k.halfL - r);
-    const circles = (o: Vehicle) => this.circles(o);
-    let hit = 0;
-    if (this.resolve) {
-      for (let i = 0; i < n; i++) {
-        const t = n === 1 ? 0 : -span + (2 * span * i) / (n - 1);
-        const px = c.x + fx * t, pz = c.z + fz * t;
-        const [qx, qz] = this.resolve(px, pz, r);
-        if (qx !== px || qz !== pz) { c.x += qx - px; c.z += qz - pz; hit = Math.max(hit, Math.hypot(qx - px, qz - pz)); }
-      }
-    }
-    const mine = circles(c);
+  drive(c: Vehicle, dt: number, throttle: number, steer: number, handbrake: boolean): void {
+    const k = this.kinds[c.kind], spec = SPECS[k.name];
+    if (!c.sim) c.sim = newBody(c.x, c.z, c.heading, c.v);
+    const b = c.sim;
+    b.x = c.x; b.z = c.z; b.heading = c.heading;      // (pushed by someone else since)
+    // the others near it, as circles; which vehicle each circle is
+    const near: Vehicle[] = [], circles: [number, number, number, number][] = [];
     for (const o of this.cars) {
-      if (o === c || o.fresh) continue;
-      if (Math.abs(o.x - c.x) > 9 || Math.abs(o.z - c.z) > 9) continue;
-      const ro = this.kinds[o.kind].halfW;
-      for (const [ax, az] of mine) for (const [bx, bz] of circles(o)) {
-        const dx = ax - bx, dz = az - bz, d = Math.hypot(dx, dz), need = r + ro;
-        if (d >= need || d < 1e-4) continue;
-        c.x += (dx / d) * (need - d);
-        c.z += (dz / d) * (need - d);
-        hit = Math.max(hit, need - d);
-        o.v = 0;                              // the one run into stops
-      }
+      if (o === c || o.fresh || Math.abs(o.x - c.x) > 12 || Math.abs(o.z - c.z) > 12) continue;
+      const ok = this.kinds[o.kind], m = SPECS[ok.name].mass;
+      for (const [x, z] of this.circles(o)) { circles.push([x, z, ok.halfW, m]); near.push(o); }
     }
-    if (hit > 0.02) c.v *= Math.max(0, 1 - hit * 6);   // a knock takes the speed off
+    step(b, spec, { wb: this.wheelbase(c.kind), halfL: k.halfL, halfW: k.halfW },
+      { throttle, steer, handbrake, hold: c.parked }, {
+        grip: (x, z) => (this.onRoad(x, z) ? 1 : 0.6),
+        resolve: (x, z, r) => (this.resolve ? this.resolve(x, z, r) : [x, z]),
+        others: () => circles,
+        hit: (i, jx, jz) => {
+          const o = near[i], mo = SPECS[this.kinds[o.kind].name].mass;
+          if (o.sim) {                          // one left parked: it is shoved
+            const fx = Math.sin(o.heading), fz = Math.cos(o.heading);
+            o.sim.vx += (jx * fx + jz * fz) / mo;
+            o.sim.vy += (jx * fz - jz * fx) / mo;
+          } else if (Math.hypot(jx, jz) / mo > 0.3) o.v = 0;     // the traffic's own: stops
+        },
+      }, dt);
+    c.x = b.x; c.z = b.z; c.heading = b.heading;
+    c.v = b.vx;
+    c.steer = b.steer;
+    c.dist += b.vx * dt;
   }
 
   /**

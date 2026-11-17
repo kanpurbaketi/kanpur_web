@@ -57,6 +57,19 @@ function resolve(s: Spot, i: number): { kind: FigureKind; look: number } {
   return { kind, look: (s.look ?? Math.floor(hash(n + 0.37) * 97)) % lookCount(kind) };
 }
 
+/**
+ * The room the figures at `spots` take up, for the collision world: [x, z, half-size, top, foot] in the spots' own frame.
+ * Somebody sitting cross-legged takes more floor than somebody standing.
+ */
+export function figurePosts(spots: Spot[]): [number, number, number, number, number][] {
+  return spots.map((s) => {
+    const k = s.s ?? 1;
+    const r = (s.pose === 'sit' ? 0.36 : s.pose === 'chair' ? 0.32 : 0.24) * k;
+    const h = (s.pose === 'sit' || s.pose === 'chair' ? 1.0 : 1.7) * k;
+    return [s.x, s.z, r, s.y + h, s.y];
+  });
+}
+
 /** Put figures at `spots` under `parent`. They appear once their models have loaded. */
 export function addFigures(parent: THREE.Object3D, spots: Spot[]): void {
   const groups = new Map<string, { kind: FigureKind; look: number; pose: Pose; spots: Spot[] }>();

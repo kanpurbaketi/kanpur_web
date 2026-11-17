@@ -3,7 +3,11 @@ import { MapData, P2 } from '../world/types';
 interface Seg {
   ax: number; az: number; bx: number; bz: number; h: number; cam: boolean;
   camH: number;   // the camera is stopped below this height (a railing is low for a walker, but the camera must not cross it)
+  base: number;   // its foot (0 = the ground; a person standing on a gallery is in the way only of somebody up there)
 }
+
+/** how tall a walker is: something whose foot is above his head does not stop him */
+const HEAD = 1.6;
 
 const CELL = 8;
 
@@ -20,10 +24,10 @@ export class CollisionWorld {
     for (const w of map.water) this.addRing(w.pts, 0.6); // can't walk into the lake
   }
 
-  /** Square post (pillar, pole, tree trunk) of half-size r. */
-  addPost(x: number, z: number, r: number, h = 10): void {
-    this.addRing([[x - r, z - r], [x + r, z - r], [x + r, z + r], [x - r, z + r]], h, r > 0.5);
-    if (h <= 1.7) {
+  /** Square post (pillar, pole, tree trunk, a person who never moves) of half-size r, from `base` up to h. */
+  addPost(x: number, z: number, r: number, h = 10, base = 0): void {
+    this.addRing([[x - r, z - r], [x + r, z - r], [x + r, z + r], [x - r, z + r]], h, r > 0.5, h, base);
+    if (h <= 1.7 && base === 0) {
       const t = { x0: x - r, x1: x + r, z0: z - r, z1: z + r, h };
       for (let cx = Math.floor(t.x0 / CELL); cx <= Math.floor(t.x1 / CELL); cx++) for (let cz = Math.floor(t.z0 / CELL); cz <= Math.floor(t.z1 / CELL); cz++) {
         const k = this.key(cx, cz);
@@ -58,10 +62,10 @@ export class CollisionWorld {
     return (cx + 4096) * 8192 + (cz + 4096);
   }
 
-  private addRing(pts: P2[], h: number, cam = true, camH = h): void {
+  private addRing(pts: P2[], h: number, cam = true, camH = h, base = 0): void {
     for (let i = 0; i < pts.length; i++) {
       const a = pts[i], b = pts[(i + 1) % pts.length];
-      const s: Seg = { ax: a[0], az: a[1], bx: b[0], bz: b[1], h, cam, camH };
+      const s: Seg = { ax: a[0], az: a[1], bx: b[0], bz: b[1], h, cam, camH, base };
       const x0 = Math.floor(Math.min(a[0], b[0]) / CELL), x1 = Math.floor(Math.max(a[0], b[0]) / CELL);
       const z0 = Math.floor(Math.min(a[1], b[1]) / CELL), z1 = Math.floor(Math.max(a[1], b[1]) / CELL);
       for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) {
@@ -89,6 +93,7 @@ export class CollisionWorld {
       let moved = false;
       for (const s of this.near(x - r, z - r, x + r, z + r)) {
         if (y >= s.h - 0.5) continue; // standing on it, or high enough to clamber up (a jump onto a counter, a platform)
+        if (y + HEAD <= s.base) continue; // it is up above (on a gallery)
         const dx = s.bx - s.ax, dz = s.bz - s.az;
         const l2 = dx * dx + dz * dz || 1e-9;
         const t = Math.max(0, Math.min(1, ((x - s.ax) * dx + (z - s.az) * dz) / l2));

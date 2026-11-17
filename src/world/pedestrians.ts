@@ -69,7 +69,10 @@ const RIGGED: Record<RigName, { speed: [number, number]; linger: number; tough: 
   boy: { speed: [1.1, 1.45], linger: 0.12, tough: TOUGH },
   aunty: { speed: [0.8, 1.05], linger: 0.25, tough: TOUGH },     // in no hurry, and stops to talk
 };
-const ACTOR_RANGE = 95;   // metres from the player beyond which a rigged person is not drawn or animated
+const ACTOR_RANGE = 95;
+const BODY = 0.27;        // a person's radius, m
+const RAMU = 0.33;        // Ramu's
+const SOLID_RANGE = 60;   // m from the player within which people are kept out of each other and of things   // metres from the player beyond which a rigged person is not drawn or animated
 
 export class Pedestrians {
   readonly group = new THREE.Group();
@@ -79,7 +82,9 @@ export class Pedestrians {
   /** called with the damage when a goon lands a punch or a kick on the player */
   onHurt: ((damage: number) => void) | null = null;
   /** collision (walls etc.) for goons on the run: returns the corrected [x, z] */
-  resolve: ((x: number, z: number) => [number, number]) | null = null;
+  resolve: ((x: number, z: number, y?: number) => [number, number]) | null = null;
+  /** the vehicles: a person standing where one is is put beside it (the corrected [x, z]) */
+  vehiclePush: ((x: number, z: number, r: number) => [number, number]) | null = null;
   /** where the nearest person hit by the last punch was (the puncher turns to face them) */
   lastHit: { x: number; z: number } | null = null;
   /** a moving vehicle at a point, if one is there: its velocity (so a car can knock people over) */
@@ -341,12 +346,87 @@ export class Pedestrians {
       }
       p.moving += ((walking ? 1 : 0) - p.moving) * Math.min(1, dt * 6);
     }
+    this.solid(px, pz, py);
     this.write();
+  }
+
+  /**
+   * Nobody walks through anybody or anything: people near the player are kept apart from each other (each gives way half),
+   * out of the vehicles, and out of walls, posts and stalls. A walker pushed off their line drifts back onto it as they go.
+   */
+  private solid(px: number, pz: number, py: number): void {
+    const near: Ped[] = [];
+    for (let i = 0; i < this.active; i++) {
+      const p = this.peds[i];
+      if (p.fresh || p.out || p.down > 0) continue;            // lying on the ground: stepped round, or over
+      if (Math.abs(p.x - this.fx) > SOLID_RANGE || Math.abs(p.z - this.fz) > SOLID_RANGE) continue;
+      near.push(p);
+    }
+    for (let i = 0; i < near.length; i++) {
+      const a = near[i];
+      for (let j = i + 1; j < near.length; j++) {
+        const b = near[j];
+        if (Math.abs(a.y - b.y) > 1.2) continue;
+        const dx = b.x - a.x, dz = b.z - a.z, d2 = dx * dx + dz * dz;
+        if (d2 >= BODY * BODY * 4) continue;
+        let d = Math.sqrt(d2), nx = dx / (d || 1), nz = dz / (d || 1);
+        if (d < 1e-4) { nx = Math.cos(i + j); nz = Math.sin(i + j); d = 0; }
+        const push = (BODY * 2 - d) / 2;
+        a.x -= nx * push; a.z -= nz * push;
+        b.x += nx * push; b.z += nz * push;
+      }
+    }
+    for (const p of near) {
+      // nor through Ramu (a goon or a guard at his throat stands off him, not in him)
+      const dx = p.x - px, dz = p.z - pz, d = Math.hypot(dx, dz), need = BODY + RAMU;
+      if (d < need && Math.abs(p.y - py) < 1.2) {
+        const [nx, nz] = d > 1e-4 ? [dx / d, dz / d] : [-Math.sin(p.heading), -Math.cos(p.heading)];
+        p.x = px + nx * need;
+        p.z = pz + nz * need;
+      }
+      if (this.vehiclePush) [p.x, p.z] = this.vehiclePush(p.x, p.z, BODY);
+      if (this.resolve) [p.x, p.z] = this.resolve(p.x, p.z, p.y);
+    }
+  }
+
+  /** Keep Ramu (a circle of radius r at foot height y) out of the people: returns his corrected [x, z]. */
+  pushOut(x: number, z: number, r: number, y: number): [number, number] {
+    for (let i = 0; i < this.active; i++) {
+      const p = this.peds[i];
+      if (p.fresh || p.out || p.down > 0 || Math.abs(p.y - y) > 1.2) continue;
+      const dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz), need = r + BODY;
+      if (d >= need) continue;
+      if (d < 1e-4) { x += need; continue; }
+      x = p.x + (dx / d) * need;
+      z = p.z + (dz / d) * need;
+    }
+    return [x, z];
   }
 
   /** where the active goons are (for tests) */
   goons(): { x: number; z: number; mode: number; down: number }[] {
     return this.peds.slice(0, this.active).filter((p) => p.hostile).map((p) => ({ x: p.x, z: p.z, mode: p.mode, down: p.down }));
+  }
+
+  /**
+   * Somebody thrown off a vehicle Ramu has taken: one of the crowd (not a goon or a guard, not anybody in the player's
+   * sight: the one farthest from him) is put where they come off and knocked flying (vx, vz m/s); they fall, get up and
+   * run. `men`: a driver, so a man if there is one. False if there was nobody to use.
+   */
+  throwOut(x: number, z: number, vx: number, vz: number, men = false): boolean {
+    let best: Ped | null = null, bd = -1;
+    for (let i = 0; i < this.active; i++) {
+      const p = this.peds[i];
+      if (p.hostile || p.rig === 'security' || p.fresh || p.down > 0 || p.out || p.mode) continue;
+      const d = Math.hypot(p.x - this.fx, p.z - this.fz) + (men && (p.rig === 'girl' || p.rig === 'aunty') ? -1000 : 0);
+      if (d > bd) { bd = d; best = p; }
+    }
+    if (!best) return false;
+    const p = best;
+    p.x = x; p.z = z; p.y = 0;
+    p.ox = p.oz = 0; p.hold = 0; p.wait = 0; p.flinch = 0; p.block = 0; p.angry = 0;
+    this.knockDown(p, vx, vz, 0);
+    return true;
   }
 
   private knockDown(p: Ped, vx: number, vz: number, secs: number): void {

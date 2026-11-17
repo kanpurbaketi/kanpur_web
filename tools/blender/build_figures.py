@@ -20,6 +20,10 @@ CHARS = ['uncle', 'aunty', 'college_girl', 'college_boy']
 if '--char' in argv:
     CHARS = [argv[argv.index('--char') + 1]]
 TRIS = 7000            # per figure: there are hundreds of them in view at the stage
+if '--tris' in argv:
+    TRIS = int(argv[argv.index('--tris') + 1])
+# Ramu himself (--char ramu --tris 40000): only the poses he takes on a vehicle, at full detail, for the player's camera
+RAMU_POSES = ('ride', 'drive')
 
 SIDE = Vector((1, 0, 0))      # the character's left-right axis
 FWD = Vector((0, -1, 0))      # the way they face
@@ -112,6 +116,17 @@ def build(char):
         rot('Neck', (SIDE, -14))
         rot('Head', (SIDE, -12))
 
+    def pose_drive():
+        # at the wheel: seated, thighs level, both hands forward on the steering wheel / handlebar
+        clear()
+        for side, sg in (('Left', 1), ('Right', -1)):
+            rot(side + 'UpLeg', (SIDE, -82), (UP, sg * 8))
+            rot(side + 'Leg', (SIDE, 80))
+            rot(side + 'Arm', (FWD, sg * -72), (SIDE, -62), (UP, sg * -10))
+            rot(side + 'ForeArm', (SIDE, -26))
+        rot('Spine', (SIDE, 4))
+        rot('Head', (SIDE, -4))
+
     poses = {
         'stand': lambda: clip('idle', 0.1),
         'stand_b': lambda: clip('look_around', 0.3),
@@ -122,7 +137,12 @@ def build(char):
         'sit': pose_sit,
         'ride': pose_ride,
         'chair': pose_chair,
+        'drive': pose_drive,
     }
+    if char == 'ramu':
+        poses = {k: v for k, v in poses.items() if k in RAMU_POSES}
+    else:
+        poses.pop('drive')
     made = []
     for pose, set_pose in poses.items():
         set_pose()

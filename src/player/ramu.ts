@@ -10,6 +10,13 @@ import { CLIP_SECS, ONCE, prepareClips, PUNCH_LANDS } from '../world/actors';
 const CROUCH = 1.2, ACCEL = 12, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
 const CAM_DIST = 3.2, EYE = 1.35;
 
+/** Ramu on a vehicle (set every frame by the driving): his seat in the world, which way it faces, how he sits, and the chase camera */
+export interface Ride {
+  x: number; y: number; z: number; heading: number; pose: 'ride' | 'drive';
+  /** the vehicle: its centre, its speed (m/s, backward < 0), the camera's distance and the height it looks at */
+  cx: number; cz: number; speed: number; cam: number; camH: number;
+}
+
 /** Ramu: third-person walk / run / jump with an orbit camera. Port of kanpur/game/scripts/player/ramu.gd. */
 export class Ramu {
   readonly root = new THREE.Group();
@@ -45,6 +52,13 @@ export class Ramu {
   /** admin settings (walk / run / jump / punch speeds, skin tone); updated live from the admin tab */
   private cfg: Settings = loadSettings();
   private blob: THREE.Mesh | null = null;
+  /** on a vehicle: he sits, posed, and the camera follows the vehicle; null on foot */
+  ride: Ride | null = null;
+  /** the get on / off key (or button) was pressed */
+  onUse: (() => void) | null = null;
+  private body: THREE.Object3D | null = null;
+  private seated = new Map<string, THREE.Mesh>();
+  private lookIdle = 0;    // seconds since the player last turned the camera
   private skin = { gamma: { value: 1 }, tint: { value: new THREE.Color(1, 1, 1) }, glow: { value: NIGHT ? 0.2 : 0.1 } };
 
   constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement, private controls: Controls) {
@@ -108,7 +122,55 @@ export class Ramu {
     this.touchMove.set(0, 0);
   }
 
+  /** the movement keys / stick: x to the right, y back (-1 forward), each -1..1 */
+  stick(): THREE.Vector2 {
+    const v = new THREE.Vector2();
+    if (!this.enabled) return v;
+    const c = this.controls;
+    if (c.held('forward', this.keys)) v.y -= 1;
+    if (c.held('back', this.keys)) v.y += 1;
+    if (c.held('left', this.keys)) v.x -= 1;
+    if (c.held('right', this.keys)) v.x += 1;
+    v.add(this.touchMove);
+    return v.clampScalar(-1, 1);
+  }
+
+  /** the hand brake (the jump key) held */
+  get braking(): boolean {
+    return this.enabled && this.controls.held('jump', this.keys);
+  }
+
+  /** Got off a vehicle at (x, z): on his feet there. */
+  stepDown(x: number, z: number): void {
+    this.ride = null;
+    this.root.position.set(x, this.world.floorAt(x, z, 0.5), z);
+    this.vel.set(0, 0, 0);
+    this.grounded = true;
+    this.punching = false;
+  }
+
   update(dt: number): void {
+    this.lookIdle += dt;
+    const r = this.ride;
+    if (this.body) this.body.visible = !r;
+    if (this.blob) this.blob.visible = !r;
+    for (const [pose, m] of this.seated) m.visible = !!r && r.pose === pose;
+    if (r) {
+      this.root.position.set(r.x, r.y, r.z);
+      this.vel.set(0, 0, 0);
+      this.model.rotation.y = r.heading + Math.PI;
+      this.jumpQueued = this.punchQueued = false;
+      this.punching = false;
+      // the camera swings round behind the vehicle as it goes, unless the player is looking about
+      if (this.lookIdle > 1.2 && Math.abs(r.speed) > 1.5) {
+        const want = r.heading + Math.PI;
+        const d = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
+        this.yaw += d * Math.min(1, dt * 2.2);
+        this.pitch += (-0.22 - this.pitch) * Math.min(1, dt * 1.5);
+      }
+      this.updateCamera(r.cx, r.camH, r.cz, r.cam);
+      return;
+    }
     const input = new THREE.Vector2();
     this.stun = Math.max(0, this.stun - dt);
     if (this.enabled && this.stun <= 0 && this.wake <= 0) {
@@ -171,16 +233,15 @@ export class Ramu {
     this.animate(dt, hs, crouching);
     this.updateBlob();
 
-    this.updateCamera();
+    this.updateCamera(p.x, p.y + EYE, p.z, CAM_DIST);
   }
 
-  private updateCamera(): void {
-    const p = this.root.position;
-    const px = p.x, py = p.y + EYE, pz = p.z;
+  /** the camera on its arm from the point (px, py, pz), pulled in where something is in the way */
+  private updateCamera(px: number, py: number, pz: number, dist: number): void {
     const cp = Math.cos(this.pitch);
     const bx = Math.sin(this.yaw) * cp, by = -Math.sin(this.pitch), bz = Math.cos(this.yaw) * cp;
-    const t = this.world.raycast(px, py, pz, px + bx * CAM_DIST, py + by * CAM_DIST, pz + bz * CAM_DIST);
-    const d = Math.max(0.4, CAM_DIST * t - 0.25);
+    const t = this.world.raycast(px, py, pz, px + bx * dist, py + by * dist, pz + bz * dist);
+    const d = Math.max(0.4, dist * t - 0.25);
     // squeezed against something (a wall behind him, the rail of a narrow gallery): rise as it closes in, to look over
     // his head rather than into the back of it
     const lift = Math.max(0, 1.7 - d) * 0.28;
@@ -192,6 +253,7 @@ export class Ramu {
   private press(code: string): void {
     if (this.controls.matches('jump', code)) this.jumpQueued = true;
     if (this.controls.matches('punch', code)) this.punchQueued = true;
+    if (this.controls.matches('use', code) && this.enabled) this.onUse?.();
   }
 
   private bindInput(dom: HTMLElement): void {
@@ -219,6 +281,7 @@ export class Ramu {
   }
 
   private look(dx: number, dy: number, k = 0.0025): void {
+    if (dx || dy) this.lookIdle = 0;
     this.yaw -= dx * k;
     this.pitch = Math.max(-1.2, Math.min(0.5, this.pitch - dy * k));
   }
@@ -284,6 +347,10 @@ export class Ramu {
       this.punchQueued = true;
       e.preventDefault();
     });
+    document.getElementById('btn-use')?.addEventListener('touchstart', (e) => {
+      if (this.enabled) this.onUse?.();
+      e.preventDefault();
+    });
     document.getElementById('btn-jump')!.addEventListener('touchstart', (e) => {
       this.jumpQueued = true;
       e.preventDefault();
@@ -311,6 +378,21 @@ export class Ramu {
       });
       gltf.scene.rotation.y = Math.PI;
       this.model.add(gltf.scene);
+      this.body = gltf.scene;
+      // how he sits on a vehicle: still poses of the same body (tools/blender/build_figures.py --char ramu), in his own material
+      let mat: THREE.Material | null = null;
+      gltf.scene.traverse((o) => { if ((o as THREE.Mesh).isMesh && !mat) mat = (o as THREE.Mesh).material as THREE.Material; });
+      new GLTFLoader().loadAsync('models/figures/ramu.glb').then((f) => {
+        f.scene.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (!m.isMesh || !mat) return;
+          const seat = new THREE.Mesh(m.geometry.rotateY(Math.PI), mat);    // the file faces +z, as the rig does
+          seat.visible = false;
+          seat.castShadow = false;
+          this.seated.set(m.name, seat);
+          this.model.add(seat);
+        });
+      }).catch((e) => console.error('Ramu seated poses failed to load', e));
       if (NIGHT) {
         // a soft cool light just above him, so he does not vanish into the dark street
         const glow = new THREE.PointLight('#d8e4ff', 9, 9, 2);

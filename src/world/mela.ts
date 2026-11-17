@@ -4,7 +4,7 @@ import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { cloneCar, loadPBR } from './vehicleModels';
 import { Pedestrians } from './pedestrians';
-import { addFigures, FigureKind, ONLOOKER, someone, Spot } from './figures';
+import { addFigures, FigureKind, figurePosts, ONLOOKER, someone, Spot } from './figures';
 import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, GATE, HINDOLA, INFLATABLE, KUAN, MELA, Rect, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
 import { buildInflatable } from './inflatable';
 import { buildMautKuan } from './mautKuan';
@@ -26,7 +26,7 @@ const C = (h: string) => new THREE.Color(h);
 // ---- rides ----------------------------------------------------------------------------------------
 
 interface Ride {
-  group: THREE.Group; update(t: number, dt: number): void; post: [number, number, number, number?][]; light: [number, number, number, string];
+  group: THREE.Group; update(t: number, dt: number): void; post: [number, number, number, number?, number?][]; light: [number, number, number, string];
   rails?: { ring: [number, number][]; h: number; camH?: number }[]; floor?: (x: number, z: number) => number | null;
 }
 
@@ -407,7 +407,7 @@ function clothTexture(kind: number): THREE.CanvasTexture {
 export class Mela {
   readonly group = new THREE.Group();
   /** solid circles for collision: [x, z, r] */
-  readonly posts: [number, number, number, number?][] = [];   // [x, z, r, height (default: tall)]
+  readonly posts: [number, number, number, number?, number?][] = [];   // [x, z, r, height (default: tall), foot (default: the ground)]
   /** railings you can't climb over, and walkable surfaces such as the well's stair and gallery */
   readonly rails: { ring: [number, number][]; h: number; camH: number }[] = [];   // camH: the camera cannot cross below this height (0 = it can)
   readonly floors: ((x: number, z: number) => number | null)[] = [];
@@ -445,7 +445,7 @@ export class Mela {
     this.group.add(r.group);
     this.rides.push(r);
     const c = Math.cos(ry), s = Math.sin(ry);
-    for (const [px, pz, pr, ph] of r.post) this.posts.push([x + px * c + pz * s, z - px * s + pz * c, pr, ph]);
+    for (const [px, pz, pr, ph, pb] of r.post) this.posts.push([x + px * c + pz * s, z - px * s + pz * c, pr, ph, pb]);
     if (r.rails) for (const w of r.rails) this.rails.push({ h: w.h, camH: w.camH ?? 0, ring: w.ring.map(([px, pz]) => [x + px * c + pz * s, z - px * s + pz * c] as [number, number]) });
     if (r.floor) { const f = r.floor; this.floors.push((wx, wz) => f((wx - x) * c - (wz - z) * s, (wx - x) * s + (wz - z) * c)); }
     lights?.add(x, r.light[1], z, r.light[3], 230, 34);
@@ -484,7 +484,7 @@ export class Mela {
     this.group.add(stage);
     const toW = (lx: number, lz: number): [number, number] => [sx0 + lz, sz0 - lx];
     const L = (x: number, y: number, z: number, color: string, intensity: number, range: number) => { const [wx, wz] = toW(x, z); lights?.add(wx, y, wz, color, intensity, range); };
-    const post = (x: number, z: number, r: number, h?: number) => { const [wx, wz] = toW(x, z); this.posts.push([wx, wz, r, h]); };
+    const post = (x: number, z: number, r: number, h?: number, base?: number) => { const [wx, wz] = toW(x, z); this.posts.push([wx, wz, r, h, base]); };
     const g = new Geo(), bulbs = new Bulbs();
     g.box(cx, SH / 2, cz, W, SH, D, '#6b4a2a');
     g.box(cx, SH + 0.04, cz, W - 0.4, 0.08, D - 0.4, '#bdb8a8');                                     // white gaddi (a dull white: under the stage lights a true white burns out)
@@ -569,6 +569,7 @@ export class Mela {
       people.push({ x, y: 0.09, z, ry: (rnd(r * 3 + c * 11) - 0.5) * 0.5, pose: 'sit', n: r * 131 + c * 17 });
     }
     addFigures(stage, people);
+    for (const [x, z, r, h, base] of figurePosts(people)) post(x, z, r, h, base);   // the poets and the audience: you go round them
     // the white dari sheets under the audience
     const d = new Geo();
     const dw = AUDIENCE.z1 - AUDIENCE.z0, dd = AUDIENCE.x1 - AUDIENCE.x0, dcz = (AUDIENCE.x0 + AUDIENCE.x1) / 2 - sx0;
@@ -684,6 +685,7 @@ export class Mela {
     this.group.add(new THREE.Mesh(bunting.build(), litMat({ metalness: 0, roughness: 0.9, side: THREE.DoubleSide })));
     this.group.add(bulbs.object(0.7));
     addFigures(this.group, keepers);
+    for (const [x, z, r, h, base] of figurePosts(keepers)) this.posts.push([x, z, r, h, base]);   // the stall-keepers and their customers
   }
 
   /** Bikes and cycles left outside the gate, nose to the cloth wall (downloaded models: tools/blender/import_vehicle.py). */

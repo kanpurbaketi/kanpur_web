@@ -4,7 +4,7 @@
  Saved in localStorage, so they apply to this browser only; the menu's Controls panel edits them live.
 */
 
-export type Action = 'forward' | 'back' | 'left' | 'right' | 'run' | 'jump' | 'crouch' | 'punch' | 'map';
+export type Action = 'forward' | 'back' | 'left' | 'right' | 'run' | 'jump' | 'crouch' | 'punch' | 'use' | 'map';
 
 export const ACTIONS: { id: Action; label: string }[] = [
   { id: 'forward', label: 'Move forward' },
@@ -15,6 +15,7 @@ export const ACTIONS: { id: Action; label: string }[] = [
   { id: 'jump', label: 'Jump' },
   { id: 'crouch', label: 'Crouch (hold)' },
   { id: 'punch', label: 'Punch' },
+  { id: 'use', label: 'Get on / off a vehicle' },
   { id: 'map', label: 'Open map' },
 ];
 
@@ -27,6 +28,7 @@ export const DEFAULTS: Record<Action, [string, string]> = {
   jump: ['Space', ''],
   crouch: ['KeyC', 'ControlLeft'],
   punch: ['KeyF', 'Mouse0'],
+  use: ['KeyE', ''],
   map: ['KeyM', ''],
 };
 
@@ -100,7 +102,7 @@ export class Controls {
     const k = (a: Action) => label(this.b[a][0] || this.b[a][1]);
     const dirs = [k('forward'), k('left'), k('back'), k('right')];
     const move = dirs.every((d) => d.length === 1) ? dirs.join('') : dirs.join('/');
-    return `Click to look · ${move} move · ${k('run')} run · ${k('jump')} jump · ${k('crouch')} crouch · ${k('punch')} punch · Esc release mouse`;
+    return `Click to look · ${move} move · ${k('run')} run · ${k('jump')} jump · ${k('crouch')} crouch · ${k('punch')} punch · ${k('use')} vehicle · Esc release mouse`;
   }
 
   private save(): void {

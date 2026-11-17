@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addFigures, figure, ONLOOKER, Spot } from './figures';
+import { addFigures, figure, figurePosts, ONLOOKER, Spot } from './figures';
 import { banner, Bulbs, Geo, litMat, rnd } from './geo';
 import { beamMaterial } from './night';
 import { cloneCar, loadPBR } from './vehicleModels';
@@ -54,7 +54,7 @@ function carModel(file: string, stunt: boolean): THREE.Group {
 
 export function buildMautKuan() {
   const group = new THREE.Group();
-  const posts: [number, number, number, number?][] = [];
+  const posts: [number, number, number, number?, number?][] = [];
   const g = new Geo(), bulbs = new Bulbs();
   const R = WELL_R;
 
@@ -253,6 +253,7 @@ export function buildMautKuan() {
     spots.push({ x, y: 0.02, z, ry: Math.atan2(Math.cos(a), Math.sin(a)) + Math.PI / 2 + (rnd(i * 7) - 0.5) * 1.2, n: 100 + i, pose: ONLOOKER[Math.floor(rnd(i * 17 + 3) * ONLOOKER.length)] });
   }
   addFigures(group, spots);
+  posts.push(...figurePosts(spots));      // the onlookers on the gallery and at the booth stand in the way
 
   // moving vehicles: bikes ride near-horizontal bands high on the wall, cars lower and tilted
   interface Veh { obj: THREE.Group; a0: number; w: number; y0: number; amp: number; sp: number; phi: number; ph: number; off: number }

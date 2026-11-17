@@ -53,14 +53,47 @@ interface Kind { name: string; count: number; speed: number; halfL: number; half
 const RIDER_LOOKS = 3;      // different people per seat of each kind of vehicle
 interface Link { to: number; off: number; bus: boolean }
 interface Node { x: number; z: number; links: Link[] }
-interface Vehicle {
+export interface Vehicle {
   kind: number; slot: number;
   vmax: number; v: number;
   a: number; b: number; link: Link; t: number; len: number;
   x: number; z: number; heading: number; fresh: boolean;
   /** close to the player: drawn with the full model and casting a shadow (else the far, cut-down model) */
   near: boolean;
+  /** Ramu has it: driven by the player, not the traffic */
+  player: boolean;
+  /** left where Ramu got off: it rolls to a stop and stands there until it is out of the way (recycled) */
+  parked: boolean;
+  /** its people were thrown out: no riders drawn on it until it is recycled */
+  empty: boolean;
 }
+
+/**
+ * Ramu on a vehicle: how he sits (pose, and the seat in the vehicle's frame: x to its left, y up, z forward; the cars are
+ * right-hand drive), how it goes (top speed m/s, acceleration m/s², turn rate rad/s at speed), and the chase camera
+ * (distance and height of the point it looks at).
+ */
+export interface DriverSeat { pose: 'ride' | 'drive'; at: [number, number, number]; vmax: number; acc: number; turn: number; cam: number; camH: number }
+const car = (at: [number, number, number], vmax: number, acc: number): DriverSeat => ({ pose: 'drive', at, vmax, acc, turn: 1.25, cam: 6.2, camH: 1.7 });
+export const DRIVER: Record<string, DriverSeat> = {
+  bus: { pose: 'drive', at: [-0.82, 1.05, 3.95], vmax: 14, acc: 2.2, turn: 0.85, cam: 10, camH: 2.6 },
+  bus_green: { pose: 'drive', at: [-0.82, 1.05, 3.95], vmax: 14, acc: 2.2, turn: 0.85, cam: 10, camH: 2.6 },
+  truck: { pose: 'drive', at: [-0.55, 1.15, 1.95], vmax: 14, acc: 2.0, turn: 0.9, cam: 9.5, camH: 2.6 },
+  autorickshaw: { pose: 'drive', at: [0, 0.42, 0.28], vmax: 13, acc: 3.6, turn: 1.5, cam: 5.2, camH: 1.6 },
+  tirri: { pose: 'drive', at: [0, 0.56, 0.42], vmax: 9, acc: 3.0, turn: 1.5, cam: 5.2, camH: 1.6 },
+  maruti: car([-0.32, 0.16, -0.05], 20, 4.5),
+  maruti_red: car([-0.32, 0.16, -0.05], 20, 4.5),
+  maruti_green: car([-0.32, 0.16, -0.05], 20, 4.5),
+  swift: car([-0.36, 0.2, -0.1], 25, 5.5),
+  ambassador: car([-0.4, 0.24, -0.1], 19, 3.5),
+  bolero: car([-0.42, 0.42, 0.0], 21, 4.0),
+  pulsar: { pose: 'ride', at: [0, 0.13, -0.3], vmax: 24, acc: 7.0, turn: 1.7, cam: 4.6, camH: 1.5 },
+  cycle: { pose: 'ride', at: [0, 0.35, -0.24], vmax: 7.5, acc: 2.6, turn: 1.9, cam: 4.2, camH: 1.5 },
+  rickshaw: { pose: 'ride', at: [0, 0.36, -0.02], vmax: 6, acc: 1.6, turn: 1.3, cam: 5.6, camH: 1.7 },
+};
+
+/** a person thrown off a vehicle Ramu takes: where they land from, and how they fly (m/s) */
+export interface Thrown { x: number; z: number; vx: number; vz: number; driver: boolean }
 
 /** within NEAR_IN m of the player a vehicle is drawn in full; it goes back to the far model past NEAR_OUT m */
 const NEAR_IN = 45, NEAR_OUT = 52;
@@ -102,6 +135,10 @@ export class Traffic {
   private lenses: THREE.InstancedMesh | null = null;
   /** per kind, per rider look: which vehicle slots it sits on */
   private seated: boolean[][][] = [];
+  /** per kind, per rider look: which seat it is */
+  private riderSeat: number[][] = [];
+  /** the walls and posts of the world, for a vehicle Ramu drives: the corrected [x, z] for a circle of radius r */
+  resolve: ((x: number, z: number, r: number) => [number, number]) | null = null;
   private pools: THREE.InstancedMesh | null = null;
 
   static async create(map: MapData, desktop: boolean): Promise<Traffic> {
@@ -207,10 +244,12 @@ export class Traffic {
         near: draw(false), far: draw(true), colours: list.map((q) => q.colours),
       });
       this.seated.push(seated);
+      this.riderSeat.push(riders[ki].map((r) => r.seat));
       for (let i = 0; i < k.count; i++) {
         this.cars.push({
           kind: ki, slot: i, vmax: k.speed * (0.85 + Math.random() * 0.3), v: 0,
           a: 0, b: 0, link: { to: 0, off: 0, bus: false }, t: 0, len: 1, x: 0, z: 0, heading: 0, fresh: true, near: false,
+          player: false, parked: false, empty: false,
         });
       }
     });
@@ -298,6 +337,9 @@ export class Traffic {
     this.setLink(c, links[Math.floor(Math.random() * links.length)]);
     c.t = Math.random() * c.len * 0.5;
     const [x, z, h] = this.target(c);
+    // never on top of another one: try again next frame
+    const L = this.kinds[c.kind].halfL;
+    if (this.cars.some((o) => o !== c && !o.fresh && Math.hypot(o.x - x, o.z - z) < L + this.kinds[o.kind].halfL + 3)) return;
     c.x = x; c.z = z; c.heading = h;
     c.v = c.vmax;
     c.fresh = false;
@@ -322,12 +364,18 @@ export class Traffic {
   /** (fx, fz): player / camera; (dirX, dirZ): camera look direction; (px, pz): the player to stop for. */
   update(dt: number, fx: number, fz: number, dirX: number, dirZ: number, px = Infinity, pz = Infinity): void {
     for (const c of this.cars) {
+      if (c.player) continue;                 // Ramu drives it (drive())
       if (c.fresh) this.place(c, fx, fz, 25, SPAWN_MAX, 0, 0);
       else if (Math.hypot(c.x - fx, c.z - fz) > DESPAWN) {
         c.fresh = true;
+        c.parked = c.empty = false;           // back in the traffic, with its people
         this.place(c, fx, fz, SPAWN_MIN, SPAWN_MAX, dirX, dirZ);
       }
       if (c.fresh) continue;
+      if (c.parked) {                         // where Ramu left it: rolling to a stop
+        this.drive(c, dt, 0, 0, true);
+        continue;
+      }
       const k = this.kinds[c.kind];
       const fxv = Math.sin(c.heading), fzv = Math.cos(c.heading); // forward
       let want = c.vmax;
@@ -347,6 +395,22 @@ export class Traffic {
         if (gap > 7 || Math.abs(dx * fzv - dz * fxv) > k.halfW + this.kinds[o.kind].halfW + 0.12) continue;      // room to pass (a cycle at the kerb)
         if (Math.sin(o.heading) * fxv + Math.cos(o.heading) * fzv < 0.3) continue; // oncoming / crossing
         want = Math.min(want, gap < 1.5 ? 0 : o.v);
+      }
+      // anything in its way (a vehicle crossing or merging at a junction, one stopped or parked, the one Ramu drives):
+      // wait for it. Two that are each in the other's way: the one first in the list goes.
+      if (want > 0) {
+        for (let oi = 0; oi < this.cars.length; oi++) {
+          const o = this.cars[oi];
+          if (o === c || o.fresh || Math.abs(o.x - c.x) > 14 || Math.abs(o.z - c.z) > 14) continue;
+          const dot = Math.sin(o.heading) * fxv + Math.cos(o.heading) * fzv;
+          if (dot < -0.7 && Math.abs(o.v) > 0.3 && !o.player && !o.parked) continue;   // oncoming in its own lane
+          if ((o.x - c.x) * fxv + (o.z - c.z) * fzv <= 0) continue;     // behind it: it moves away from that one
+          if (!this.inWay(c, o)) continue;
+          // each in the other's way (two meeting at a junction): the one first in the list goes, the other waits
+          if (!o.player && !o.parked && this.inWay(o, c) && oi > this.cars.indexOf(c)) continue;
+          want = 0;
+          break;
+        }
       }
       c.v += Math.max(-9 * dt, Math.min(2.5 * dt, want - c.v));
       c.t += c.v * dt;
@@ -368,7 +432,171 @@ export class Traffic {
       c.z += (tz - c.z) * s;
       c.heading += Math.atan2(Math.sin(th - c.heading), Math.cos(th - c.heading)) * s;
     }
+    this.separate();
     this.write(fx, fz);
+  }
+
+  /** The vehicle nearest a point, if its body is within `reach` m of it (not one already taken). */
+  nearest(x: number, z: number, reach: number): Vehicle | null {
+    let best: Vehicle | null = null, bd = reach;
+    for (const c of this.cars) {
+      if (c.fresh || c.player) continue;
+      const k = this.kinds[c.kind];
+      const fxv = Math.sin(c.heading), fzv = Math.cos(c.heading), dx = x - c.x, dz = z - c.z;
+      const along = Math.abs(dx * fxv + dz * fzv) - k.halfL, side = Math.abs(dx * fzv - dz * fxv) - k.halfW;
+      const d = Math.hypot(Math.max(0, along), Math.max(0, side));
+      if (d < bd) { bd = d; best = c; }
+    }
+    return best;
+  }
+
+  kindOf(c: Vehicle): string {
+    return this.kinds[c.kind].name;
+  }
+
+  /** how Ramu sits on it and how it goes */
+  seatOf(c: Vehicle): DriverSeat {
+    return DRIVER[this.kinds[c.kind].name];
+  }
+
+  /** a point in the vehicle's frame (x to its left, z forward) in the world */
+  toWorld(c: Vehicle, x: number, z: number): [number, number] {
+    const s = Math.sin(c.heading), co = Math.cos(c.heading);
+    return [c.x + x * co + z * s, c.z - x * s + z * co];
+  }
+
+  /**
+   * Ramu takes the vehicle: from now on drive() moves it. Whoever was on it is thrown off: the driver (every vehicle has
+   * one, seen or not) out of their side, the passengers out of theirs. Returns them, for the crowd to put on the ground.
+   */
+  board(c: Vehicle): Thrown[] {
+    const k = this.kinds[c.kind], seat = DRIVER[k.name];
+    const out: { x: number; z: number; driver: boolean }[] = [];
+    if (k.seats) {
+      if (!c.empty) {
+        const seated = this.seated[c.kind];
+        k.seats.forEach((st, si) => {
+          if (seated.some((on, ri) => on[c.slot] && this.riderSeat[c.kind][ri] === si)) out.push({ x: st.at[0], z: st.at[2], driver: si === 0 });
+        });
+      }
+    } else if (!c.empty) out.push({ x: seat.at[0], z: seat.at[2], driver: true });
+    c.player = true;
+    c.parked = false;
+    c.empty = true;
+    const fx = Math.sin(c.heading), fz = Math.cos(c.heading), lx = fz, lz = -fx;
+    return out.map((o) => {
+      const side = o.x > 0.05 ? 1 : -1;         // out of their own side (a rider in the middle: to the right, the kerb is left)
+      const [x, z] = this.toWorld(c, side * (k.halfW + 0.35), o.z);
+      const push = 3.2 + Math.random() * 1.2;
+      return { x, z, vx: lx * side * push + fx * c.v * 0.6, vz: lz * side * push + fz * c.v * 0.6, driver: o.driver };
+    });
+  }
+
+  /** Ramu gets off: the vehicle rolls to a stop and stays. Returns where he steps down (beside his seat, to its right). */
+  leave(c: Vehicle): [number, number] {
+    const k = this.kinds[c.kind], seat = DRIVER[k.name];
+    c.player = false;
+    c.parked = true;
+    let [x, z] = this.toWorld(c, -(k.halfW + 0.55), seat.at[2]);
+    if (this.resolve) [x, z] = this.resolve(x, z, 0.35);
+    return [x, z];
+  }
+
+  /**
+   * Move a vehicle Ramu drives: `throttle` -1..1 (back: brake, then reverse), `steer` -1..1 (to the left), `brake` the
+   * hand brake. It runs into walls, posts and the other vehicles, and loses its speed doing so.
+   */
+  drive(c: Vehicle, dt: number, throttle: number, steer: number, brake: boolean): void {
+    const k = this.kinds[c.kind], s = DRIVER[k.name];
+    if (brake) c.v -= Math.sign(c.v) * Math.min(Math.abs(c.v), 14 * dt);
+    else if (throttle > 0) c.v = c.v < -0.2 ? c.v + 12 * dt : Math.min(s.vmax, c.v + s.acc * throttle * (1 - 0.5 * Math.max(0, c.v) / s.vmax) * dt);
+    else if (throttle < 0) c.v = c.v > 0.2 ? c.v - 12 * dt : Math.max(-s.vmax * 0.3, c.v - s.acc * 0.7 * dt);
+    else c.v -= Math.sign(c.v) * Math.min(Math.abs(c.v), (0.9 + Math.abs(c.v) * 0.04) * dt);   // rolling and air
+    // turns the way the wheels point, the sharper the slower it goes (none standing still)
+    const grip = Math.min(1, Math.abs(c.v) / 3) / (1 + Math.abs(c.v) / (s.vmax * 1.5));
+    c.heading += steer * s.turn * grip * Math.sign(c.v) * dt;
+    const fx = Math.sin(c.heading), fz = Math.cos(c.heading);
+    c.x += fx * c.v * dt;
+    c.z += fz * c.v * dt;
+    // the body as circles along its length
+    const r = k.halfW, n = Math.max(1, Math.round((k.halfL - r) / r) + 1), span = Math.max(0, k.halfL - r);
+    const circles = (o: Vehicle) => this.circles(o);
+    let hit = 0;
+    if (this.resolve) {
+      for (let i = 0; i < n; i++) {
+        const t = n === 1 ? 0 : -span + (2 * span * i) / (n - 1);
+        const px = c.x + fx * t, pz = c.z + fz * t;
+        const [qx, qz] = this.resolve(px, pz, r);
+        if (qx !== px || qz !== pz) { c.x += qx - px; c.z += qz - pz; hit = Math.max(hit, Math.hypot(qx - px, qz - pz)); }
+      }
+    }
+    const mine = circles(c);
+    for (const o of this.cars) {
+      if (o === c || o.fresh) continue;
+      if (Math.abs(o.x - c.x) > 9 || Math.abs(o.z - c.z) > 9) continue;
+      const ro = this.kinds[o.kind].halfW;
+      for (const [ax, az] of mine) for (const [bx, bz] of circles(o)) {
+        const dx = ax - bx, dz = az - bz, d = Math.hypot(dx, dz), need = r + ro;
+        if (d >= need || d < 1e-4) continue;
+        c.x += (dx / d) * (need - d);
+        c.z += (dz / d) * (need - d);
+        hit = Math.max(hit, need - d);
+        o.v = 0;                              // the one run into stops
+      }
+    }
+    if (hit > 0.02) c.v *= Math.max(0, 1 - hit * 6);   // a knock takes the speed off
+  }
+
+  /**
+   * Last word: no two vehicles inside each other (a long bus swinging its tail round a corner). The traffic's own are
+   * pushed apart, half each; one Ramu drives or left parked does not give way (drive() keeps his out of the others).
+   */
+  private separate(): void {
+    const cs = this.cars.filter((c) => !c.fresh);
+    for (let i = 0; i < cs.length; i++) {
+      const a = cs[i];
+      for (let j = i + 1; j < cs.length; j++) {
+        const b = cs[j];
+        if (Math.abs(a.x - b.x) > 12 || Math.abs(a.z - b.z) > 12) continue;
+        const fixedA = a.player || a.parked, fixedB = b.player || b.parked;
+        if (fixedA && fixedB) continue;
+        const need = this.kinds[a.kind].halfW + this.kinds[b.kind].halfW;
+        let px = 0, pz = 0, deep = 0;
+        const cb = this.circles(b);
+        for (const [ax, az] of this.circles(a)) for (const [bx, bz] of cb) {
+          const dx = bx - ax, dz = bz - az, d = Math.hypot(dx, dz);
+          if (d >= need || need - d <= deep) continue;
+          deep = need - d;
+          [px, pz] = d > 1e-4 ? [dx / d, dz / d] : [Math.cos(i), Math.sin(i)];
+        }
+        if (!deep) continue;
+        const ka = fixedA ? 0 : fixedB ? 1 : 0.5, kb = 1 - ka;
+        a.x -= px * deep * ka; a.z -= pz * deep * ka;
+        b.x += px * deep * kb; b.z += pz * deep * kb;
+      }
+    }
+  }
+
+  /** a vehicle's body as circles of its half-width along its length: [x, z] */
+  private circles(o: Vehicle, ahead = 0): [number, number][] {
+    const k = this.kinds[o.kind], fx = Math.sin(o.heading), fz = Math.cos(o.heading);
+    const m = Math.max(1, Math.round((k.halfL - k.halfW) / k.halfW) + 1), sp = Math.max(0, k.halfL - k.halfW);
+    return Array.from({ length: m }, (_, i) => {
+      const t = (m === 1 ? 0 : -sp + (2 * sp * i) / (m - 1)) + ahead;
+      return [o.x + fx * t, o.z + fz * t];
+    });
+  }
+
+  /** would `c`, going on straight a little (up to 4.5 m), run into `o`? */
+  private inWay(c: Vehicle, o: Vehicle): boolean {
+    const rc = this.kinds[c.kind].halfW, ro = this.kinds[o.kind].halfW, need = rc + ro + 0.15;
+    const theirs = this.circles(o);
+    for (const ahead of [1, 2.5, 4.5]) {
+      for (const [ax, az] of this.circles(c, ahead)) for (const [bx, bz] of theirs) {
+        if ((ax - bx) ** 2 + (az - bz) ** 2 < need * need) return true;
+      }
+    }
+    return false;
   }
 
   /** Keep a walker out of the vehicles: returns the corrected [x, z]. */
@@ -414,7 +642,7 @@ export class Traffic {
       });
       const seated = this.seated[c.kind];
       dr.riders.forEach((r, ri) => {
-        if (seated[ri][c.slot]) r.setMatrixAt(dr.rn[ri]++, M);
+        if (seated[ri][c.slot] && !c.empty) r.setMatrixAt(dr.rn[ri]++, M);
       });
     }
     for (const m of this.meshes) {

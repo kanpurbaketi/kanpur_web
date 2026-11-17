@@ -21,7 +21,8 @@ import { treeUniforms } from './world/trees';
 import { MapData, project } from './world/types';
 import { LightPool, NIGHT, updateGlow } from './world/night';
 import { LampPools, lampColor } from './world/lampPools';
-import { Controls } from './game/controls';
+import { Controls, label } from './game/controls';
+import { Driving } from './player/drive';
 import { Mela } from './world/mela';
 import { Vendors } from './world/vendors';
 import { HOME, loadManifest, playable } from './game/parts';
@@ -115,7 +116,7 @@ async function main() {
   const mela = map.area === 'moti_jheel' ? new Mela(map, NIGHT ? lightPool : null, desktop) : null;
   if (mela) {
     scene.add(mela.group);
-    for (const [x, z, r, h] of mela.posts) world.addPost(x, z, r, h);
+    for (const [x, z, r, h, base] of mela.posts) world.addPost(x, z, r, h, base);
     for (const w of mela.rails) world.addWall(w.ring, w.h, w.camH > 0, w.camH);
     for (const f of mela.floors) world.addFloor(f);
     for (const ring of mela.walls) world.addWall(ring, 3.4);
@@ -178,7 +179,7 @@ async function main() {
   if (params.has('debug')) (window as unknown as { __health: Health }).__health = health;
   // goons (dark-clothed men in the crowd) run at Ramu and punch / kick; his own punch staggers them
   const mugged = (d: number) => { const was = health.value; health.hurt(d); if (health.value < was) ramu.flinch(); };
-  const away = (x: number, z: number): [number, number] => world.resolve(x, z, 0.35, 0);
+  const away = (x: number, z: number, y = 0): [number, number] => world.resolve(x, z, 0.3, y);
   peds.onHurt = mugged;
   peds.resolve = away;
   peds.vehicleAt = null;   // set once the traffic exists
@@ -197,7 +198,11 @@ async function main() {
 
   // Blender-built props: traffic (buses, autos, e-rickshaws) and panipuri stalls. ?traffic=0 turns traffic off.
   const traffic = params.get('traffic') === '0' ? null : await Traffic.create(map, desktop);
-  if (traffic) { scene.add(traffic.group); peds.vehicleAt = (x, z, r) => traffic.hit(x, z, r); }
+  if (traffic) {
+    scene.add(traffic.group);
+    peds.vehicleAt = (x, z, r) => traffic.hit(x, z, r);
+    peds.vehiclePush = (x, z, r) => traffic.pushOut(x, z, r);
+  }
   if (traffic && params.has('debug')) (window as unknown as { __traffic: Traffic }).__traffic = traffic;
   if (params.has('debug')) (window as unknown as { __camera: THREE.Camera }).__camera = camera;   // test scripts aim it at things
   const solid: [number, number, number][] = [...detail.obstacles, ...landmarks.posts,
@@ -234,6 +239,11 @@ async function main() {
     ramu.root.visible = false;
     ramu.enabled = false;
   }
+
+  // E: Ramu takes the nearest vehicle (and throws off whoever is on it), drives it, gets off
+  if (traffic) traffic.resolve = (x, z, r) => world.resolve(x, z, r, 0);
+  const driving = traffic && !fixed ? new Driving(traffic, ramu, peds, () => label(controls.get('use')[0] || controls.get('use')[1])) : null;
+  if (driving && params.has('debug')) (window as unknown as { __driving: Driving }).__driving = driving;
 
   const debugEl = document.getElementById('debug')!;
   const showDebug = params.has('debug');
@@ -307,7 +317,20 @@ void main() {
       if (t) t.crowd.hit(ramu.position.x, ramu.position.z, t.fx, t.fz);
     }
     ramu.knockedOut = health.knockedOut;
-    if (!fixed) { health.update(dt); ramu.enabled = !paused && !health.knockedOut; ramu.update(dt); }
+    if (!fixed) {
+      health.update(dt);
+      ramu.enabled = !paused && !health.knockedOut;
+      if (driving && health.knockedOut) driving.drop();
+      if (driving && !paused) driving.update(dt);
+      ramu.update(dt);
+      if (!driving?.driving && !health.knockedOut) {
+        // he cannot walk through people: the street crowd and the mela's
+        const p = ramu.position;
+        [p.x, p.z] = peds.pushOut(p.x, p.z, 0.33, p.y);
+        if (mela) [p.x, p.z] = mela.crowd.pushOut(p.x, p.z, 0.33, p.y);
+        [p.x, p.z] = world.resolve(p.x, p.z, 0.33, p.y);   // ... nor be pushed by them into a wall
+      }
+    }
     if (!fixed && !paused) stats.update(dt, ramu.position.x, ramu.position.z, ramu.speed, ramu.jumps);
     const focus = fixed ? camera.position : ramu.position;
     sun.target.position.set(focus.x, 0, focus.z);
@@ -315,11 +338,12 @@ void main() {
       camera.getWorldDirection(lookDir);
       const l = Math.hypot(lookDir.x, lookDir.z) || 1;
       const who: [number, number] = fixed ? [Infinity, Infinity] : [focus.x, focus.z];
-      const prey: [number, number] = health.knockedOut ? [Infinity, Infinity] : who;   // goons leave a knocked-out Ramu alone
+      // goons leave a knocked-out Ramu alone, and one driving off
+      const prey: [number, number] = health.knockedOut || driving?.driving ? [Infinity, Infinity] : who;
       peds.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, prey[0], prey[1], ramu.position.y);
       mela?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, prey[0], prey[1], ramu.position.y);
       traffic?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
-      if (traffic && !fixed) {
+      if (traffic && !fixed && !driving?.driving) {
         const bx = ramu.position.x, bz = ramu.position.z;
         // hit by a moving vehicle: hurt (more the faster it goes) and thrown clear
         const h = ramu.stun <= 0 && !health.knockedOut ? traffic.hit(bx, bz, 0.4) : null;

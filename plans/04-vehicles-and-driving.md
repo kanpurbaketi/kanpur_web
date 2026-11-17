@@ -64,10 +64,13 @@ body roll; forgiving on a keyboard).
   the vehicle held still meanwhile). `Traffic.bodyMatrix`: bikes lean into turns, car bodies roll and pitch; the
   traffic's own too. `scripts/poseshot.mjs`.
 
-## Phase 5 — feel
+## Phase 5 — feel (done)
 - `src/game/audio.ts` (WebAudio, synthesised): engine note from RPM and throttle per type (car, diesel bus / truck,
   auto, bike, e-rickshaw whine, cycle chain), tyre squeal, crash thuds, a horn per type.
 - Chase camera: spring lag, wider view with speed, a little look into the turn.
+- Done as: `VehicleAudio` in `src/game/audio.ts`, driven by `Driving` from the sim (revs, throttle, slip, knocks;
+  thuds debounced so a scrape is not a drum roll); the cycle and rickshaw ring a bell. The camera's point leads the
+  vehicle by its speed and follows on a spring; field of view +0..12°, arm a little longer with speed.
 
 ## Phase 6 — damage
 - The vehicle Ramu takes becomes its own mesh (out of the instancing) until it is recycled.

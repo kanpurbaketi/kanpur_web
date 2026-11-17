@@ -65,6 +65,10 @@ export class Ramu {
   /** poses him on a vehicle (IK on his rig) */
   private rider: Rider | null = null;
   private lookIdle = 0;    // seconds since the player last turned the camera
+  /** the chase camera's point on a vehicle (it lags the vehicle a little, and looks ahead as it goes) */
+  private chase = new THREE.Vector3();
+  private chasing = false;
+  private baseFov = 0;
   private skin = { gamma: { value: 1 }, tint: { value: new THREE.Color(1, 1, 1) }, glow: { value: NIGHT ? 0.2 : 0.1 } };
 
   constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement, private controls: Controls) {
@@ -177,8 +181,27 @@ export class Ramu {
         this.yaw += d * Math.min(1, dt * 2.2);
         this.pitch += (-0.22 - this.pitch) * Math.min(1, dt * 1.5);
       }
-      this.updateCamera(r.cx, r.camH, r.cz, r.cam);
+      // the chase camera: its point a little ahead of the vehicle as it goes, following on a spring (it lags when the
+      // vehicle jumps away, catches up as it settles); the view widens with speed
+      const ahead = Math.max(-2, Math.min(4, r.speed * 0.18));
+      const tx = r.cx + Math.sin(r.heading) * ahead, tz = r.cz + Math.cos(r.heading) * ahead;
+      if (!this.chasing) { this.chase.set(tx, r.camH, tz); this.chasing = true; this.baseFov = this.camera.fov; }
+      const k = 1 - Math.exp(-dt * 7);
+      this.chase.x += (tx - this.chase.x) * k;
+      this.chase.z += (tz - this.chase.z) * k;
+      this.chase.y = r.camH;
+      const fov = this.baseFov + Math.min(12, Math.abs(r.speed) * 0.55);
+      if (Math.abs(fov - this.camera.fov) > 0.05) {
+        this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 3);
+        this.camera.updateProjectionMatrix();
+      }
+      this.updateCamera(this.chase.x, this.chase.y, this.chase.z, r.cam + Math.min(1.5, Math.abs(r.speed) * 0.06));
       return;
+    }
+    if (this.chasing) {                      // off the vehicle: the view as it was
+      this.chasing = false;
+      this.camera.fov = this.baseFov;
+      this.camera.updateProjectionMatrix();
     }
     const input = new THREE.Vector2();
     this.stun = Math.max(0, this.stun - dt);

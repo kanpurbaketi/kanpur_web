@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Ramu } from './ramu';
 import { Traffic, Vehicle } from '../world/props';
 import { NIGHT } from '../world/night';
+import { VehicleAudio } from '../game/audio';
 import { Pedestrians } from '../world/pedestrians';
 
 /** how far from a vehicle's body Ramu can be to get on it, m */
@@ -33,6 +34,9 @@ export class Driving {
   private from: [number, number] = [0, 0];
   /** the vehicle's body matrix, for the rider */
   private frame = new THREE.Matrix4();
+  private audio = new VehicleAudio();
+  /** seconds since the last knock was heard (scraping along a wall is not a thud every frame) */
+  private sinceThud = 0;
 
   constructor(scene: THREE.Scene, private traffic: Traffic, private ramu: Ramu, private peds: Pedestrians, private key: () => string) {
     ramu.onUse = () => this.use();
@@ -93,6 +97,15 @@ export class Driving {
       const s = busy ? { x: 0, y: 0 } : this.ramu.stick();
       this.traffic.drive(this.car, dt, -s.y, -s.x, !busy && this.ramu.braking, busy);
       this.place();
+      const b = this.car.sim;
+      if (b) {
+        this.sinceThud += dt;
+        if (b.knock > 2.5 || (b.knock > 0.8 && this.sinceThud > 0.35)) { this.audio.thud(b.knock); this.sinceThud = 0; }
+        this.audio.update({
+          kind: this.traffic.kindOf(this.car), rpm: b.rpm, throttle: Math.max(0, -s.y) * (busy ? 0 : 1), speed: b.vx,
+          slip: b.locked ? Math.min(1, Math.abs(b.vx) / 5) : Math.max(b.slipR, b.slipF * 0.5), horn: this.horn,
+        }, dt);
+      }
       if (this.leaving && this.w <= 0) {
         this.car.dark = !this.lights;         // left as it was: lamps on or off
         const [x, z] = this.traffic.leave(this.car);
@@ -101,6 +114,7 @@ export class Driving {
         this.ramu.stepDown(x, z);
       }
     }
+    if (!this.car) this.audio.update(null, dt);
     this.aimBeams();
     document.body.classList.toggle('driving', !!this.car);
     this.showTip();

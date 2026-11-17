@@ -104,6 +104,7 @@ export class Driving {
         this.audio.update({
           kind: this.traffic.kindOf(this.car), rpm: b.rpm, throttle: Math.max(0, -s.y) * (busy ? 0 : 1), speed: b.vx,
           slip: b.locked ? Math.min(1, Math.abs(b.vx) / 5) : Math.max(b.slipR, b.slipF * 0.5), horn: this.horn,
+          dead: this.car.damage >= 100,
         }, dt);
       }
       if (this.leaving && this.w <= 0) {
@@ -150,7 +151,10 @@ export class Driving {
   /** "E — get on" near a vehicle, "E — get off" on one */
   private showTip(): void {
     let text = '';
-    if (this.car) text = Math.abs(this.car.v) < 0.5 && this.w >= 1 && !this.leaving ? `${this.key()} — get off` : '';
+    if (this.car) {
+      const dead = this.car.damage >= 100 ? ' (engine dead)' : '';
+      text = Math.abs(this.car.v) < 0.5 && this.w >= 1 && !this.leaving ? `${this.key()} — get off${dead}` : '';
+    }
     else {
       const p = this.ramu.position;
       const c = !this.ramu.knockedOut && p.y < 0.6 ? this.traffic.nearest(p.x, p.z, REACH) : null;

@@ -19,6 +19,8 @@ export interface EngineState {
   /** 0..1, how much the tyres slide */
   slip: number;
   horn: boolean;
+  /** the engine is dead (wrecked): no engine note */
+  dead?: boolean;
 }
 
 type Preset = { lo: number; hi: number; wave: OscillatorType; sub: number; cut: number; vol: number; noise: number };
@@ -103,7 +105,7 @@ export class VehicleAudio {
     if (!c || !this.master) return;
     if (c.state === 'suspended') void c.resume();
     const now = c.currentTime;
-    const preset = st ? ENGINE[st.kind] ?? null : null;
+    const preset = st && !st.dead ? ENGINE[st.kind] ?? null : null;
     // the engine: built for the kind, faded out when off it
     if (this.eng && this.eng.preset !== preset) {
       const old = this.eng;

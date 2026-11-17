@@ -7,6 +7,7 @@ import { loadPBR, loadWheels, PBRPart, Wheel } from './vehicleModels';
 import { FigureKind, Pose, riderParts } from './figures';
 import { inMela } from './melaSite';
 import { Body, newBody, SPECS, step } from './vehicleSim';
+import { Smoke } from './smoke';
 
 /*
  Street props modelled in Blender (tools/blender/build_models.py -> public/models/*.glb):
@@ -80,6 +81,13 @@ export interface Vehicle {
   next: Link | null; blinkT: number;
   /** body lean (radians, > 0: to the left; a bike into its turn, a car's body out of it) and pitch (> 0: nose up) */
   roll: number; pitch: number;
+  /**
+   * Damage, 0..100, from the knocks it took while Ramu had it: smoke past 40, black smoke and less power past 75, dead
+   * at 100. `broken`: its headlamps knocked out (a bit per lamp of LAMPS). `own`: its body as a mesh of its own (out of
+   * the instancing) so it can be dented, from when Ramu takes it until it goes back to the traffic. `hitT`: when it
+   * was last knocked (a scrape is one knock, not one a frame).
+   */
+  damage: number; broken: number; own: THREE.Group | null; hitT: number;
 }
 
 export const BRAKE = 1, REVERSE = 2, LEFT = 4, RIGHT = 8;
@@ -159,6 +167,12 @@ const REAR: Record<string, { x: number; y: number; w: number; h: number } | null
   pulsar: { x: 0, y: 0.82, w: 0.12, h: 0.06 }, cycle: null, rickshaw: null,
 };
 const BLINK_HZ = 1.5;
+/** where a damaged engine smokes from: x, z as a share of the half length (+ front), height */
+const ENGINE_AT: Record<string, [number, number, number] | null> = {
+  swift: [0, 0.75, 0.95], maruti: [0, 0.7, 0.85], maruti_red: [0, 0.7, 0.85], maruti_green: [0, 0.7, 0.85],
+  ambassador: [0, 0.75, 1.0], bolero: [0, 0.75, 1.15], truck: [0, 0.8, 1.5], bus: [0, -0.85, 1.2], bus_green: [0, -0.85, 1.2],
+  autorickshaw: [0, -0.6, 0.6], tirri: [0, -0.5, 0.7], pulsar: [0.12, 0.1, 0.5], cycle: null, rickshaw: null,
+};
 const C_TAIL = new THREE.Color(0.55, 0.02, 0.01), C_BRAKE = new THREE.Color(4, 0.12, 0.05);
 const C_REV = new THREE.Color(2.4, 2.4, 2.2), C_IND = new THREE.Color(3.2, 1.3, 0.05);
 
@@ -180,6 +194,8 @@ export class Traffic {
   /** the small lamps: tail, brake, reversing and indicators (glowing quads, only the lit ones drawn) */
   private lamps: THREE.InstancedMesh;
   private clock = 0;
+  /** smoke from damaged engines */
+  private smoke = new Smoke();
   /** every road's segments in 24 m cells: [x0, z0, x1, z1, half width] (onRoad) */
   private roadCells = new Map<string, [number, number, number, number, number][]>();
 
@@ -301,10 +317,11 @@ export class Traffic {
         this.cars.push({
           kind: ki, slot: i, vmax: k.speed * (0.85 + Math.random() * 0.3), v: 0,
           a: 0, b: 0, link: { to: 0, off: 0, bus: false }, t: 0, len: 1, x: 0, z: 0, heading: 0, fresh: true, near: false,
-          player: false, parked: false, empty: false, dist: 0, steer: 0, sim: null, lamps: 0, dark: false, next: null, blinkT: 0, roll: 0, pitch: 0,
+          player: false, parked: false, empty: false, dist: 0, steer: 0, sim: null, lamps: 0, dark: false, next: null, blinkT: 0, roll: 0, pitch: 0, damage: 0, broken: 0, own: null, hitT: 0,
         });
       }
     });
+    this.group.add(this.smoke.points);
     const lampN = kinds.reduce((a, k) => a + k.count * 10, 0);
     this.lamps = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ toneMapped: false }), lampN);
     this.lamps.setColorAt(0, C_TAIL);
@@ -458,9 +475,88 @@ export class Traffic {
     return d > 0.4 ? LEFT : d < -0.4 ? RIGHT : 0;
   }
 
-  /** where the headlamps are on a vehicle (its frame) */
+  /** where the headlamps that still work are on a vehicle (its frame) */
   headlamps(c: Vehicle): [number, number, number][] {
-    return LAMPS[this.kinds[c.kind].name].at;
+    return LAMPS[this.kinds[c.kind].name].at.filter((_, i) => !((c.broken >> i) & 1));
+  }
+
+  /** The vehicle Ramu takes gets a body of its own (copies of the near model's parts, in its colours), to dent. */
+  private takeOwn(c: Vehicle): void {
+    if (c.own) return;
+    const m = this.meshes[c.kind], g = new THREE.Group();
+    g.matrixAutoUpdate = false;
+    m.near.parts.forEach((p, pi) => {
+      let mat = p.material as THREE.Material;
+      const col = m.colours[pi];
+      if (col) {
+        const cl = (mat as THREE.MeshStandardMaterial).clone();
+        cl.color.multiply(col[c.slot]);
+        mat = cl;
+      }
+      const geo = p.geometry.clone();
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = p.castShadow;
+      mesh.receiveShadow = true;
+      mesh.userData.orig = (geo.getAttribute('position').array as Float32Array).slice();
+      mesh.userData.ownMat = mat !== p.material;
+      g.add(mesh);
+    });
+    this.group.add(g);
+    c.own = g;
+  }
+
+  /** back to the instancing (recycled into the traffic): repaired */
+  private release(c: Vehicle): void {
+    c.damage = 0;
+    c.broken = 0;
+    if (!c.own) return;
+    for (const o of c.own.children) {
+      const mesh = o as THREE.Mesh;
+      mesh.geometry.dispose();
+      if (mesh.userData.ownMat) (mesh.material as THREE.Material).dispose();
+    }
+    this.group.remove(c.own);
+    c.own = null;
+  }
+
+  /**
+   * A knock (`hard` ~ m/s of speed lost) at a world point, pushed along (nx, nz) (away from what it hit, into the body):
+   * damage, a dent there, and a headlamp broken by a hard one at the front.
+   */
+  private knocked(c: Vehicle, hard: number, wx: number, wz: number, nx: number, nz: number): void {
+    const k = this.kinds[c.kind];
+    c.damage = Math.min(100, c.damage + hard * 2.2);
+    const inv = M2.copy(this.bodyMatrix(c, M2)).invert();
+    const p = V3.set(wx, 0.6, wz).applyMatrix4(inv);
+    const n = new THREE.Vector3(nx, 0, nz).transformDirection(inv);
+    if (p.z > k.halfL * 0.5 && hard > 3) {
+      const at = LAMPS[k.name].at;
+      let best = -1, bd = Infinity;
+      at.forEach((a, i) => { const d = Math.abs(a[0] - p.x); if (d < bd) { bd = d; best = i; } });
+      if (best >= 0 && bd < 0.6) c.broken |= 1 << best;
+    }
+    if (!c.own) return;
+    // the dent: vertices near the point pushed in, the most at the middle, never more than a hand's depth in all
+    const R = Math.min(0.85, 0.3 + hard * 0.035), depth = Math.min(0.14, 0.012 * hard + 0.01);
+    for (const o of c.own.children) {
+      const mesh = o as THREE.Mesh;
+      const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute, a = pos.array as Float32Array;
+      const orig = mesh.userData.orig as Float32Array;
+      let moved = false;
+      for (let i = 0; i < a.length; i += 3) {
+        const dx = a[i] - p.x, dy = (a[i + 1] - p.y) * 0.7, dz = a[i + 2] - p.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 >= R * R) continue;
+        const f = (1 - Math.sqrt(d2) / R) ** 2 * depth;
+        let x = a[i] + n.x * f, z = a[i + 2] + n.z * f, y = a[i + 1] - f * 0.25;
+        // at most 0.22 m from where it was made
+        const ox = x - orig[i], oy = y - orig[i + 1], oz = z - orig[i + 2], ol = Math.hypot(ox, oy, oz);
+        if (ol > 0.22) { const s = 0.22 / ol; x = orig[i] + ox * s; y = orig[i + 1] + oy * s; z = orig[i + 2] + oz * s; }
+        a[i] = x; a[i + 1] = y; a[i + 2] = z;
+        moved = true;
+      }
+      if (moved) pos.needsUpdate = true;
+    }
   }
 
   private target(c: Vehicle): [number, number, number] {
@@ -484,6 +580,7 @@ export class Traffic {
         c.dark = false;
         c.next = null;
         c.roll = c.pitch = 0;
+        this.release(c);                      // repaired: back to the instancing
         this.place(c, fx, fz, SPAWN_MIN, SPAWN_MAX, dirX, dirZ);
       }
       if (c.fresh) continue;
@@ -566,6 +663,18 @@ export class Traffic {
       c.steer += (lock - c.steer) * Math.min(1, dt * 6);
       this.lean(c, c.v * (turn / Math.max(dt, 1e-3)), (c.v - v0) / Math.max(dt, 1e-3), dt);
     }
+    // smoke from damaged engines (Ramu's, and ones he left)
+    for (const c of this.cars) {
+      if (c.fresh || c.damage <= 40) continue;
+      const rate = 6 + (c.damage - 40) * 0.45;
+      if (Math.random() > rate * dt) continue;
+      const k = this.kinds[c.kind], e = ENGINE_AT[k.name];
+      if (!e) continue;
+      const [x, z] = this.toWorld(c, e[0], e[1] * k.halfL);
+      const fxv = Math.sin(c.heading), fzv = Math.cos(c.heading);
+      this.smoke.emit(x, e[2], z, c.damage > 75 ? 0.05 : 0.7, -fxv * c.v, -fzv * c.v);
+    }
+    this.smoke.update(dt);
     this.separate();
     this.write(fx, fz);
   }
@@ -617,6 +726,7 @@ export class Traffic {
     c.player = true;
     c.parked = false;
     c.empty = true;
+    this.takeOwn(c);
     const fx = Math.sin(c.heading), fz = Math.cos(c.heading), lx = fz, lz = -fx;
     return out.map((o) => {
       const side = o.x > 0.05 ? 1 : -1;         // out of their own side (a rider in the middle: to the right, the kerb is left)
@@ -670,7 +780,7 @@ export class Traffic {
       for (const [x, z] of this.circles(o)) { circles.push([x, z, ok.halfW, m]); near.push(o); }
     }
     step(b, spec, { wb: this.wheelbase(c.kind), halfL: k.halfL, halfW: k.halfW },
-      { throttle, steer, handbrake, hold: hold || c.parked }, {
+      { throttle, steer, handbrake, hold: hold || c.parked, power: c.damage >= 100 ? 0 : c.damage > 75 ? 0.6 : 1 }, {
         grip: (x, z) => (this.onRoad(x, z) ? 1 : 0.6),
         resolve: (x, z, r) => (this.resolve ? this.resolve(x, z, r) : [x, z]),
         others: () => circles,
@@ -686,6 +796,10 @@ export class Traffic {
     c.x = b.x; c.z = b.z; c.heading = b.heading;
     c.v = b.vx;
     this.lean(c, b.vx * b.yaw, b.ax, dt);
+    if (b.knock > 3 || (b.knock > 0.9 && this.clock - c.hitT > 0.35)) {
+      c.hitT = this.clock;
+      this.knocked(c, b.knock, b.knockX, b.knockZ, b.knockNX, b.knockNZ);
+    }
     // lamps: braking (back against the way it rolls, or the hand brake), reversing, and indicating when steering slowly
     // (pulling out, turning a corner)
     if (c.parked) c.lamps = 0;
@@ -798,8 +912,12 @@ export class Traffic {
       if (bike) M0.copy(M);
       else M0.makeRotationY(c.heading).setPosition(c.x, 0.05, c.z);
       const i = dr.n++;
+      if (c.own) {                            // its own (dented) body is drawn instead; the wheels stay instanced
+        c.own.matrix.copy(M);
+        c.own.matrixWorldNeedsUpdate = true;
+      }
       dr.parts.forEach((p, pi) => {
-        p.setMatrixAt(i, M);
+        p.setMatrixAt(i, c.own ? ZERO : M);
         const col = m.colours[pi];
         if (col) p.setColorAt(i, col[c.slot]);
       });
@@ -847,7 +965,8 @@ export class Traffic {
       for (const c of this.cars) {
         const L = LAMPS[this.kinds[c.kind].name];
         for (const [lx, ly, lz] of L.at) {
-          if (c.fresh || c.dark) { this.lenses.setMatrixAt(n, ZERO); this.pools.setMatrixAt(n, ZERO); n++; continue; }
+          const li = L.at.findIndex((a) => a[0] === lx && a[2] === lz);
+          if (c.fresh || c.dark || (c.broken >> li) & 1) { this.lenses.setMatrixAt(n, ZERO); this.pools.setMatrixAt(n, ZERO); n++; continue; }
           const R = M.makeRotationY(c.heading);
           const s = Math.sin(c.heading), co = Math.cos(c.heading);
           const px = c.x + lx * co + lz * s, pz = c.z - lx * s + lz * co;

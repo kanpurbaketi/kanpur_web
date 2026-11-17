@@ -72,10 +72,17 @@ body roll; forgiving on a keyboard).
   thuds debounced so a scrape is not a drum roll); the cycle and rickshaw ring a bell. The camera's point leads the
   vehicle by its speed and follows on a spring; field of view +0..12°, arm a little longer with speed.
 
-## Phase 6 — damage
+## Phase 6 — damage (done)
 - The vehicle Ramu takes becomes its own mesh (out of the instancing) until it is recycled.
 - Hits dent it (vertices pushed in around the impact); damage builds up: smoke past 40, black smoke and less power past
   75, a headlight broken by a front hit, the engine dead at 100. Repaired when recycled.
+- Done as: `Traffic.takeOwn` (copies of the near parts in the vehicle's colours; its instanced body slot drawn at
+  scale 0, the wheels stay instanced), `Traffic.knocked` (damage += 2.2 × the knock in m/s; vertices within 0.3-0.85 m
+  pushed in along the hit, ≤ 0.22 m from their original place; a hard front hit breaks the nearer headlamp: lens, pool
+  and beam), `src/world/smoke.ts` (one Points draw), power × 0.6 past 75 and none at 100 ("engine dead", no engine
+  note). `scripts/crashshot.mjs`.
+- Frame rate at the spawn (playshot, day): 35 fps with traffic, 36-37 without (was 37-39 / 39 before this plan; the
+  no-traffic run fell as much, so most of it is the machine, but the wheels and lamps add ~1.5 draw calls per kind).
 
 ## Checks
 - `npx tsc --noEmit`; Blender previews of every vehicle (wheels in their arches, centred hubs, Ramu's hands and feet

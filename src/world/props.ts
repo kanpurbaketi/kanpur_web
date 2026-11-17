@@ -71,7 +71,16 @@ export interface Vehicle {
   dist: number; steer: number;
   /** the physics of one Ramu drives or left parked (vehicleSim.ts); null for the traffic's own */
   sim: Body | null;
+  /** lamps lit: BRAKE | REVERSE | LEFT / RIGHT (indicating) */
+  lamps: number;
+  /** its headlamps off (Ramu switched them off: L) */
+  dark: boolean;
+  /** the traffic's own: the link it takes at the end of this one (chosen ahead, so it can indicate), and how long it
+   * goes on indicating after the turn */
+  next: Link | null; blinkT: number;
 }
+
+export const BRAKE = 1, REVERSE = 2, LEFT = 4, RIGHT = 8;
 
 /**
  * Ramu on a vehicle: how he sits (pose, and the seat in the vehicle's frame: x to its left, y up, z forward; the cars are
@@ -134,6 +143,23 @@ const LAMPS: Record<string, { at: [number, number, number][]; pool: [number, num
 };
 for (const n of ['maruti', 'maruti_red', 'maruti_green']) LAMPS[n] = { at: [[-0.48, 0.52, 1.52], [0.48, 0.52, 1.52]], pool: [3.0, 11] };
 
+/**
+ * Rear lamps in model space (measured on rear renders): the tail / brake lamp's centre (x: one each side at ±x, 0 a
+ * single one in the middle; y), and its size (w × h); they sit on the back of the body (z = -halfL). The indicators
+ * go just outside them (a single tail lamp: either side of it), the reversing lamps just inside them.
+ */
+const REAR: Record<string, { x: number; y: number; w: number; h: number } | null> = {
+  bus: { x: 1.05, y: 0.8, w: 0.22, h: 0.2 }, bus_green: { x: 1.05, y: 0.8, w: 0.22, h: 0.2 },
+  autorickshaw: { x: 0.39, y: 0.68, w: 0.09, h: 0.08 }, tirri: { x: 0.39, y: 0.6, w: 0.1, h: 0.08 },
+  maruti: { x: 0.56, y: 0.6, w: 0.14, h: 0.12 }, maruti_red: { x: 0.56, y: 0.6, w: 0.14, h: 0.12 }, maruti_green: { x: 0.56, y: 0.6, w: 0.14, h: 0.12 },
+  swift: { x: 0.66, y: 0.85, w: 0.2, h: 0.13 }, ambassador: { x: 0.71, y: 0.89, w: 0.12, h: 0.12 },
+  bolero: { x: 0.73, y: 0.92, w: 0.13, h: 0.12 }, truck: { x: 0.97, y: 0.84, w: 0.2, h: 0.14 },
+  pulsar: { x: 0, y: 0.82, w: 0.12, h: 0.06 }, cycle: null, rickshaw: null,
+};
+const BLINK_HZ = 1.5;
+const C_TAIL = new THREE.Color(0.55, 0.02, 0.01), C_BRAKE = new THREE.Color(4, 0.12, 0.05);
+const C_REV = new THREE.Color(2.4, 2.4, 2.2), C_IND = new THREE.Color(3.2, 1.3, 0.05);
+
 export class Traffic {
   readonly group = new THREE.Group();
   private nodes: Node[] = [];
@@ -149,6 +175,9 @@ export class Traffic {
   /** the walls and posts of the world, for a vehicle Ramu drives: the corrected [x, z] for a circle of radius r */
   resolve: ((x: number, z: number, r: number) => [number, number]) | null = null;
   private pools: THREE.InstancedMesh | null = null;
+  /** the small lamps: tail, brake, reversing and indicators (glowing quads, only the lit ones drawn) */
+  private lamps: THREE.InstancedMesh;
+  private clock = 0;
   /** every road's segments in 24 m cells: [x0, z0, x1, z1, half width] (onRoad) */
   private roadCells = new Map<string, [number, number, number, number, number][]>();
 
@@ -270,10 +299,17 @@ export class Traffic {
         this.cars.push({
           kind: ki, slot: i, vmax: k.speed * (0.85 + Math.random() * 0.3), v: 0,
           a: 0, b: 0, link: { to: 0, off: 0, bus: false }, t: 0, len: 1, x: 0, z: 0, heading: 0, fresh: true, near: false,
-          player: false, parked: false, empty: false, dist: 0, steer: 0, sim: null,
+          player: false, parked: false, empty: false, dist: 0, steer: 0, sim: null, lamps: 0, dark: false, next: null, blinkT: 0,
         });
       }
     });
+    const lampN = kinds.reduce((a, k) => a + k.count * 10, 0);
+    this.lamps = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ toneMapped: false }), lampN);
+    this.lamps.setColorAt(0, C_TAIL);
+    this.lamps.frustumCulled = false;
+    this.lamps.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.lamps.userData.noAO = true;
+    this.group.add(this.lamps);
     if (NIGHT) {
       const n = kinds.reduce((a, k) => a + k.count * LAMPS[k.name].at.length, 0);
       this.lenses = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 8, 6), new THREE.MeshBasicMaterial({ color: '#fff3d6', toneMapped: false }), n);
@@ -370,6 +406,8 @@ export class Traffic {
     c.a = cands[Math.floor(Math.random() * cands.length)];
     const links = this.nodes[c.a].links.filter((l) => this.usable(c, l));
     this.setLink(c, links[Math.floor(Math.random() * links.length)]);
+    c.next = null;
+    c.lamps = 0;
     c.t = Math.random() * c.len * 0.5;
     const [x, z, h] = this.target(c);
     // never on top of another one: try again next frame
@@ -388,6 +426,19 @@ export class Traffic {
     c.t = 0;
   }
 
+  /** going a -> b -> n: LEFT, RIGHT, or 0 (on ahead) */
+  private turnOf(a: number, b: number, n: number): number {
+    const A = this.nodes[a], B = this.nodes[b], N = this.nodes[n];
+    const h1 = Math.atan2(B.x - A.x, B.z - A.z), h2 = Math.atan2(N.x - B.x, N.z - B.z);
+    const d = Math.atan2(Math.sin(h2 - h1), Math.cos(h2 - h1));
+    return d > 0.4 ? LEFT : d < -0.4 ? RIGHT : 0;
+  }
+
+  /** where the headlamps are on a vehicle (its frame) */
+  headlamps(c: Vehicle): [number, number, number][] {
+    return LAMPS[this.kinds[c.kind].name].at;
+  }
+
   private target(c: Vehicle): [number, number, number] {
     const A = this.nodes[c.a], B = this.nodes[c.b];
     const dx = (B.x - A.x) / c.len, dz = (B.z - A.z) / c.len;
@@ -398,6 +449,7 @@ export class Traffic {
 
   /** (fx, fz): player / camera; (dirX, dirZ): camera look direction; (px, pz): the player to stop for. */
   update(dt: number, fx: number, fz: number, dirX: number, dirZ: number, px = Infinity, pz = Infinity): void {
+    this.clock += dt;
     for (const c of this.cars) {
       if (c.player) continue;                 // Ramu drives it (drive())
       if (c.fresh) this.place(c, fx, fz, 25, SPAWN_MAX, 0, 0);
@@ -405,6 +457,8 @@ export class Traffic {
         c.fresh = true;
         c.parked = c.empty = false;           // back in the traffic, with its people
         c.sim = null;
+        c.dark = false;
+        c.next = null;
         this.place(c, fx, fz, SPAWN_MIN, SPAWN_MAX, dirX, dirZ);
       }
       if (c.fresh) continue;
@@ -448,20 +502,32 @@ export class Traffic {
           break;
         }
       }
+      const slowing = want < c.v - 0.3 || c.v < 0.3;
       c.v += Math.max(-9 * dt, Math.min(2.5 * dt, want - c.v));
       c.t += c.v * dt;
+      // the way on is chosen ~30 m before the junction: indicating from there if it is a turn
+      if (!c.next && c.t > c.len - 30) {
+        const all = this.nodes[c.b].links.filter((l) => this.usable(c, l));
+        const opts = all.filter((l) => l.to !== c.a);
+        c.next = opts.length ? opts[Math.floor(Math.random() * opts.length)] : all[0] ?? null;
+        if (!c.next) c.next = { to: -1, off: 0, bus: false };
+      }
+      c.blinkT -= dt;
+      let side = 0;
+      if (c.next && c.next.to >= 0) side = this.turnOf(c.a, c.b, c.next.to);
+      else if (c.blinkT > 0) side = c.lamps & (LEFT | RIGHT);
       if (c.t >= c.len) {
-        const here = c.b, from = c.a;
-        const all = this.nodes[here].links.filter((l) => this.usable(c, l));
-        const opts = all.filter((l) => l.to !== from);
-        c.a = here;
-        if (opts.length) this.setLink(c, opts[Math.floor(Math.random() * opts.length)]);
-        else if (all.length) this.setLink(c, all[0]); // dead end: turn round
-        else {
+        const here = c.b, l = c.next;
+        c.next = null;
+        if (!l || l.to < 0) {
           c.fresh = true; // one-way street with no way on: leave the map here
           continue;
         }
+        if (side) c.blinkT = 1.2;      // on through the turn
+        c.a = here;
+        this.setLink(c, l);
       }
+      c.lamps = (slowing ? BRAKE : 0) | side;
       const [tx, tz, th] = this.target(c);
       const s = Math.min(1, dt * 3.5);
       c.x += (tx - c.x) * s;
@@ -587,6 +653,14 @@ export class Traffic {
       }, dt);
     c.x = b.x; c.z = b.z; c.heading = b.heading;
     c.v = b.vx;
+    // lamps: braking (back against the way it rolls, or the hand brake), reversing, and indicating when steering slowly
+    // (pulling out, turning a corner)
+    if (c.parked) c.lamps = 0;
+    else {
+      const braking = (throttle < 0 && b.vx > 0.4) || (throttle > 0 && b.vx < -0.4) || handbrake;
+      const ind = Math.abs(b.vx) < 6 && Math.abs(steer) > 0.3 ? (steer > 0 ? LEFT : RIGHT) : 0;
+      c.lamps = (braking ? BRAKE : 0) | (b.gear < 0 ? REVERSE : 0) | ind;
+    }
     c.steer = b.steer;
     c.dist += b.vx * dt;
   }
@@ -730,12 +804,13 @@ export class Traffic {
         });
       }
     }
+    this.writeLamps();
     if (this.lenses && this.pools) {
       let n = 0;
       for (const c of this.cars) {
         const L = LAMPS[this.kinds[c.kind].name];
         for (const [lx, ly, lz] of L.at) {
-          if (c.fresh) { this.lenses.setMatrixAt(n, ZERO); this.pools.setMatrixAt(n, ZERO); n++; continue; }
+          if (c.fresh || c.dark) { this.lenses.setMatrixAt(n, ZERO); this.pools.setMatrixAt(n, ZERO); n++; continue; }
           const R = M.makeRotationY(c.heading);
           const s = Math.sin(c.heading), co = Math.cos(c.heading);
           const px = c.x + lx * co + lz * s, pz = c.z - lx * s + lz * co;
@@ -743,13 +818,62 @@ export class Traffic {
           // the pool starts at the lamp and runs ahead along the road
           const w = L.pool[0], len = L.pool[1];
           const cx = px + s * len * 0.5, cz = pz + co * len * 0.5;
-          this.pools.setMatrixAt(n, M2.copy(R).setPosition(cx, 0.1, cz).scale(V3.set(w, 1, len)));
+          // (Ramu's has real beams instead: Driving)
+          this.pools.setMatrixAt(n, c.player ? ZERO : M2.copy(R).setPosition(cx, 0.1, cz).scale(V3.set(w, 1, len)));
           n++;
         }
       }
       this.lenses.instanceMatrix.needsUpdate = true;
       this.pools.instanceMatrix.needsUpdate = true;
     }
+  }
+
+  /** the lit small lamps of every vehicle in sight, packed into one InstancedMesh */
+  private writeLamps(): void {
+    const blink = (this.clock * BLINK_HZ) % 1 < 0.55;
+    let n = 0;
+    const quad = (c: Vehicle, x: number, y: number, z: number, w: number, h: number, back: boolean, col: THREE.Color) => {
+      if (n >= this.lamps.count) return;
+      M.makeRotationY(c.heading).setPosition(c.x, 0.05, c.z);
+      M.multiply(WT.makeTranslation(x, y, z));
+      if (back) M.multiply(WT.makeRotationY(Math.PI));
+      M.multiply(WT.makeScale(w, h, 1));
+      this.lamps.setMatrixAt(n, M);
+      this.lamps.setColorAt(n, col);
+      n++;
+    };
+    for (const c of this.cars) {
+      if (c.fresh) continue;
+      const k = this.kinds[c.kind], r = REAR[k.name];
+      const brake = (c.lamps & BRAKE) !== 0, ind = blink ? c.lamps & (LEFT | RIGHT) : 0;
+      if (r) {
+        const z = -k.halfL - 0.015, sides = r.x ? [1, -1] : [0];
+        for (const sd of sides) {
+          const x = sd * r.x;
+          if (brake || NIGHT) quad(c, x, r.y, z, r.w, r.h, true, brake ? C_BRAKE : C_TAIL);
+          if (c.lamps & REVERSE) quad(c, x - sd * (r.w * 0.5 + 0.04), r.y, z, 0.06, r.h * 0.8, true, C_REV);
+          const want = sd > 0 ? LEFT : sd < 0 ? RIGHT : 0;
+          if (sd && ind & want) quad(c, x + sd * (r.w * 0.5 + 0.06), r.y, z, 0.09, Math.max(0.07, r.h * 0.8), true, C_IND);
+        }
+        if (!r.x && ind) {                 // a bike: indicators either side of the tail lamp
+          for (const sd of [1, -1]) if (ind & (sd > 0 ? LEFT : RIGHT)) quad(c, sd * 0.15, r.y, z, 0.07, 0.05, true, C_IND);
+        }
+      }
+      // front indicators, beside the headlamps
+      if (ind && c.near) {
+        for (const [lx, ly, lz] of LAMPS[k.name].at) {
+          const sd = lx > 0.01 ? 1 : lx < -0.01 ? -1 : 0;
+          for (const s2 of sd ? [sd] : [1, -1]) {
+            if (!(ind & (s2 > 0 ? LEFT : RIGHT))) continue;
+            quad(c, lx + s2 * 0.17, ly, lz + 0.02, 0.08, 0.06, false, C_IND);
+          }
+        }
+      }
+    }
+    this.lamps.count = n;
+    this.lamps.visible = n > 0;
+    this.lamps.instanceMatrix.needsUpdate = true;
+    if (this.lamps.instanceColor) this.lamps.instanceColor.needsUpdate = true;
   }
 }
 

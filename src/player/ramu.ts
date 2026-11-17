@@ -56,6 +56,8 @@ export class Ramu {
   ride: Ride | null = null;
   /** the get on / off key (or button) was pressed */
   onUse: (() => void) | null = null;
+  /** the vehicle keys: headlights (pressed), horn (down and up) */
+  onKey: ((a: 'lights' | 'horn', down: boolean) => void) | null = null;
   private body: THREE.Object3D | null = null;
   private seated = new Map<string, THREE.Mesh>();
   private lookIdle = 0;    // seconds since the player last turned the camera
@@ -254,6 +256,8 @@ export class Ramu {
     if (this.controls.matches('jump', code)) this.jumpQueued = true;
     if (this.controls.matches('punch', code)) this.punchQueued = true;
     if (this.controls.matches('use', code) && this.enabled) this.onUse?.();
+    if (this.controls.matches('lights', code) && this.enabled) this.onKey?.('lights', true);
+    if (this.controls.matches('horn', code) && this.enabled) this.onKey?.('horn', true);
   }
 
   private bindInput(dom: HTMLElement): void {
@@ -261,7 +265,10 @@ export class Ramu {
       this.keys.add(e.code);
       if (!e.repeat) this.press(e.code);
     });
-    addEventListener('keyup', (e) => this.keys.delete(e.code));
+    addEventListener('keyup', (e) => {
+      this.keys.delete(e.code);
+      if (this.controls.matches('horn', e.code)) this.onKey?.('horn', false);
+    });
     addEventListener('blur', () => this.keys.clear());
     dom.addEventListener('click', () => {
       if (matchMedia('(pointer: fine)').matches) dom.requestPointerLock?.();
@@ -349,6 +356,19 @@ export class Ramu {
     });
     document.getElementById('btn-use')?.addEventListener('touchstart', (e) => {
       if (this.enabled) this.onUse?.();
+      e.preventDefault();
+    });
+    document.getElementById('btn-lights')?.addEventListener('touchstart', (e) => {
+      if (this.enabled) this.onKey?.('lights', true);
+      e.preventDefault();
+    });
+    const horn = document.getElementById('btn-horn');
+    horn?.addEventListener('touchstart', (e) => {
+      if (this.enabled) this.onKey?.('horn', true);
+      e.preventDefault();
+    });
+    horn?.addEventListener('touchend', (e) => {
+      this.onKey?.('horn', false);
       e.preventDefault();
     });
     document.getElementById('btn-jump')!.addEventListener('touchstart', (e) => {

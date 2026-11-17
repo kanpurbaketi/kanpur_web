@@ -38,11 +38,15 @@ body roll; forgiving on a keyboard).
   μg/v; 1.8× in a hand-brake slide) so it is drivable on keys. A bike's Space is its brakes. `scripts/simcheck.mjs`
   prints the sim's state through a drill (throttle, turn, hand brake, brakes).
 
-## Phase 3 — lights
+## Phase 3 — lights (done)
 - Brake, tail, reverse and indicator lamps per kind (the `LAMPS` table), drawn as small glowing instanced quads with
   a state per vehicle: braking, reversing, indicating before a turn (AI) or when the player steers slowly; tail lamps
   glow dimly at night.
 - At night the player's vehicle carries two real spot lights (L: on / off, high beam). H: horn.
+- Done as: `REAR` table in props.ts (measured on rear renders), one InstancedMesh of lit quads (`writeLamps`); the
+  traffic picks its way on 30 m before a junction (`next`) and indicates through the turn; the spot lights are always
+  in the scene (no shader recompiles) and dark when unused; the player's car loses its fake light pool. H is bound
+  (`Driving.horn`) and sounds in phase 5. `scripts/lampshot.mjs`, `scripts/blinkshot.mjs`.
 
 ## Phase 4 — Ramu riding naturally
 - `tools/blender/build_ramu_rig.py` bakes clips per vehicle with IK: seat, hands on the grips or the wheel, feet on

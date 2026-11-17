@@ -36,6 +36,9 @@
     #btn-run { right: 100px; bottom: 40px; }
     #btn-punch { right: 24px; bottom: 116px; }
     #btn-use { right: 100px; bottom: 116px; font-size: 11px; }
+    #btn-horn { right: 176px; bottom: 40px; }
+    #btn-lights { right: 176px; bottom: 116px; font-size: 11px; }
+    body:not(.driving) .tbtn.car { display: none !important; }
     #use-tip { position: fixed; left: 50%; bottom: 22%; transform: translateX(-50%); z-index: 6; display: none;
       padding: 6px 12px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; font: 600 14px system-ui, sans-serif;
       pointer-events: none; }
@@ -128,6 +131,8 @@
   <button class="tbtn" id="btn-jump">JUMP</button>
   <button class="tbtn" id="btn-punch">PUNCH</button>
   <button class="tbtn" id="btn-use">GET IN</button>
+  <button class="tbtn car" id="btn-horn">HORN</button>
+  <button class="tbtn car" id="btn-lights">LIGHTS</button>
   <div id="use-tip"></div>
   <div id="credits"></div>
   <script type="module" src="/src/main.ts"></script>

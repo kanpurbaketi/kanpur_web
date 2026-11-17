@@ -4,7 +4,7 @@
  Saved in localStorage, so they apply to this browser only; the menu's Controls panel edits them live.
 */
 
-export type Action = 'forward' | 'back' | 'left' | 'right' | 'run' | 'jump' | 'crouch' | 'punch' | 'use' | 'map';
+export type Action = 'forward' | 'back' | 'left' | 'right' | 'run' | 'jump' | 'crouch' | 'punch' | 'use' | 'lights' | 'horn' | 'map';
 
 export const ACTIONS: { id: Action; label: string }[] = [
   { id: 'forward', label: 'Move forward' },
@@ -16,6 +16,8 @@ export const ACTIONS: { id: Action; label: string }[] = [
   { id: 'crouch', label: 'Crouch (hold)' },
   { id: 'punch', label: 'Punch' },
   { id: 'use', label: 'Get on / off a vehicle' },
+  { id: 'lights', label: 'Headlights on / off' },
+  { id: 'horn', label: 'Horn (hold)' },
   { id: 'map', label: 'Open map' },
 ];
 
@@ -29,6 +31,8 @@ export const DEFAULTS: Record<Action, [string, string]> = {
   crouch: ['KeyC', 'ControlLeft'],
   punch: ['KeyF', 'Mouse0'],
   use: ['KeyE', ''],
+  lights: ['KeyL', ''],
+  horn: ['KeyH', ''],
   map: ['KeyM', ''],
 };
 

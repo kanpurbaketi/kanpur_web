@@ -242,7 +242,7 @@ async function main() {
 
   // E: Ramu takes the nearest vehicle (and throws off whoever is on it), drives it, gets off
   if (traffic) traffic.resolve = (x, z, r) => world.resolve(x, z, r, 0);
-  const driving = traffic && !fixed ? new Driving(traffic, ramu, peds, () => label(controls.get('use')[0] || controls.get('use')[1])) : null;
+  const driving = traffic && !fixed ? new Driving(scene, traffic, ramu, peds, () => label(controls.get('use')[0] || controls.get('use')[1])) : null;
   if (driving && params.has('debug')) (window as unknown as { __driving: Driving }).__driving = driving;
 
   const debugEl = document.getElementById('debug')!;

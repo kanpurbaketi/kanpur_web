@@ -161,7 +161,7 @@ function integrate(b: Body, s: Spec, g: Geometry, input: Input, world: Surroundi
   if (input.hold) { throttle = 0; brake = 1; }
   else if (throttle < 0 && b.vx > 0.4) { brake = -throttle; throttle = 0; }          // back while rolling forward: brake
   else if (throttle > 0 && b.vx < -0.4) { brake = throttle; throttle = 0; }          // forward while rolling back: brake
-  else if (throttle < 0) throttle = b.vx < -s.vtop * 0.22 ? 0 : throttle * 0.45;    // reverse: gently, and not fast
+  else if (throttle < 0) throttle = b.vx < -Math.min(6, s.vtop * 0.3) ? 0 : throttle * 0.35;   // reverse: gently, and not fast
   const handbrake = input.handbrake && !s.bike;
   if (input.handbrake && s.bike) { brake = Math.max(brake, 1); throttle = 0; }        // a bike's hand brake is just its brakes
   b.locked = handbrake && Math.abs(b.vx) > 0.5;

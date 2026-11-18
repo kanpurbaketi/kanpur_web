@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { Actor, makeActors } from './actors';
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { cloneCar, loadPBR } from './vehicleModels';
@@ -10,6 +11,9 @@ import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, DX, DZ, GATE, HINDOLA, inMel
 import { buildInflatable } from './inflatable';
 import { buildMautKuan } from './mautKuan';
 import { MapData } from './types';
+
+/** a sitting clip's body set on a sofa cushion: how much to lift it and move it back (tuned by eye: scripts/stageshot.mjs) */
+const SIT_Y = 0, SIT_Z = -0.12;
 
 /*
  The Moti Jheel mela, a night fair on the open ground of Tulsi Upvan:
@@ -458,6 +462,7 @@ export class Mela {
     this.t += dt;
     const far = Math.hypot(fx - MELA.cx, fz - MELA.cz) > 260;
     if (far) return;
+    if (Math.hypot(fx - this.poetsAt[0], fz - this.poetsAt[1]) < 70) for (const a of this.poets) a.update(dt);
     for (const r of this.rides) r.update(this.t, dt);
     this.crowd.update(dt, fx, fz, dirX, dirZ, px, pz, py);
   }
@@ -524,6 +529,10 @@ export class Mela {
       stage.add(mic);
     }).catch(() => {});
   }
+
+  /** the poets on the stage's sofas (animated, so updated while Ramu is near enough to see them), and where they sit */
+  private poets: Actor[] = [];
+  private poetsAt: [number, number] = [0, 0];
 
   private buildStage(lights: LightPool | null, desktop: boolean): void {
     // The stage is built in its own frame (centre at the origin, front toward +z, audience beyond) and the group is turned so the
@@ -622,11 +631,25 @@ export class Mela {
       at += r.w + GAP;
     }
     this.stageProps(stage, sofas, SEAT_Z, FLOOR, cx - 3.6, cz + 3.0);
+    // the poets: rigged people on the cushions, listening and talking among themselves, now and then laughing or clapping
     const poets: FigureKind[] = ['uncle', 'uncle', 'boy', 'aunty', 'uncle', 'girl', 'uncle', 'boy'];
-    poets.forEach((kind, i) => {
-      // sitting back on the cushion (its top 0.38 m; the pose's seat is 0.41 m above its feet)
-      people.push({ x: seats[i + 1], y: FLOOR - 0.03, z: SEAT_Z - 0.08, ry: Math.PI, pose: 'chair', kind, look: i * 3 + 1 });
-    });
+    const CLIPS = ['sitting_talking', 'sitting_clap', 'sitting_talking', 'sitting_laughing', 'sitting_talking', 'sitting_clap', 'sitting_laughing', 'sitting_talking'];
+    const kinds = [...new Set(poets)];
+    Promise.all(kinds.map((k) => makeActors(k, poets.filter((p) => p === k).length))).then((made) => {
+      const left = new Map(kinds.map((k, i) => [k, made[i]]));
+      poets.forEach((kind, i) => {
+        const a = left.get(kind)!.shift()!;
+        a.root.position.set(seats[i + 1], FLOOR + SIT_Y, SEAT_Z + SIT_Z);
+        a.root.rotation.y = Math.PI;                 // facing the audience
+        a.play(CLIPS[i], 0.85 + rnd(i * 7 + 3) * 0.3, 0);
+        a.update(rnd(i * 13 + 1) * 20);              // not all at the same moment of it
+        stage.add(a.root);
+        this.poets.push(a);
+      });
+    }).catch(() => {});
+    for (let i = 0; i < poets.length; i++) post(seats[i + 1], SEAT_Z - 0.05, 0.3, FLOOR + 1.3, FLOOR);
+    const [px, pz] = toW(cx, SEAT_Z);
+    this.poetsAt = [px, pz];
     people.push({ x: cx - 3.6, y: FLOOR, z: cz + 3.0, ry: Math.PI, pose: 'talk_b', kind: 'uncle', look: 4 });      // reciting, arms raised
     const cols = Math.floor((AUDIENCE.z1 - AUDIENCE.z0) / 0.86), rowsN = Math.floor((AUDIENCE.x1 - AUDIENCE.x0) / 0.95);
     const aud0 = AUDIENCE.x0 - sx0 + 0.5;       // first row, in the stage frame

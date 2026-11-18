@@ -35,7 +35,9 @@ FPS = 30
 SKIN_LIFT = 1.0        # skin is left as generated: the game's Settings > Skin tone slider lightens / darkens it live
 BODY_LIFT = 0.92       # <1 lightens everything a little
 ANIMS = os.path.join(ROOT, 'assets', 'anims')   # Mixamo FBX clips, shared by every character (see import_mixamo_clips)
-KEEP_ROOT = {'fall', 'fall2', 'get_up'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
+KEEP_ROOT = {'fall', 'fall2', 'get_up'}
+# clips in the folder that nothing plays yet (every clip baked goes into every character's file): left out until used
+UNUSED = {'falling', 'gunplay', 'singing', 'sweep fall', 'throw object'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.fbx(filepath=SRC)
@@ -301,7 +303,7 @@ def clip_name(stem):
 
 def import_mixamo_clips():
     import glob
-    files = sorted(glob.glob(os.path.join(ANIMS, '*.fbx')))
+    files = sorted(f for f in glob.glob(os.path.join(ANIMS, '*.fbx')) if os.path.splitext(os.path.basename(f))[0].lower() not in UNUSED)
     if not files:
         print('RIG no Mixamo clips in', ANIMS, '(procedural clips only)')
         return

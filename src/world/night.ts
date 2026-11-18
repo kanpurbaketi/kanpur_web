@@ -57,22 +57,29 @@ export class LightPool {
 }
 
 let spriteTex: THREE.CanvasTexture | null = null;
+/**
+ * The glow round a light, as grey levels on black (the shader reads the red channel): a small hot core and a falloff that
+ * fades smoothly to nothing well inside the sprite's edge, so no rim shows (an inverse-square-ish scatter, not a ball).
+ */
 function sprite(): THREE.CanvasTexture {
   if (spriteTex) return spriteTex;
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
+  const N = 128, c = document.createElement('canvas');
+  c.width = c.height = N;
   const g = c.getContext('2d')!;
-  const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  r.addColorStop(0, 'rgba(255,255,255,1)');
-  r.addColorStop(0.06, 'rgba(255,255,255,0.8)');
-  r.addColorStop(0.16, 'rgba(255,255,255,0.3)');
-  r.addColorStop(0.36, 'rgba(255,255,255,0.075)');
-  r.addColorStop(0.7, 'rgba(255,255,255,0.015)');
-  r.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = r;
-  g.fillRect(0, 0, 64, 64);
+  const img = g.createImageData(N, N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const r = Math.hypot(x + 0.5 - N / 2, y + 0.5 - N / 2) / (N / 2);        // 0 centre .. 1 edge
+    const core = Math.exp(-((r / 0.07) ** 2));
+    const scatter = 0.22 / (1 + (r / 0.09) ** 2);
+    const fade = Math.max(0, 1 - r) ** 2;                                   // to 0 before the edge
+    const v = Math.round(255 * Math.min(1, (core + scatter) * fade));
+    const i = (y * N + x) * 4;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
   spriteTex = new THREE.CanvasTexture(c);
-  spriteTex.colorSpace = THREE.SRGBColorSpace;
+  spriteTex.colorSpace = THREE.NoColorSpace;
   return spriteTex;
 }
 

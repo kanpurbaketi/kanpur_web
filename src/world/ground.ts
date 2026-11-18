@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { noiseTexture } from './textures';
-import { NIGHT } from './night';
 
 /** Surface ids, stored in uv.x of flat geometry (uv.y = position across a road ribbon, -1..1). */
 export const SURF = { concrete: 0, asphalt: 1, dirt: 2, grass: 3, paving: 4 } as const;
@@ -14,7 +13,7 @@ export function makeGroundMaterial(): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.noiseTex = { value: noiseTexture() };
-    sh.uniforms.uWet = { value: NIGHT ? 1 : 0 };
+    sh.uniforms.uWet = { value: 0 };     // dry (it was damp at night: the lamps showed in puddles all over the road)
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
 varying vec3 vW;

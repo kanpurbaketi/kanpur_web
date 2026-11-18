@@ -60,7 +60,7 @@ export class RoadDirt {
       for (let i = 0; i < uv.count; i++) uv.setX(i, (uv.getX(i) + ti) / TILES);
       const mat = new THREE.MeshStandardMaterial({
         map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-        roughness: kind === 'puddle' ? 0.08 : kind === 'litter' ? 0.75 : 0.95, metalness: kind === 'puddle' ? 0.2 : 0,
+        roughness: kind === 'litter' ? 0.75 : 0.95, metalness: 0,     // all matte: no lamps mirrored in the road
       });
       const im = new THREE.InstancedMesh(geo, mat, list.length);
       const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);

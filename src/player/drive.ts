@@ -10,7 +10,7 @@ const REACH = 2.4;
 /** seconds to get on, and off */
 const MOUNT = 0.75, DISMOUNT = 0.55;
 /** seconds to pick a parked vehicle's lock: a car, a two-wheeler with an engine; a cycle has none worth the name */
-const PICK_CAR = 30, PICK_BIKE = 15;
+const PICK_CAR = 15, PICK_BIKE = 5;
 /** how far Ramu can shift while picking before he has let go of it, m */
 const PICK_STILL = 0.6;
 /** the owner, if they are about: within this of their vehicle when he starts; how likely it is that they are; how long they keep after him */
@@ -88,7 +88,7 @@ export class Driving {
       if (need > 0) {
         // the owner may be about: they notice him at it a few seconds in (if he is still at it)
         const owner = Math.random() < OWNER_CHANCE ? this.peds.ownerNear(c.x, c.z, OWNER_NEAR) : -1;
-        this.pick = { car: c, t: 0, need, x: p.x, z: p.z, owner, notice: 3 + Math.random() * Math.min(8, need - 4), seen: false, hits: this.ramu.hits };
+        this.pick = { car: c, t: 0, need, x: p.x, z: p.z, owner, notice: Math.min(need * 0.5, 2) + Math.random() * Math.max(0.5, Math.min(8, need - 4)), seen: false, hits: this.ramu.hits };
         this.ramu.faceTowards(c.x, c.z);
         return;
       }

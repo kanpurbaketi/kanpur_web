@@ -80,7 +80,7 @@ export class Bulbs {
     const mesh = new THREE.Mesh(mergeGeometries(parts)!, glowMaterial());
     mesh.frustumCulled = false;
     out.add(mesh);
-    out.add(halos(this.list.map((b) => ({ x: b.x, y: b.y, z: b.z, color: b.c, size: 0.32 * b.size, phase: b.phase })), haloStrength));
+    out.add(halos(this.list.map((b) => ({ x: b.x, y: b.y, z: b.z, color: b.c, size: 0.75 * b.size, phase: b.phase })), haloStrength * 1.5));   // (a soft glow round each bulb: the sprite fades out well inside its size)
     return out;
   }
 }

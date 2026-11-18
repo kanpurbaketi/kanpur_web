@@ -164,8 +164,8 @@ export class StreetDetail {
     this.instanced(hb.build(), new THREE.MeshBasicMaterial({ color: NIGHT ? '#fff1c8' : '#e9e4c8', toneMapped: !NIGHT }), list);
     if (NIGHT && list.length) {
       const hp = halos(list.flatMap(([x, z]) => [-1.7, 1.7].map((dx) => ({
-        x: x + dx, y: 8.55, z, color: new THREE.Color(lampColor(x, z)), size: 3.0,
-      }))), 0.9);
+        x: x + dx, y: 8.5, z, color: new THREE.Color(lampColor(x, z)), size: 2.4,
+      }))), 1.1);
       this.group.add(hp);
     }
   }

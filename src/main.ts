@@ -27,7 +27,7 @@ import { Mela } from './world/mela';
 import { Vendors } from './world/vendors';
 import { HOME, loadManifest, playable } from './game/parts';
 import { clipRoadsToMela, TEAR } from './world/melaSite';
-import { CORRIDOR, corridorWalks, prepareRoute, SHIVAJI_START, Stage1Route } from './world/stage1Route';
+import { CORRIDOR, corridorWalks, NAGAR_NIGAM, prepareRoute, SHIVAJI_START, Stage1Route } from './world/stage1Route';
 import { startChoice } from './game/start';
 
 /*
@@ -107,6 +107,7 @@ async function main() {
   const t0 = performance.now();
   const city = new City(map);
   scene.add(city.group);
+  if (map.area === 'moti_jheel') map.buildings.push(...NAGAR_NIGAM);   // built by Stage1Route; back in the map for the minimap and collision
   const occupied = makeOccupancy(map);
   const detail = new StreetDetail(map, occupied);
   scene.add(detail.group);

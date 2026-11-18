@@ -104,7 +104,7 @@ fights Ramu.
   - 37 parked vehicles (a third of the row): `Traffic.pin` with `pinned` and `locked`.
   - The corridor's lanes are at 1.6 m from the centre, the parked row at the kerb.
 - **D.**
-  - `scripts/lockcheck.mjs`: cycle 0.2 s, Pulsar 15.2 s, Swift 30.2 s. Walking off cancels it, and so does a blow
+  - `scripts/lockcheck.mjs`: cycle 0.2 s, Pulsar 15.2 s, Swift 30.2 s (later changed to 5 s and 15 s). Walking off cancels it, and so does a blow
     (`Ramu.hits`).
   - **Owner:** 55% chance, within 25 m. They notice 3–11 s in and chase for 25 s with full damage
     (`scripts/ownercheck.mjs`).
@@ -123,4 +123,4 @@ fights Ramu.
 
 ### Not done
 - Potholes are only decals: vehicles don't bump in them.
-- The Nagar Nigam is still not photo-matched.
+- (The Nagar Nigam was matched to a photo later: src/world/nagarNigam.ts.)

@@ -7,9 +7,10 @@ import type { ParkSpot } from './props';
 import type { Kind as StallKind, VendorSpot } from './vendors';
 import { walkAlong } from './city';
 import { offsetLines } from './meshBuilder';
-import { centroid, MapData, P2, pointInPoly, Road } from './types';
+import { Building, centroid, MapData, P2, pointInPoly, Road } from './types';
 import { STATUE } from './stage1Site';
 import { RoadDirt } from './roadDirt';
+import { isNagarNigam, NagarNigam } from './nagarNigam';
 export { SHIVAJI_START } from './stage1Site';
 
 /*
@@ -120,14 +121,17 @@ export function prepareRoute(map: MapData): void {
       return [[x, z]];
     });
   }
-  // the Nagar Nigam: the long building straight ahead at the bend; cream walls, no shop fronts
-  for (const b of nagarNigam(map)) Object.assign(b, { color: '#e9dcc0', shop: false });
+  // the Nagar Nigam: modelled from a photo (nagarNigam.ts), so out of the city's build; main.ts puts the footprints back
+  // once the city is built (for the minimap and collision)
+  NAGAR_NIGAM.splice(0, NAGAR_NIGAM.length, ...map.buildings.filter(isNagarNigam));
+  map.buildings = map.buildings.filter((b) => !isNagarNigam(b));
+  // and its forecourt kept clear (a shed stood before the entrance)
+  map.buildings = map.buildings.filter((b) => !b.pts.every(([x, z]) => x > -48 && x < -36 && z > 392 && z < 405));
 }
 
 /** the Nagar Nigam: the long main block, and the front block before it (its entrance faces the park road) */
-function nagarNigam(map: MapData) {
-  return map.buildings.filter((b) => pointInPoly(-70, 415, b.pts) || pointInPoly(-60, 400, b.pts));
-}
+/** the Nagar Nigam's two blocks, taken out of the map by prepareRoute (main.ts puts them back after the city is built) */
+export const NAGAR_NIGAM: Building[] = [];
 
 // ---- textures ------------------------------------------------------------------------------------------------------
 
@@ -213,7 +217,8 @@ export class Stage1Route {
     this.tinFence([-221, 278], [MX0, 278]);
     this.shivajiGate();
     this.statue();
-    this.nagarNigamFront();
+    const nn = new NagarNigam(NAGAR_NIGAM, lights);
+    this.group.add(nn.group);
     this.melaLights();
     const m = new THREE.Mesh(this.solid.build(), litMat({ metalness: 0.05, roughness: 0.85 }));
     m.castShadow = m.receiveShadow = true;
@@ -562,26 +567,6 @@ export class Stage1Route {
     // lit from below on two sides (as at night in the video: the pillar glows, the figure catches it)
     this.lights?.add(x + 4, 0.6, z + 4, '#ffe2b0', 45, 12);
     this.lights?.add(x - 4, 0.6, z - 4, '#ffe2b0', 35, 10);
-  }
-
-  /** the Nagar Nigam's front: a portico, a parapet, the name board over the door, lit */
-  private nagarNigamFront(): void {
-    const front = nagarNigam(this.map).find((b) => pointInPoly(-60, 400, b.pts));
-    if (!front) return;
-    // the front block's north face, seen down the park road
-    const x = front.pts.reduce((s, p) => s + p[0], 0) / front.pts.length, z = Math.min(...front.pts.map((p) => p[1])) + 0.2;
-    this.solid.box(x, 2.2, z - 3.2, 14, 0.4, 6.4, '#e9dcc0');
-    for (const k of [-6, -2, 2, 6]) this.solid.cyl(x + k, 0, z - 6, 0.35, 4.4, '#f2ead8', 12);
-    this.solid.box(x, 4.6, z - 6.0, 14.6, 0.6, 0.7, '#a5452c').box(x, 0.12, z - 3.2, 15, 0.24, 7, '#bfb6a4');
-    const tex = banner(1024, 256, '#14335c', '#f2c21b', [
-      { text: 'कानपुर नगर निगम', size: 100, color: '#ffffff', y: 92 }, { text: 'KANPUR NAGAR NIGAM', size: 62, color: '#ffe14d', y: 196 },
-    ]);
-    const p = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.25), bannerMat(tex, 0.75));
-    p.position.set(x, 7.2, z - 6.45);
-    p.rotation.y = Math.PI;
-    this.group.add(p);
-    this.lights?.add(x, 3.5, z - 9, '#fff1d6', 160, 20);
-    for (let i = 0; i < 9; i++) this.bulbs.add(x - 7 + i * 1.75, 4.25, z - 6.4, '#fff3d0', -1, 1.6);
   }
 
   /** strings of bulbs along the mela's road-side cloth wall (the video's first sight of the numaish) */

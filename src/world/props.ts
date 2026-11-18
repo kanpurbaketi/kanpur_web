@@ -1,3 +1,4 @@
+import { FOOTPATHS } from './footpaths';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { walkAlong } from './city';
@@ -493,9 +494,16 @@ export class Traffic {
     c.pitch += (pitch - c.pitch) * k;
   }
 
+  /** the height its wheels stand at: the road, or up on a footpath Ramu has driven it onto (near ones only: cheap enough) */
+  groundY(c: Vehicle): number {
+    if (!c.near || !(c.player || c.parked || c.pinned)) return 0.05;     // the traffic keeps to the road
+    const k = this.kinds[c.kind];
+    return Math.max(0.05, FOOTPATHS.under(c.x, c.z, c.heading, k.halfL * 0.8, k.halfW * 0.8));
+  }
+
   /** The body's world matrix (leaning, pitched), as it is drawn: a bike leans about its tyres, a car's body about its springs. */
   bodyMatrix(c: Vehicle, out: THREE.Matrix4): THREE.Matrix4 {
-    out.makeRotationY(c.heading).setPosition(c.x, 0.05, c.z);
+    out.makeRotationY(c.heading).setPosition(c.x, this.groundY(c), c.z);
     if (!c.roll && !c.pitch) return out;
     const h = SPECS[this.kinds[c.kind].name].bike ? 0 : 0.45;
     return out.multiply(WT.makeTranslation(0, h, 0)).multiply(WT.makeRotationZ(-c.roll)).multiply(WT.makeRotationX(-c.pitch)).multiply(WT.makeTranslation(0, -h, 0));
@@ -966,7 +974,7 @@ export class Traffic {
       const bike = SPECS[this.kinds[c.kind].name].bike;
       // a car's wheels stay on the road as its body rolls; a bike's lean with it
       if (bike) M0.copy(M);
-      else M0.makeRotationY(c.heading).setPosition(c.x, 0.05, c.z);
+      else M0.makeRotationY(c.heading).setPosition(c.x, this.groundY(c), c.z);
       const i = dr.n++;
       if (c.own) {                            // its own (dented) body is drawn instead; the wheels stay instanced
         c.own.matrix.copy(M);

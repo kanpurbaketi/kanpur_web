@@ -1,3 +1,4 @@
+import { FOOTPATHS } from './world/footpaths';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
@@ -118,6 +119,7 @@ async function main() {
   if (lampPools) scene.add(lampPools.group);
   const world = new CollisionWorld(map);
   for (const [x, z] of city.pillars) world.addPost(x, z, 0.9);
+  world.addFloor((x, z) => FOOTPATHS.at(x, z) || null);           // up on the raised footpaths, not in them
   for (const [x, z, r] of detail.obstacles) world.addPost(x, z, r);
   // the mela is part of the Moti Jheel map only (its coordinates are fixed to Tulsi Upvan)
   const mela = map.area === 'moti_jheel' ? new Mela(map, NIGHT ? lightPool : null, desktop) : null;
@@ -204,6 +206,7 @@ async function main() {
   peds.vehicleAt = null;   // set once the traffic exists
   if (mela) { mela.crowd.onHurt = mugged; mela.crowd.resolve = away; }
   if (params.has('debug')) (window as unknown as { __peds: Pedestrians }).__peds = peds;
+  if (params.has('debug')) (window as unknown as { __footpaths: typeof FOOTPATHS }).__footpaths = FOOTPATHS;
   if (params.has('debug') && mela) (window as unknown as { __melaCrowd: Pedestrians }).__melaCrowd = mela.crowd;
   let punchesSeen = 0;
   let punchLand = -1;      // seconds until the punch now in the air lands (-1: none)

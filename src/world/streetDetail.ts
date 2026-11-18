@@ -1,3 +1,4 @@
+import { FOOTPATHS } from './footpaths';
 import * as THREE from 'three';
 import { walkAlong } from './city';
 import { makeGroundMaterial, SURF } from './ground';
@@ -55,8 +56,8 @@ export class StreetDetail {
       if (hasWalk) {
         const [L, R] = offsetLines(r.pts, hw + 1.1);
         kerb.surf = SURF.paving;
-        if (r.sidewalk !== 'right') kerb.slab(L, 2.2, 0, 0.16, C('#a39d92'));
-        if (r.sidewalk !== 'left') kerb.slab(R, 2.2, 0, 0.16, C('#a39d92'));
+        if (r.sidewalk !== 'right') (kerb.slab(L, 2.2, 0, 0.16, C('#a39d92')), FOOTPATHS.add(L, 2.2, 0.16));
+        if (r.sidewalk !== 'left') (kerb.slab(R, 2.2, 0, 0.16, C('#a39d92')), FOOTPATHS.add(R, 2.2, 0.16));
         kerb.surf = SURF.concrete;
       }
       // Dual carriageway: median on the right edge (India drives on the left). offsetLines()[0] is the right

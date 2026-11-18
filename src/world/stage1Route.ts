@@ -1,3 +1,4 @@
+import { FOOTPATHS } from './footpaths';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BULB, Bulbs, banner, bannerMat, Geo, litMat, rnd } from './geo';
@@ -231,6 +232,7 @@ export class Stage1Route {
       keep: (x, z) => inCorridor(x, z) && z > 18 && Math.abs(z - 57) > 2 && !this.stalls.some((v) => Math.hypot(v.x - x, v.z - z) < 3),
     });
     this.group.add(dirt.group);
+    for (const [x, z, R] of dirt.heaps) this.posts.push([x, z, R * 0.65, 0.55]);
   }
 
   /** food carts on the strip of ground between the footpath and the mela's cloth, thickest round its gate (main.ts gives them to Vendors) */
@@ -308,6 +310,7 @@ export class Stage1Route {
 
   /** outside the gate on the left: a raised strip with pink pipe railings on it, as along the metro's side in the video */
   private railing(line: P2[]): void {
+    FOOTPATHS.add(line, 1.2, 0.44);           // you stand on it, not in it
     walkAlongSegs(line, (a, b, L, ry) => {
       this.solid.box((a[0] + b[0]) / 2, 0.22, (a[1] + b[1]) / 2, L, 0.44, 1.2, '#b9b2a6', ry);
       for (const h of [0.95, 1.45]) this.solid.box((a[0] + b[0]) / 2, h, (a[1] + b[1]) / 2, L, 0.07, 0.07, '#d97b86', ry);

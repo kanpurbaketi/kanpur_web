@@ -19,6 +19,8 @@ type Decal = 'pothole' | 'puddle' | 'patch' | 'mud' | 'litter';
 export interface DirtOpts { line: P2[]; roadW: number; walkW: number; keep: (x: number, z: number) => boolean }
 
 export class RoadDirt {
+  /** the garbage heaps, [x, z, radius]: solid (you walk round them) */
+  readonly heaps: [number, number, number][] = [];
   readonly group = new THREE.Group();
 
   constructor(o: DirtOpts) {
@@ -74,12 +76,16 @@ export class RoadDirt {
       im.computeBoundingSphere();
       this.group.add(im);
     });
-    // garbage heaps against the walls, past the footpaths
+    // garbage heaps against the walls, past the footpaths (clear of the raised slab, so none is half buried in it)
     const heaps = new Geo();
-    for (const side of offsetLines(o.line, hw + o.walkW + 0.9)) {
-      walkAlong(side, 46, (x, z) => {
+    for (const [si, side] of offsetLines(o.line, hw + o.walkW + 0.25).entries()) {
+      walkAlong(side, 46, (x, z, dx, dz) => {
         if (!o.keep(x, z) || r() < 0.3) return;
-        heap(heaps, x + (r() - 0.5) * 3, z + (r() - 0.5) * 3, 0.9 + r() * 0.9, r);
+        const R = 0.7 + r() * 0.6, out = (si === 0 ? 1 : -1) * R * 0.8, along = (r() - 0.5) * 3;
+        const hx = x + dx * along - dz * out, hz = z + dz * along + dx * out;
+        if (!o.keep(hx, hz)) return;
+        heap(heaps, hx, hz, R, r);
+        this.heaps.push([hx, hz, R]);
       }, 10 + r() * 30);
     }
     const hm = new THREE.Mesh(heaps.build(), litMat({ roughness: 0.9, metalness: 0 }));

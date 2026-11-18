@@ -1,3 +1,4 @@
+import { FOOTPATHS } from './footpaths';
 import * as THREE from 'three';
 import { MapData } from './types';
 import { Actor, CLIP_SECS, KICK_LANDS, makeActors, PUNCH_LANDS, RigName } from './actors';
@@ -46,6 +47,7 @@ interface Node { x: number; z: number; links: Link[] }
 interface Ped {
   speed: number;
   jitter: number;     // personal sideways offset
+  dodge: number;      // stepping round something in the way: to which side (±1), 0 when not
   a: number; b: number; link: Link; t: number; len: number;
   x: number; y: number; z: number; heading: number;
   moving: number; wait: number;
@@ -186,7 +188,7 @@ export class Pedestrians {
     const style = RIGGED[rig];
     return {
       speed: style.speed[0] + Math.random() * (style.speed[1] - style.speed[0]),
-      jitter: (Math.random() - 0.5) * 0.7,
+      jitter: (Math.random() - 0.5) * 0.7, dodge: 0,
       a: 0, b: 0, link: { to: 0, off: 0, y: 0 }, t: 0, len: 1,
       x: 0, y: 0, z: 0, heading: 0, moving: 1, wait: 0, fresh: true,
       hostile: rig === 'goon' || rig === 'security', grudge: 0, mode: 0, atkKind: 0, atkT: 0, atkE: 0, struck: false, cool: 0, stun: 0, guard: 0, down: 0, downT: 0, kvx: 0, kvz: 0, panic: 0,
@@ -355,7 +357,26 @@ export class Pedestrians {
       }
       const [tx, ty, tz, th] = this.target(p);
       const k = Math.min(1, dt * 5);
-      if (p.hold <= 0) { const f = Math.exp(-0.7 * dt); p.ox *= f; p.oz *= f; }   // drifting back onto their line as they go
+      // held up by something in the way (a pole, a cart, a parked bike): they step aside and go round it
+      const lag = Math.hypot(tx + p.ox - p.x, tz + p.oz - p.z);
+      if (walking && p.hold <= 0 && lag > 0.45) {
+        if (!p.dodge) {
+          // the side that is clear: try a step each way, take the one the walls and posts push least
+          const cx = -Math.cos(th), cz = Math.sin(th), fx = -Math.sin(th) * 0.3, fz = -Math.cos(th) * 0.3;
+          const cost = (s: number) => {
+            if (!this.resolve) return 0;
+            const wx = p.x + cx * s * 0.6 + fx, wz = p.z + cz * s * 0.6 + fz, [rx, rz] = this.resolve(wx, wz, p.y);
+            return Math.hypot(rx - wx, rz - wz);
+          };
+          const a = cost(1), b = cost(-1);
+          p.dodge = Math.abs(a - b) > 0.02 ? (a < b ? 1 : -1) : p.jitter >= 0 ? 1 : -1;
+        }
+        const sd = p.dodge, ax = -Math.cos(th) * sd, az = Math.sin(th) * sd;   // across their way
+        p.ox += ax * dt * 2.4; p.oz += az * dt * 2.4;
+        const o = Math.hypot(p.ox, p.oz);
+        if (o > 1.4) { p.ox *= 1.4 / o; p.oz *= 1.4 / o; }
+        if (lag > 1.2) p.t = Math.max(0, p.t - p.speed * dt);   // and the way does not run on without them
+      } else if (p.hold <= 0) { if (lag < 0.2) p.dodge = 0; const f = Math.exp(-0.7 * dt); p.ox *= f; p.oz *= f; }   // drifting back onto their line as they go
       p.x += (tx + p.ox - p.x) * k;
       p.y += (ty - p.y) * k;
       p.z += (tz + p.oz - p.z) * k;
@@ -618,7 +639,7 @@ export class Pedestrians {
       a.root.visible = show;
       if (!show) continue;
       Q.setFromAxisAngle(UP, p.heading);
-      a.root.position.set(p.x, p.y, p.z);
+      a.root.position.set(p.x, p.y < 0.3 ? Math.max(p.y, FOOTPATHS.at(p.x, p.z)) : p.y, p.z);   // up on a footpath
       a.root.quaternion.copy(Q);
       if (p.out) a.once(p.fwd ? 'fall2' : 'fall', 'out', p.fwd ? 1.1 : 1.25);
       else if (p.down > V_GETUP) a.once('fall', 'thrown' + p.falls, V_FALL_SPEED);       // thrown by a vehicle: down ...

@@ -118,6 +118,7 @@ async function main() {
   const lampPools = NIGHT ? new LampPools(detail.lamps) : null;
   if (lampPools) scene.add(lampPools.group);
   const world = new CollisionWorld(map);
+  if (params.has('debug')) (window as unknown as { __world: CollisionWorld }).__world = world;   // for test scripts
   for (const [x, z] of city.pillars) world.addPost(x, z, 0.9);
   world.addFloor((x, z) => FOOTPATHS.at(x, z) || null);           // up on the raised footpaths, not in them
   for (const [x, z, r] of detail.obstacles) world.addPost(x, z, r);

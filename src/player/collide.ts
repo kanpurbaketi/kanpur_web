@@ -1,3 +1,4 @@
+import { clearedForMela } from '../world/melaSite';
 import { MapData, P2 } from '../world/types';
 
 interface Seg {
@@ -20,7 +21,7 @@ export class CollisionWorld {
   private tops = new Map<number, { x0: number; x1: number; z0: number; z1: number; h: number }[]>();
 
   constructor(map: MapData) {
-    for (const b of map.buildings) this.addRing(b.pts, b.base + b.h);
+    for (const b of map.buildings) if (!clearedForMela(map.area, b.pts)) this.addRing(b.pts, b.base + b.h);
     for (const w of map.water) this.addRing(w.pts, 0.6); // can't walk into the lake
   }
 

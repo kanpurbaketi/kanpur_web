@@ -1,3 +1,4 @@
+import { centroid, P2 } from './types';
 /*
  Where the Moti Jheel mela stands (the open ground in Tulsi Upvan, east of the metro) and how it is laid out.
  The layout follows assets/mela/mela_map.png: the map's boundary rectangle is the cloth wall, and every box and circle on it
@@ -23,6 +24,13 @@ export const MELA = { x0: DX - 8, x1: DX + 108, z0: DZ + 128.5, z1: DZ + 202, cx
 
 export function inMela(x: number, z: number, margin = 0): boolean {
   return x > MELA.x0 - margin && x < MELA.x1 + margin && z > MELA.z0 - margin && z < MELA.z1 + margin;
+}
+
+/** a map building that stood on the mela's ground: not drawn, and not solid either (one stood across the well's stair) */
+export function clearedForMela(area: string, pts: P2[]): boolean {
+  if (area !== 'moti_jheel') return false;
+  const [cx, cz] = centroid(pts);
+  return inMela(cx, cz, 6);
 }
 
 /**

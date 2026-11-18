@@ -56,7 +56,7 @@ if (bike) {
         const ki = t.kinds.findIndex((k) => k.name === 'pulsar');
         const c = t.cars.find((c) => c.kind === ki && !c.fresh && !c.player);
         if (!c) return false;
-        c.vmax = 0; c.v = 0;
+        c.vmax = 0; c.v = 0; c.locked = false;   // (a parked one is locked: no lock to pick in this test)
         const [sx, sz] = t.toWorld(c, -(t.kinds[ki].halfW + 0.8), 0);
         r.position.set(sx, 0, sz);
       }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BULB, Bulbs, banner, bannerMat, Geo, litMat, rnd } from './geo';
 import { LightPool } from './night';
 import { DX, DZ, GATE } from './melaSite';
@@ -198,8 +199,11 @@ export class Stage1Route {
 
   constructor(private map: MapData, private lights: LightPool | null) {
     // the park walls: Japani Garden on the right, Tulsi Upvan on the left, and on round to the mela's corner
-    this.parkWall([[-41, 8], [-41, 18], [-51, 265], [-52, 327], [MX1, 322]]);
-    this.parkWall([[-12, 8], [-21, 19], [-29, 331]]);
+    // (the parks begin at the gate: outside it, the metro's railings on the left and a low stone wall on the right)
+    this.parkWall([[-42.7, 59], [-51, 265], [-52, 327], [MX1, 322]]);
+    this.parkWall([[-22.0, 59], [-29, 331]]);
+    this.railing([[-12, 8], [-21, 19], [-22.0, 55.5]]);
+    this.lowStoneWall([[-41, 8], [-41, 18], [-42.6, 55.5]]);
     this.parkWall([[-222, 321], [-221, 294]]);
     this.compoundWall([[-29, 353], [-52, 350.2], [-141, 344.5], [-224, 338.5]]);
     this.barricade([-40.5, 8], [-12.5, 8]);
@@ -290,6 +294,29 @@ export class Stage1Route {
     });
   }
 
+  /** outside the gate on the left: a raised strip with pink pipe railings on it, as along the metro's side in the video */
+  private railing(line: P2[]): void {
+    walkAlongSegs(line, (a, b, L, ry) => {
+      this.solid.box((a[0] + b[0]) / 2, 0.22, (a[1] + b[1]) / 2, L, 0.44, 1.2, '#b9b2a6', ry);
+      for (const h of [0.95, 1.45]) this.solid.box((a[0] + b[0]) / 2, h, (a[1] + b[1]) / 2, L, 0.07, 0.07, '#d97b86', ry);
+      this.wallRing(a, b, 6);
+    });
+    walkAlong(line, 1.8, (x, z) => this.solid.cyl(x, 0.44, z, 0.04, 1.05, '#d97b86', 6), 0);
+  }
+
+  /** outside the gate on the right: a low wall of the gate's stone, crenellated */
+  private lowStoneWall(line: P2[]): void {
+    const geo: THREE.BufferGeometry[] = [];
+    walkAlongSegs(line, (a, b, L, ry) => {
+      geo.push(stoneBox((a[0] + b[0]) / 2, 0.75, (a[1] + b[1]) / 2, L, 1.5, 0.9, ry));
+      this.wallRing(a, b, 6);
+    });
+    walkAlong(line, 1.25, (x, z, dx, dz) => geo.push(stoneBox(x, 1.75, z, 0.6, 0.5, 0.9, Math.atan2(-dz, dx))), 0.6);
+    const m = new THREE.Mesh(mergeGeometries(geo), new THREE.MeshStandardMaterial({ map: stoneTex(), roughness: 0.92 }));
+    m.castShadow = m.receiveShadow = true;
+    this.group.add(m);
+  }
+
   /** the Nagar Nigam's compound: a high cream wall with a terracotta coping; closed iron gates where its lanes meet the road */
   private compoundWall(line: P2[]): void {
     const H = 2.6;
@@ -370,7 +397,12 @@ export class Stage1Route {
     this.wallRing(a, b, 6);
   }
 
-  /** the gate onto the park road (frame 0:16): sandstone piers, a battlemented lintel with little domes, a saffron flag */
+  /**
+   * The Shivaji Putla gate, as in the video (0:16-0:20): a wall of rough grey-white stone blocks with one wide flat-topped
+   * opening the road runs through; a crenellated top, a pink box with a saffron flag over the middle; a lit emblem at the
+   * opening's right; a golden lion before the right-hand wall, which steps down and runs on with a chhatri on it. On the
+   * left, outside: the raised footpath with pink pipe railings and a yellow-and-black kerb.
+   */
   private shivajiGate(): void {
     const line = routeLine(this.map);
     // where the road passes z ≈ 57
@@ -383,63 +415,146 @@ export class Stage1Route {
         dir = [(bx - ax) / L, (bz - az) / L];
       }
     }
-    const nx = dir[1], nz = -dir[0], ry = Math.atan2(-nz, nx);   // across the road
-    const half = ROAD_W / 2 + WALK + 0.8, stone = '#b39a78', dark = '#8a7356';
-    for (const k of [-1, 1]) {
-      const px = at[0] + nx * k * half, pz = at[1] + nz * k * half;
-      this.solid.box(px, 3.4, pz, 1.6, 6.8, 1.6, stone, ry).box(px, 6.95, pz, 2.0, 0.3, 2.0, dark, ry).box(px, 0.25, pz, 2.0, 0.5, 2.0, dark, ry);
-      this.solid.add(new THREE.SphereGeometry(0.75, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), stone, new THREE.Matrix4().makeTranslation(px, 7.1, pz));
-      this.posts.push([px, pz, 1.0, 8]);
-      for (let i = 0; i < 6; i++) this.bulbs.add(px - nx * k * 0.85, 0.8 + i * 1.0, pz - nz * k * 0.85, '#ffd27a', -1, 1.4);
+    if (dir[1] < 0) dir = [-dir[0], -dir[1]];                      // going in: south (the line may run either way)
+    const nx = dir[1], nz = -dir[0], ry = Math.atan2(-nz, nx);   // across the road: +n is the left going in (east)
+    // a point in the gate's frame: u across (+: left going in), v along the road (-: outside, toward the start)
+    const P = (u: number, v: number): P2 => [at[0] + nx * u + dir[0] * v, at[1] + nz * u + dir[1] * v];
+    const half = ROAD_W / 2 + WALK + 0.3, T = 2.2, OPEN_H = 5.0, TOP = 6.7;
+    const stone: THREE.BufferGeometry[] = [];
+    const block = (u0: number, u1: number, y0: number, y1: number, t = T, v = 0) => {
+      const [x, z] = P((u0 + u1) / 2, v);
+      stone.push(stoneBox(x, (y0 + y1) / 2, z, u1 - u0, y1 - y0, t, ry));
+    };
+    // the two sides of the opening, the lintel, and the right-hand wall stepping down and running on
+    block(half, half + 4.5, 0, TOP);                 // left
+    block(-half - 5.5, -half, 0, TOP);               // right
+    block(-half, half, OPEN_H, TOP);                 // over the opening
+    block(-half - 9, -half - 5.5, 0, TOP - 1.4);     // the step down
+    block(-half - 22, -half - 9, 0, 3.0, 1.2, 0.5);  // the low wall on to the chhatri
+    block(half + 4.5, half + 7, 0, 3.4, 1.2, 0.5);   // a stub on the left, to the metro side
+    // crenellations along the top, and the raised middle
+    for (let u = -half - 5.2; u <= half + 4.2; u += 1.25) {
+      const [x, z] = P(u, 0);
+      stone.push(stoneBox(x, TOP + 0.3, z, 0.65, 0.6, T, ry));
     }
-    // lintel and battlements
-    this.solid.box(at[0], 6.2, at[1], half * 2, 1.0, 1.1, stone, ry);
-    for (let i = -6; i <= 6; i++) this.solid.box(at[0] + nx * i * half / 6.5, 6.95, at[1] + nz * i * half / 6.5, 0.45, 0.5, 0.9, dark, ry);
-    this.solid.add(new THREE.SphereGeometry(1.0, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), stone, new THREE.Matrix4().makeTranslation(at[0], 6.7, at[1]));
-    this.solid.rod(new THREE.Vector3(at[0], 7.6, at[1]), new THREE.Vector3(at[0], 10.4, at[1]), 0.04, '#d9d9d9');
+    for (let u = -half - 8.7; u <= -half - 5.8; u += 1.25) {
+      const [x, z] = P(u, 0);
+      stone.push(stoneBox(x, TOP - 1.4 + 0.3, z, 0.65, 0.6, T, ry));
+    }
+    block(-2.6, 2.6, TOP, TOP + 1.1, T + 0.2);
+    const sm = new THREE.Mesh(mergeGeometries(stone), new THREE.MeshStandardMaterial({ map: stoneTex(), roughness: 0.92 }));
+    sm.castShadow = sm.receiveShadow = true;
+    this.group.add(sm);
+    for (const k of [-1, 1]) this.posts.push(...colliders(P(k * (half + 2.4), 0), 2.4, T, ry, 8));
+    this.posts.push(...colliders(P(-half - 7.2, 0), 1.8, T, ry, 7), ...colliders(P(-half - 15.5, 0.5), 6.5, 1.2, ry, 4));
+    // the pink box over the middle, the flag on it
+    const [bx, bz] = P(0, 0);
+    this.solid.box(bx, TOP + 1.6, bz, 3.2, 1.0, 1.6, '#d98a84', ry).box(bx, TOP + 2.15, bz, 3.4, 0.12, 1.8, '#f0e6dc', ry);
+    this.solid.rod(new THREE.Vector3(bx, TOP + 2.2, bz), new THREE.Vector3(bx, TOP + 5.2, bz), 0.04, '#d9d9d9');
     const flag = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0, 0), new THREE.Vector3(1.5, -0.4, 0), new THREE.Vector3(0, -0.9, 0),
-    ]).rotateY(ry).translate(at[0], 10.4, at[1]);
+      new THREE.Vector3(0, 0, 0), new THREE.Vector3(1.3, -0.35, 0), new THREE.Vector3(0, -0.8, 0),
+      new THREE.Vector3(0, -0.8, 0), new THREE.Vector3(1.3, -0.35, 0), new THREE.Vector3(0, 0, 0),
+    ]).rotateY(ry).translate(bx, TOP + 5.2, bz);
     flag.computeVertexNormals();
     this.solid.add(flag, '#f57c00');
-    const tex = banner(1024, 180, '#7a2318', '#f2c21b', [{ text: 'मोती झील', size: 110, color: '#ffe9a8', y: 94 }]);
-    for (const k of [1, -1]) {
-      const p = new THREE.Mesh(new THREE.PlaneGeometry(6, 0.9), bannerMat(tex, 0.55));
-      p.position.set(at[0] + dir[0] * k * 0.57, 6.2, at[1] + dir[1] * k * 0.57);
-      p.rotation.y = ry + (k > 0 ? 0 : Math.PI);
-      this.group.add(p);
+    // the lintel's underside, in shadow
+    this.solid.box(bx, OPEN_H - 0.02, bz, half * 2, 0.04, T - 0.05, '#4c4a46', ry);
+    // the emblem at the opening's right, on the outside face: a gold ring, green leaves, a red heart; lit
+    const [ex, ez] = P(-half - 1.9, -T / 2 - 0.12);
+    const em = new THREE.Mesh(new THREE.CircleGeometry(1.35, 40), bannerMat(emblemTex(), 0.9));
+    em.position.set(ex, 4.5, ez);
+    em.rotation.y = ry + Math.PI;
+    this.group.add(em);
+    for (let i = 0; i < 28; i++) {
+      const a = (i / 28) * Math.PI * 2, [x, z] = P(-half - 1.9 + Math.cos(a) * 1.5, -T / 2 - 0.16);
+      this.bulbs.add(x, 4.5 + Math.sin(a) * 1.5, z, BULB[i % 3], (i % 7) / 7, 1.1);
     }
-    for (let i = 0; i < 24; i++) this.bulbs.add(at[0] + nx * (i / 23 - 0.5) * half * 2, 5.62, at[1] + nz * (i / 23 - 0.5) * half * 2 - dir[1] * 0.6, BULB[i % 3], (i % 6) / 6, 1.2);
-    this.lights?.add(at[0] - dir[0] * 4, 5, at[1] - dir[1] * 4, '#ffcf8a', 160, 22);
+    // the golden lion before the right-hand wall, outside
+    const [lx, lz] = P(-half - 6.5, -T / 2 - 1.6);
+    this.lion(lx, lz, ry + Math.PI);
+    this.posts.push([lx, lz, 1.0, 2.6]);
+    // the chhatri on the low wall: four slim pillars, a pink dome
+    const [cx, cz] = P(-half - 16, 0.5);
+    this.solid.box(cx, 3.15, cz, 2.6, 0.3, 2.0, '#d8d1c4', ry);
+    for (const [du, dv] of [[-1, -0.7], [1, -0.7], [-1, 0.7], [1, 0.7]]) {
+      const [px, pz] = P(-half - 16 + du, 0.5 + dv);
+      this.solid.cyl(px, 3.3, pz, 0.1, 1.4, '#ece6da', 8);
+    }
+    this.solid.box(cx, 4.8, cz, 2.6, 0.25, 2.0, '#d98a84', ry);
+    this.solid.add(new THREE.SphereGeometry(0.95, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), '#d98a84', new THREE.Matrix4().makeTranslation(cx, 4.92, cz));
+    this.solid.add(new THREE.ConeGeometry(0.12, 0.5, 8), '#c9a227', new THREE.Matrix4().makeTranslation(cx, 6.1, cz));
+    // the left, outside: pink pipe railings along the raised footpath, its kerb painted yellow and black
+    const east = (ls: [P2[], P2[]]) => (ls[0][0][0] + ls[0][ls[0].length - 1][0] > ls[1][0][0] + ls[1][ls[1].length - 1][0] ? ls[0] : ls[1]);
+    const fp = east(offsetLines(line, ROAD_W / 2 + WALK - 0.15)).filter(([, z]) => z > 18 && z < at[1] - T);
+    if (fp.length > 1) {
+      walkAlong(fp, 1.6, (x, z) => this.solid.cyl(x, 0.16, z, 0.035, 0.95, '#d97b86', 6), 0);
+      for (const h of [0.6, 1.08]) walkAlongSegs(fp, (a, b, L, r) => this.solid.box((a[0] + b[0]) / 2, h, (a[1] + b[1]) / 2, L, 0.06, 0.06, '#d97b86', r));
+    }
+    const kerb = east(offsetLines(line, ROAD_W / 2 + 0.06)).filter(([, z]) => z > 18 && z < at[1] + 12);
+    let n = 0;
+    walkAlong(kerb, 0.6, (x, z, dx, dz) => this.solid.box(x, 0.09, z, 0.58, 0.19, 0.14, n++ % 2 ? '#1d1d1d' : '#f2c21b', Math.atan2(-dz, dx)), 0);
+    // lights: the gate is lit from the road, white
+    this.lights?.add(P(0, -7)[0], 5, P(0, -7)[1], '#fff1d6', 170, 22);
+    this.lights?.add(ex, 2.5, ez - dir[1] * 3, '#ffd27a', 35, 8);
   }
 
-  /** a horseman on a tall pillar painted red with white bands, in the island where the way in splits (generic, not a likeness) */
+  /** a seated lion, gold, on a low plinth (generic) */
+  private lion(x: number, z: number, ry: number): void {
+    const g = this.solid, G = '#c8962e', base = 0.9;
+    g.box(x, base / 2, z, 1.6, base, 2.2, '#cfc6b6', ry);
+    const at = (lx: number, ly: number, lz: number) => new THREE.Vector3(x + lx * Math.cos(ry) + lz * Math.sin(ry), base + ly, z - lx * Math.sin(ry) + lz * Math.cos(ry));
+    const put = (geo: THREE.BufferGeometry, p: THREE.Vector3) => g.add(geo.rotateY(ry), G, new THREE.Matrix4().setPosition(p));
+    put(new THREE.SphereGeometry(0.5, 12, 10).scale(0.8, 0.75, 1.3).rotateX(0.55), at(0, 0.62, -0.15));     // haunch and chest, sitting up
+    put(new THREE.SphereGeometry(0.42, 12, 10).scale(1.1, 1.05, 0.9), at(0, 1.25, 0.32));                    // mane
+    put(new THREE.SphereGeometry(0.26, 10, 8).scale(0.9, 0.95, 1.1), at(0, 1.28, 0.62));                     // face
+    put(new THREE.BoxGeometry(0.2, 0.16, 0.2), at(0, 1.18, 0.84));                                          // muzzle
+    for (const sx of [-0.18, 0.18]) {
+      g.rod(at(sx, 0.85, 0.35), at(sx, 0.02, 0.5), 0.09, G);                     // forelegs straight down
+      put(new THREE.BoxGeometry(0.2, 0.1, 0.3), at(sx, 0.05, 0.56));
+      put(new THREE.SphereGeometry(0.28, 8, 6).scale(0.7, 0.6, 1.4), at(sx * 1.6, 0.2, -0.35));            // back legs folded
+      put(new THREE.SphereGeometry(0.06, 6, 4), at(sx * 0.5, 1.36, 0.78));                                 // ears / brow
+    }
+    g.rod(at(0.3, 0.15, -0.65), at(0.55, 0.1, 0.15), 0.05, G);                   // tail round the side
+    this.lights?.add(at(0, 1.2, 1.8).x, 1.5, at(0, 1.2, 1.8).z, '#ffd9a0', 60, 7);
+  }
+
+  /** the statue in the island before the gate: a gold figure on horseback atop a tapering white pillar with a red stripe down it (generic, not a likeness) */
   private statue(): void {
     const [x, z] = STATUE, g = this.solid;
-    g.box(x, 0.35, z, 2.6, 0.7, 2.6, '#9b9184').box(x, 0.9, z, 2.0, 0.4, 2.0, '#d9d2c4');
-    for (let i = 0; i < 6; i++) g.box(x, 1.1 + i * 0.85 + 0.425, z, 1.25, 0.85, 1.25, i % 2 ? '#f3efe6' : '#b0281c');
-    g.box(x, 6.3, z, 1.7, 0.3, 1.7, '#d9d2c4');
-    // the horse (rearing a little) and its rider, bronze
-    const B = '#6b4a2b', base = 6.45, ry = 0.4;
-    const at = (lx: number, ly: number, lz: number) => new THREE.Vector3(x + lx * Math.cos(ry) + lz * Math.sin(ry), base + ly, z - lx * Math.sin(ry) + lz * Math.cos(ry));
-    g.add(new THREE.SphereGeometry(0.5, 10, 8).scale(0.75, 0.7, 1.45).rotateX(-0.25).rotateY(ry), B, new THREE.Matrix4().setPosition(at(0, 1.15, 0)));
-    g.rod(at(0, 1.35, 0.55), at(0, 1.95, 0.95), 0.2, B);                     // neck
-    g.add(new THREE.BoxGeometry(0.24, 0.26, 0.55).rotateX(0.5).rotateY(ry), B, new THREE.Matrix4().setPosition(at(0, 2.0, 1.15)));
-    for (const sx of [-0.2, 0.2]) {
-      g.rod(at(sx, 1.0, -0.45), at(sx, 0, -0.6), 0.08, B);                   // hind legs on the plinth
-      g.rod(at(sx, 1.05, 0.45), at(sx, 0.65, 0.95), 0.07, B);                // forelegs raised
-      g.rod(at(sx, 0.65, 0.95), at(sx, 0.35, 0.75), 0.06, B);
+    g.box(x, 0.3, z, 2.8, 0.6, 2.8, '#9b9184').box(x, 0.75, z, 2.2, 0.3, 2.2, '#e6e0d4');
+    // the pillar: a square frustum, 1.9 m across at the foot, 1.25 at the top, 5.2 m tall
+    const H = 5.2, B = 1.9, Tp = 1.25, y0 = 0.9;
+    g.add(new THREE.CylinderGeometry(Tp / Math.SQRT2, B / Math.SQRT2, H, 4, 1).rotateY(Math.PI / 4), '#f1ece2', new THREE.Matrix4().makeTranslation(x, y0 + H / 2, z));
+    const tilt = Math.atan((B - Tp) / 2 / H);
+    for (let f = 0; f < 4; f++) {
+      const a = (f * Math.PI) / 2, mid = (B + Tp) / 4 + 0.012;
+      const geo = new THREE.BoxGeometry(0.42, H / Math.cos(tilt), 0.02).rotateX(-tilt).rotateY(a);
+      g.add(geo, '#b3261e', new THREE.Matrix4().makeTranslation(x + Math.sin(a) * mid, y0 + H / 2, z + Math.cos(a) * mid));
     }
-    g.rod(at(0, 1.1, -0.7), at(0, 0.45, -1.0), 0.07, B);                     // tail
-    g.rod(at(0, 1.55, -0.05), at(0, 2.35, 0.05), 0.2, B);                    // rider
-    g.sphere(at(0, 2.55, 0.08).x, at(0, 2.55, 0.08).y, at(0, 2.55, 0.08).z, 0.17, B);
-    g.add(new THREE.ConeGeometry(0.16, 0.3, 8), '#8a6a3a', new THREE.Matrix4().setPosition(at(0, 2.78, 0.08)));
-    g.rod(at(0.22, 2.25, 0.05), at(0.35, 2.75, 0.3), 0.05, B);               // arm raised
-    g.rod(at(0.35, 2.75, 0.3), at(0.4, 3.5, 0.55), 0.025, '#b9a27a');        // sword
-    for (const sx of [-0.25, 0.25]) g.rod(at(sx, 1.6, 0), at(sx * 1.2, 1.05, 0.15), 0.07, B);
-    this.posts.push([x, z, 1.4, 6]);
-    this.lights?.add(x + 3, 2, z + 3, '#ffd9a0', 140, 16);
-    this.lights?.add(x - 3, 2, z - 3, '#ffd9a0', 100, 14);
+    g.box(x, y0 + H + 0.12, z, 1.5, 0.24, 1.5, '#e6e0d4');
+    // the horseman, gold
+    const Gd = '#c9962f', base = y0 + H + 0.24, ry = 0.4;
+    const at = (lx: number, ly: number, lz: number) => new THREE.Vector3(x + lx * Math.cos(ry) + lz * Math.sin(ry), base + ly, z - lx * Math.sin(ry) + lz * Math.cos(ry));
+    g.add(new THREE.SphereGeometry(0.42, 10, 8).scale(0.75, 0.7, 1.45).rotateX(-0.25).rotateY(ry), Gd, new THREE.Matrix4().setPosition(at(0, 0.95, 0)));
+    g.rod(at(0, 1.12, 0.45), at(0, 1.62, 0.8), 0.17, Gd);
+    g.add(new THREE.BoxGeometry(0.2, 0.22, 0.46).rotateX(0.5).rotateY(ry), Gd, new THREE.Matrix4().setPosition(at(0, 1.66, 0.96)));
+    for (const sx of [-0.17, 0.17]) {
+      g.rod(at(sx, 0.85, -0.38), at(sx, 0, -0.5), 0.07, Gd);
+      g.rod(at(sx, 0.88, 0.38), at(sx, 0.55, 0.8), 0.06, Gd);
+      g.rod(at(sx, 0.55, 0.8), at(sx, 0.3, 0.62), 0.05, Gd);
+    }
+    g.rod(at(0, 0.92, -0.58), at(0, 0.38, -0.84), 0.06, Gd);
+    g.rod(at(0, 1.3, -0.04), at(0, 1.98, 0.04), 0.17, Gd);
+    const hd = at(0, 2.15, 0.06);
+    g.sphere(hd.x, hd.y, hd.z, 0.14, Gd);
+    g.add(new THREE.SphereGeometry(0.16, 8, 6).scale(1, 0.7, 1), '#d9a93a', new THREE.Matrix4().setPosition(at(0, 2.27, 0.06)));   // the turban
+    g.rod(at(0.19, 1.88, 0.04), at(0.3, 2.3, 0.25), 0.045, Gd);
+    g.rod(at(0.3, 2.3, 0.25), at(0.34, 2.95, 0.45), 0.022, '#e3c66a');
+    for (const sx of [-0.21, 0.21]) g.rod(at(sx, 1.35, 0), at(sx * 1.2, 0.88, 0.12), 0.06, Gd);
+    this.posts.push([x, z, 1.5, 6]);
+    // lit from below on two sides (as at night in the video: the pillar glows, the figure catches it)
+    this.lights?.add(x + 4, 0.6, z + 4, '#ffe2b0', 45, 12);
+    this.lights?.add(x - 4, 0.6, z - 4, '#ffe2b0', 35, 10);
   }
 
   /** the Nagar Nigam's front: a portico, a parapet, the name board over the door, lit */
@@ -515,6 +630,93 @@ export class Stage1Route {
     }
     return spots;
   }
+}
+
+/** a box with the stone texture laid at its true size on every face (a tile is 1.6 m by 1.0 m of wall), turned ry about y */
+function stoneBox(cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, ry: number): THREE.BufferGeometry {
+  const g = new THREE.BoxGeometry(sx, sy, sz);
+  const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+  // faces: +x, -x, +y, -y, +z, -z; four corners each
+  const dims: [number, number][] = [[sz, sy], [sz, sy], [sx, sz], [sx, sz], [sx, sy], [sx, sy]];
+  for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) {
+    const i = f * 4 + k;
+    uv.setXY(i, uv.getX(i) * dims[f][0] / 1.6 + (cx + cz) * 0.13, uv.getY(i) * dims[f][1] / 1.0 + cy * 0.07);
+  }
+  return g.rotateY(ry).translate(cx, cy, cz);
+}
+
+/** collision posts in a row along a wall piece: centre (x, z), half length `h` along ry, thickness t */
+function colliders([x, z]: P2, h: number, t: number, ry: number, height: number): [number, number, number, number][] {
+  const out: [number, number, number, number][] = [], c = Math.cos(ry), s = -Math.sin(ry), r = t / 2;
+  for (let d = -h + r; d <= h - r + 1e-6; d += r) out.push([x + c * d, z + s * d, r, height]);
+  return out;
+}
+
+/** rough-dressed stone blocks, grey to off-white, in courses, deep dark joints (the gate's wall) */
+function stoneTex(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 320;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#4a4744';
+  g.fillRect(0, 0, 512, 320);
+  let seed = 3;
+  const r = () => rnd(seed++ * 1.37);
+  for (let row = 0; row < 5; row++) {
+    const y = row * 64;
+    let x = row % 2 ? -50 : 0;
+    while (x < 512) {
+      const w = 80 + r() * 60;
+      const l = 150 + r() * 70, tint = r() * 14 - 7;
+      g.fillStyle = `rgb(${l + tint},${l + tint},${l - 4})`;
+      g.fillRect(x + 3, y + 3, w - 6, 58);
+      // a rough face: darker blotches and speckle
+      for (let k = 0; k < 40; k++) {
+        const s = r();
+        g.fillStyle = `rgba(${s < 0.5 ? '60,58,55' : '235,232,226'},${0.06 + r() * 0.1})`;
+        g.fillRect(x + 3 + r() * (w - 12), y + 3 + r() * 50, 3 + r() * 10, 2 + r() * 7);
+      }
+      g.fillStyle = 'rgba(0,0,0,0.18)';
+      g.fillRect(x + 3, y + 55, w - 6, 6);
+      x += w;
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+/** the emblem over the gate's right side: a gold ring, a wreath of green leaves, a saffron and red centre with a gold crown */
+function emblemTex(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#e0a520';
+  g.beginPath(); g.arc(128, 128, 126, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#7a1f12';
+  g.beginPath(); g.arc(128, 128, 104, 0, Math.PI * 2); g.fill();
+  for (let i = 0; i < 26; i++) {
+    const a = (i / 26) * Math.PI * 2;
+    g.save();
+    g.translate(128 + Math.cos(a) * 88, 128 + Math.sin(a) * 88);
+    g.rotate(a + Math.PI / 2);
+    g.fillStyle = i % 2 ? '#2f8f3a' : '#4cb050';
+    g.beginPath(); g.ellipse(0, 0, 8, 17, 0, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+  g.fillStyle = '#f57c00';
+  g.beginPath(); g.arc(128, 128, 62, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#f2c21b';
+  g.beginPath();
+  g.moveTo(84, 150); g.lineTo(92, 100); g.lineTo(110, 124); g.lineTo(128, 88); g.lineTo(146, 124); g.lineTo(164, 100); g.lineTo(172, 150);
+  g.closePath(); g.fill();
+  g.fillStyle = '#b3261e';
+  for (const x of [104, 128, 152]) { g.beginPath(); g.arc(x, 140, 6, 0, Math.PI * 2); g.fill(); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 /** cut a line into pieces no longer than `step` m (walkers spread evenly over a graph made of them) */

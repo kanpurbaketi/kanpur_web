@@ -244,73 +244,72 @@ function chairSwing(): Ride {
   };
 }
 
-/** Carousel (ghoda jhoola): striped canopy, brass poles and 8 horses that rise and fall. */
+/**
+ * Carousel (ghoda jhoola): models/carousel.glb (tools/blender/build_props.py): the fixed plinth, the part that turns
+ * (platform, poles, the striped canopy and its bulbs) and twelve horses, white and black, that rise and fall on their
+ * poles as it goes round; children ride most of them.
+ */
 function carousel(): Ride {
   const group = new THREE.Group();
-  const base = new Geo();
-  base.cyl(0, 0, 0, 4.9, 0.4, '#2e2a27', 24);
-  group.add(new THREE.Mesh(base.build(), litMat()));
   const spin = new THREE.Group();
-  spin.position.y = 0.4;
-  const g = new Geo();
-  g.cyl(0, 0, 0, 4.5, 0.12, '#c9a34a', 24);
-  g.cyl(0, 0.1, 0, 0.55, 5.0, '#c0392b', 12);
-  g.cyl(0, 3.0, 0, 0.5, 0.3, '#ffd24a', 12);
-  const cone = new THREE.ConeGeometry(5.5, 1.9, 24, 1, true).toNonIndexed();
-  const pos = cone.getAttribute('position');
-  const cols: number[] = [];
-  for (let i = 0; i < pos.count; i += 3) {
-    const a = Math.atan2(pos.getZ(i), pos.getX(i)) + Math.PI;
-    const c = C(Math.floor((a / (Math.PI * 2)) * 16) % 2 ? '#fff4d6' : '#b3261e');
-    for (let k = 0; k < 3; k++) cols.push(c.r, c.g, c.b);
-  }
-  cone.deleteAttribute('uv');
-  cone.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-  const coneMesh = new THREE.Mesh(cone, litMat({ side: THREE.DoubleSide }));
-  coneMesh.position.y = 6.15;
-  spin.add(coneMesh);
-  g.cyl(0, 4.95, 0, 5.6, 0.25, '#ffd24a', 24);
-  g.add(new THREE.SphereGeometry(0.28, 8, 6), '#ffd24a', new THREE.Matrix4().makeTranslation(0, 7.15, 0));
-  const bulbs = new Bulbs();
-  for (let i = 0; i < 40; i++) { const a = (i / 40) * Math.PI * 2; bulbs.add(Math.cos(a) * 5.6, 5.1, Math.sin(a) * 5.6, BULB[i % 6], (i % 8) / 8, 1.3); }
-  for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; bulbs.add(Math.cos(a) * 4.5, 0.3, Math.sin(a) * 4.5, BULB[(i + 2) % 6], (i % 8) / 8, 1.0); }
-  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; bulbs.add(Math.cos(a) * 0.62, 1.0 + i * 0.5, Math.sin(a) * 0.62, '#ffe6a0', -1, 1.0); }
-  spin.add(new THREE.Mesh(g.build(), litMat()), bulbs.object(0.8));
-  const horse = (color: string) => {
-    const h = new Geo();
-    h.box(0, 1.0, 0, 0.42, 0.5, 1.15, color);
-    h.add(new THREE.BoxGeometry(0.22, 0.7, 0.3), color, new THREE.Matrix4().makeRotationX(0.5).setPosition(0, 1.45, -0.62));
-    h.add(new THREE.BoxGeometry(0.2, 0.28, 0.5), color, new THREE.Matrix4().makeRotationX(-0.25).setPosition(0, 1.78, -0.88));
-    h.box(0, 1.42, -0.62, 0.06, 0.65, 0.34, '#2a1a10');                      // mane
-    h.box(0, 1.0, 0.7, 0.07, 0.5, 0.07, '#2a1a10');                           // tail
-    for (const sx of [-0.14, 0.14]) for (const sz of [-0.4, 0.4]) h.box(sx, 0.55, sz, 0.12, 0.5, 0.12, color);
-    h.box(0, 1.28, -0.1, 0.46, 0.08, 0.5, '#b3261e');                         // saddle
-    h.cyl(0, -0.2, -0.05, 0.035, 3.0, '#e0b040', 6);                           // brass pole
-    return h.build();
-  };
-  const horses: THREE.Group[] = [];
-  const hm = litMat();
-  for (let k = 0; k < 8; k++) {
-    const a = (k / 8) * Math.PI * 2;
-    const hg = new THREE.Group();
-    hg.position.set(Math.cos(a) * 3.3, 0.5, Math.sin(a) * 3.3);
-    hg.rotation.y = -a;
-    hg.userData.k = k;
-    hg.add(new THREE.Mesh(horse(['#f4f0e6', '#7a4a22', '#2a2522', '#c9a06a'][k % 4]), hm));
-    if (k !== 5) {                               // a child on the horse
-      const p = someone(k * 9 + 400, 'ride', 0.62, ['boy', 'girl']);
-      p.position.set(0, 0.95, -0.02);
-      hg.add(p);
-    }
-    spin.add(hg);
-    horses.push(hg);
-  }
   group.add(spin);
+  /** per horse: what moves up and down, the bottom of its stroke (relative to where the model put it), its phase */
+  const horses: { o: THREE.Object3D; low: number; k: number }[] = [];
+  let dir = 1;
+  new GLTFLoader().loadAsync('models/carousel.glb').then((gltf) => {
+    const sc = gltf.scene;
+    sc.updateMatrixWorld(true);
+    const shadow = (m: THREE.Object3D) => m.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = o.receiveShadow = true; });
+    const base = sc.getObjectByName('base'), body = sc.getObjectByName('spin');
+    if (base) { shadow(base); group.add(base); }
+    if (body) { shadow(body); spin.add(body); }
+    const tmpl: Record<string, THREE.Mesh | undefined> = {};
+    for (const c of ['white', 'black']) sc.getObjectByName('horse_' + c)?.traverse((o) => { if ((o as THREE.Mesh).isMesh) tmpl[c] = o as THREE.Mesh; });
+    const slots = sc.children.filter((o) => /^slot_(white|black)_\d+$/.test(o.name));
+    // each ring's lowest horse is at the bottom of the stroke
+    const ringLow = new Map<number, number>();
+    const ring = (o: THREE.Object3D) => (Math.hypot(o.position.x, o.position.z) > 2.9 ? 1 : 0);
+    for (const s of slots) ringLow.set(ring(s), Math.min(ringLow.get(ring(s)) ?? Infinity, s.position.y));
+    const v = new THREE.Vector3();
+    slots.forEach((s, k) => {
+      const t = tmpl[s.name.includes('_white_') ? 'white' : 'black'];
+      if (!t) return;
+      const holder = new THREE.Group();
+      const horse = new THREE.Mesh(t.geometry, t.material);
+      horse.matrixAutoUpdate = false;
+      horse.matrix.copy(s.matrixWorld).multiply(t.matrixWorld);
+      horse.castShadow = true;
+      holder.add(horse);
+      // where it is and which way it faces (its head: the highest points), its back's height at the middle
+      const pos = t.geometry.getAttribute('position');
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i < pos.count; i++) pts.push(v.fromBufferAttribute(pos, i).applyMatrix4(horse.matrix).clone());
+      const c = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(pts.length);
+      const top = [...pts].sort((p, q) => q.y - p.y).slice(0, Math.max(8, pts.length >> 5));
+      const head = top.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(top.length);
+      const f = new THREE.Vector2(head.x - c.x, head.z - c.z).normalize();
+      // the saddle: halfway from nose to tail (the head's dense mesh pulls the centroid forward), a little back of it
+      let lo = Infinity, hi = -Infinity;
+      for (const p of pts) { const d = p.x * f.x + p.z * f.y; lo = Math.min(lo, d); hi = Math.max(hi, d); }
+      const along = (lo + hi) / 2 - 0.06 - (c.x * f.x + c.z * f.y);
+      c.x += f.x * along; c.z += f.y * along;
+      const back = pts.filter((p) => Math.hypot(p.x - c.x, p.z - c.z) < 0.12).reduce((m, p) => Math.max(m, p.y), -Infinity);
+      if (k === 0) dir = f.x * c.z - f.y * c.x > 0 ? 1 : -1;     // turn the way the horses face
+      if (k % 3 !== 2) {                         // a child on most of them
+        const kid = someone(k * 9 + 400, 'ride', 0.62, ['boy', 'girl']);
+        kid.position.set(c.x, back - 0.36, c.z);
+        kid.rotation.y = Math.atan2(-f.x, -f.y);
+        holder.add(kid);
+      }
+      spin.add(holder);
+      horses.push({ o: holder, low: ringLow.get(ring(s))! - s.position.y, k });
+    });
+  }).catch(() => {});
   return {
-    group, post: [[0, 0, 5.0]], light: [0, 5, 0, '#ffb870'],
+    group, post: [[0, 0, 4.8]], light: [0, 5, 0, '#ffb870'],
     update: (t, dt) => {
-      spin.rotation.y += dt * 0.55;
-      for (const h of horses) h.position.y = 0.55 + 0.35 * Math.sin(t * 2.0 + h.userData.k * 1.7);
+      spin.rotation.y += dt * 0.5 * dir;
+      for (const h of horses) h.o.position.y = h.low + 0.3 * (1 - Math.cos(t * 2.0 + h.k * 1.7));
     },
   };
 }

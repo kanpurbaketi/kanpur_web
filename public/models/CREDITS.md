@@ -32,3 +32,12 @@ tools/blender/import_vehicle.py. Source page, author and licence still to be fil
 | enfield.glb | bike-royal-enfield.zip | |
 | cycle.glb | cycle-bike-lowpoly.zip | |
 | rickshaw.glb | rickshaw.zip | |
+
+Stage and ride props, downloaded the same way and cut down with tools/blender/build_props.py (source, author and
+licence still to be filled in):
+
+| Model | Archive | Source / author / licence |
+|---|---|---|
+| sofas.glb | sofa_set.glb | |
+| mic.glb | boom-mic.zip | |
+| carousel.glb | wip-cgma-merry-go-round-carousel.zip | |

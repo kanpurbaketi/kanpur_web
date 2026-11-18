@@ -154,7 +154,7 @@ async function main() {
   peds.setCount(forced ?? crowdFor(loadSettings().crowd));
   if (forced === null) onSettingsChange((s) => peds.setCount(crowdFor(s.crowd)));
   scene.add(peds.group);
-  peds.populate(Math.max(crowdFor(CROWD_MAX), forced ?? 0));      // uncles, aunties, college girls and boys, security guards and a few goons, in all their looks
+  peds.populate(Math.max(crowdFor(CROWD_MAX), forced ?? 0));      // uncles, aunties, women in burqas, college girls and boys, in all their looks (no guards or goons in the street)
   const lookDir = new THREE.Vector3();
   const hud = new Hud(map);
   const stats = new Stats(city.roadPoints);

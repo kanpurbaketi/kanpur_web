@@ -3,9 +3,9 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { cloneCar, loadPBR } from './vehicleModels';
-import { Pedestrians } from './pedestrians';
+import { MELA_MIX, Pedestrians } from './pedestrians';
 import { addFigures, FigureKind, figurePosts, ONLOOKER, someone, Spot } from './figures';
-import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, DX, DZ, GATE, HINDOLA, INFLATABLE, KUAN, MELA, Rect, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
+import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, DX, DZ, GATE, HINDOLA, inMela, INFLATABLE, KUAN, MELA, Rect, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
 import { buildInflatable } from './inflatable';
 import { buildMautKuan } from './mautKuan';
 import { MapData } from './types';
@@ -435,7 +435,9 @@ export class Mela {
 
     this.crowd = new Pedestrians(this.aisles(map), true);
     this.crowd.setCount(desktop ? 24 : 12);
-    this.crowd.populate(desktop ? 24 : 12);
+    this.crowd.populate(desktop ? 24 : 12, MELA_MIX);
+    this.crowd.huntIf = (x, z) => inMela(x, z);        // its guards go for Ramu once he is inside, never through the cloth
+    this.crowd.huntRange = 70;                          // ... from anywhere they can see across the ground
     this.group.add(this.crowd.group);
   }
 

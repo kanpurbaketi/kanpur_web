@@ -10,15 +10,24 @@ import { Actor, CLIP_SECS, KICK_LANDS, makeActors, PUNCH_LANDS, RigName } from '
  Meeting the player: brushed against, a person takes a step back and aside, waits a moment and walks on. Punched, they
  reel (take the punch), turn on him and hit back for a while. The third punch (the fifth, for a security guard) lays them
  out: they stay down, and are only put back on their feet somewhere else once the player is long gone.
- Everybody is a rigged model (see actors.ts): uncles, aunties, college girls and boys, security guards and a few goons, each kind in several looks.
+ Everybody is a rigged model (see actors.ts): uncles, aunties, women in burqas, college girls and boys, and (in the mela only)
+ security guards, each kind in several looks. Nobody starts a fight: the guards go for Ramu only where huntIf allows (inside
+ the mela), anybody punched hits back, and an owner who catches him at their vehicle comes after him.
 */
 
 const SPAWN_MIN = 60, SPAWN_MAX = 170, DESPAWN = 195; // metres from the player
 const SIDEWALK_Y = 0.16;
-// the hostile ones run at the player and punch / kick: the security guards, and a few goons (men in dark clothes)
+// the guards run at the player and punch / kick (where huntIf allows)
 const AGGRO = 14, CHASE = 3.4, REACH = 1.6, PUNCH_DMG = 8, KICK_DMG = 12;
 // anybody else, once punched: hits back for a while (not as hard as a goon, and does not follow as far or as fast)
 const ANGRY = 9, ANGRY_RANGE = 8, ANGRY_CHASE = 2.3, ANGRY_DMG = 0.6;
+// somebody who caught Ramu at their vehicle: comes after him from far off, as fast and as hard as a guard
+const GRUDGE_RANGE = 35;
+/** who is in a crowd, as shares of it (the rest are uncles). No goons: nobody picks a fight with Ramu for nothing. */
+export type Mix = Partial<Record<RigName, number>>;
+export const STREET_MIX: Mix = { aunty: 0.14, girl: 0.18, boy: 0.16, burqa: 0.08 };
+/** the mela's: the same, with its guards (they go for Ramu once he is in, see huntIf) */
+export const MELA_MIX: Mix = { ...STREET_MIX, security: 0.12 };
 const FLINCH = 0.95;          // seconds spent taking a punch
 const TOUGH = 3;              // punches it takes to lay an ordinary person out
 const OUT_SECS = 40, OUT_AWAY = 45;   // a laid-out person is put back on the streets after this long, once the player is this far off
@@ -41,7 +50,8 @@ interface Ped {
   x: number; y: number; z: number; heading: number;
   moving: number; wait: number;
   fresh: boolean;     // not on a street yet
-  hostile: boolean;   // a goon
+  hostile: boolean;   // a guard: goes for the player where huntIf allows
+  grudge: number;     // seconds left of coming after him from far off (an owner who caught him at their vehicle)
   mode: number;       // 0 normal, 1 after the player
   atkKind: number;    // 0 none, 1 punch, 2 kick
   atkT: number; atkE: number; struck: boolean; cool: number; stun: number; guard: number;
@@ -65,6 +75,7 @@ const RIGGED: Record<RigName, { speed: [number, number]; linger: number; tough: 
   uncle: { speed: [0.95, 1.25], linger: 0.12, tough: TOUGH },
   security: { speed: [0.8, 1.0], linger: 0.45, tough: 5 },     // on his round until he sees Ramu, then after him; a harder man to put down
   goon: { speed: [1.05, 1.35], linger: 0.08, tough: TOUGH },
+  burqa: { speed: [0.8, 1.05], linger: 0.25, tough: TOUGH },
   girl: { speed: [1.0, 1.3], linger: 0.15, tough: TOUGH },
   boy: { speed: [1.1, 1.45], linger: 0.12, tough: TOUGH },
   aunty: { speed: [0.8, 1.05], linger: 0.25, tough: TOUGH },     // in no hurry, and stops to talk
@@ -81,6 +92,10 @@ export class Pedestrians {
   private active = 0;
   /** called with the damage when a goon lands a punch or a kick on the player */
   onHurt: ((damage: number) => void) | null = null;
+  /** where the player has to be for the guards to go for him (the mela: once he is inside); null: anywhere */
+  huntIf: ((x: number, z: number) => boolean) | null = null;
+  /** how far off a guard spots the player where huntIf allows, m */
+  huntRange = AGGRO;
   /** collision (walls etc.) for goons on the run: returns the corrected [x, z] */
   resolve: ((x: number, z: number, y?: number) => [number, number]) | null = null;
   /** the vehicles: a person standing where one is is put beside it (the corrected [x, z]) */
@@ -93,6 +108,8 @@ export class Pedestrians {
   private want = 0;
   private dt = 0;
   private fx = 0;
+  /** the guards go for the player this frame (he is where huntIf says) */
+  private hunt = false;
   private fz = 0;
 
   /** `local`: a fixed crowd on a small street graph (the mela): people stay on it and never get recycled around the player */
@@ -117,13 +134,13 @@ export class Pedestrians {
    * Make the crowd: `n` people: uncles, aunties, college girls and boys, some security guards and a few goons, mixed up so that a smaller crowd
    * (setCount) keeps the same mix. The models load in the background; the people appear when they have.
    */
-  async populate(n: number): Promise<void> {
+  async populate(n: number, mix: Mix = STREET_MIX): Promise<void> {
     if (n <= 0) return;
-    const goons = Math.round(n * 0.06), guards = Math.round(n * 0.1), girls = Math.round(n * 0.2), boys = Math.round(n * 0.16), aunties = Math.round(n * 0.16);
     try {
       const made: [RigName, Actor][] = [];
-      for (const [name, k] of [['uncle', n - goons - guards - girls - boys - aunties], ['aunty', aunties], ['girl', girls], ['boy', boys], ['security', guards], ['goon', goons]] as [RigName, number][])
-        for (const a of await makeActors(name, k)) made.push([name, a]);
+      const kinds = Object.entries(mix).map(([name, f]) => [name, Math.round(n * (f ?? 0))] as [RigName, number]);
+      kinds.unshift(['uncle', Math.max(0, n - kinds.reduce((a, [, k]) => a + k, 0))]);
+      for (const [name, k] of kinds) if (k > 0) for (const a of await makeActors(name, k)) made.push([name, a]);
       for (let i = made.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [made[i], made[j]] = [made[j], made[i]]; }
       for (const [name, actor] of made) {
         actor.root.visible = false;
@@ -172,7 +189,7 @@ export class Pedestrians {
       jitter: (Math.random() - 0.5) * 0.7,
       a: 0, b: 0, link: { to: 0, off: 0, y: 0 }, t: 0, len: 1,
       x: 0, y: 0, z: 0, heading: 0, moving: 1, wait: 0, fresh: true,
-      hostile: rig === 'goon' || rig === 'security', mode: 0, atkKind: 0, atkT: 0, atkE: 0, struck: false, cool: 0, stun: 0, guard: 0, down: 0, downT: 0, kvx: 0, kvz: 0, panic: 0,
+      hostile: rig === 'goon' || rig === 'security', grudge: 0, mode: 0, atkKind: 0, atkT: 0, atkE: 0, struck: false, cool: 0, stun: 0, guard: 0, down: 0, downT: 0, kvx: 0, kvz: 0, panic: 0,
       hits: 0, tough: style.tough, flinch: 0, angry: 0, out: false, atkN: 0, ox: 0, oz: 0, hold: 0, bump: 0,
       block: 0, blockN: 0, fwd: false, falls: 0, bumpN: 0, rig, idleClip: 'idle',
       linger: style.linger, actor,
@@ -194,13 +211,13 @@ export class Pedestrians {
     }
     if (!cands.length) return false;
     // a fresh start: whatever happened to them where they were is forgotten
-    p.hits = 0; p.flinch = 0; p.angry = 0; p.out = false; p.down = 0; p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; p.stun = 0; p.panic = 0;
+    p.hits = 0; p.flinch = 0; p.angry = 0; p.grudge = 0; p.out = false; p.down = 0; p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; p.stun = 0; p.panic = 0;
     p.ox = 0; p.oz = 0; p.hold = 0; p.block = 0; p.fwd = false;
     p.a = cands[Math.floor(Math.random() * cands.length)];
     const links = this.nodes[p.a].links;
     this.setLink(p, links[Math.floor(Math.random() * links.length)]);
     p.t = Math.random() * p.len;
-    p.wait = Math.random() < (this.local ? 0.35 : 0.14) ? 8 + Math.random() * 40 : 0; // some people just stand around
+    p.wait = Math.random() < (p.rig === 'security' ? 0.85 : this.local ? 0.35 : 0.14) ? 8 + Math.random() * 40 : 0; // some people just stand around (a guard at his post, mostly)
     this.pickIdle(p);
     const [x, y, z, h] = this.target(p);
     p.x = x; p.y = y; p.z = z;
@@ -237,6 +254,7 @@ export class Pedestrians {
    */
   update(dt: number, fx: number, fz: number, dirX: number, dirZ: number, px = Infinity, pz = Infinity, py = 0): void {
     this.dt = dt; this.fx = fx; this.fz = fz;
+    this.hunt = Number.isFinite(px) && (!this.huntIf || this.huntIf(px, pz));
     for (let i = 0; i < this.active; i++) {
       const p = this.peds[i];
       if (p.fresh) {
@@ -303,7 +321,8 @@ export class Pedestrians {
         continue;
       }
       if (p.angry > 0) p.angry -= dt;
-      if ((p.hostile || p.angry > 0) && this.fight(p, dt, px, pz, py)) continue;
+      if (p.grudge > 0) p.grudge -= dt;
+      if ((p.hostile || p.angry > 0 || p.grudge > 0) && this.fight(p, dt, px, pz, py)) continue;
       if (p.mode && !p.hostile) { p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; this.snapToGraph(p); }   // calmed down: back to their walk
       // brushed against by the player: a step back and aside, a moment's pause, then on their way
       p.bump = Math.max(0, p.bump - dt);
@@ -409,6 +428,35 @@ export class Pedestrians {
   }
 
   /**
+   * The owner of a vehicle parked at (x, z), if they are about: somebody calm, on their feet, within `range` m (a man,
+   * mostly: they own the cars). Returns a handle for comeFor, or -1.
+   */
+  ownerNear(x: number, z: number, range: number): number {
+    let best = -1, bd = range;
+    for (let i = 0; i < this.active; i++) {
+      const p = this.peds[i];
+      if (p.hostile || p.fresh || p.down > 0 || p.out || p.mode || p.grudge > 0) continue;
+      const d = Math.hypot(p.x - x, p.z - z) + (p.rig === 'uncle' || p.rig === 'boy' ? 0 : 12);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  /** The owner has seen Ramu at their vehicle: they come for him, for `secs`. */
+  comeFor(i: number, secs: number): void {
+    const p = this.peds[i];
+    if (!p || p.out || p.fresh) return;
+    p.grudge = secs;
+    p.wait = 0; p.hold = 0; p.cool = 0.4;
+  }
+
+  /** the person behind an ownerNear handle is still up and about */
+  where(i: number): { x: number; z: number; after: boolean } | null {
+    const p = this.peds[i];
+    return p && !p.out && !p.fresh && i < this.active ? { x: p.x, z: p.z, after: p.grudge > 0 } : null;
+  }
+
+  /**
    * Somebody thrown off a vehicle Ramu has taken: one of the crowd (not a goon or a guard, not anybody in the player's
    * sight: the one farthest from him) is put where they come off and knocked flying (vx, vz m/s); they fall, get up and
    * run. `men`: a driver, so a man if there is one. False if there was nobody to use.
@@ -491,7 +539,7 @@ export class Pedestrians {
     if (p.hits >= p.tough) {                 // laid out
       p.out = true;
       p.downT = 0;
-      p.flinch = 0; p.angry = 0; p.mode = 0; p.guard = 0;
+      p.flinch = 0; p.angry = 0; p.grudge = 0; p.mode = 0; p.guard = 0;
       p.kvx = 0; p.kvz = 0;                    // the fall carries the body back by itself
       return true;
     }
@@ -513,7 +561,8 @@ export class Pedestrians {
       return true;
     }
     const dx = px - p.x, dz = pz - p.z, d = Math.hypot(dx, dz);
-    if (!(d < (p.hostile ? AGGRO : ANGRY_RANGE)) || Math.abs(py - p.y) > 1.0) {   // nobody to chase (or he is out of reach, up on the gallery)
+    const range = p.grudge > 0 ? GRUDGE_RANGE : p.angry > 0 ? (p.hostile ? AGGRO : ANGRY_RANGE) : p.hostile && this.hunt ? this.huntRange : 0;
+    if (!(d < range) || Math.abs(py - p.y) > 1.0) {   // nobody to chase (or he is out of reach, up on the gallery)
       if (p.mode) { p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; this.snapToGraph(p); }
       return false;
     }
@@ -528,13 +577,13 @@ export class Pedestrians {
       p.atkE = t < land ? t / land : Math.max(0, 1 - (t - land) / (total - land));
       if (!p.struck && t >= land) {
         p.struck = true;
-        if (d < REACH) this.onHurt?.(Math.round((p.atkKind === 1 ? PUNCH_DMG : KICK_DMG) * (p.hostile || p.tough > TOUGH ? 1 : ANGRY_DMG)));
+        if (d < REACH) this.onHurt?.(Math.round((p.atkKind === 1 ? PUNCH_DMG : KICK_DMG) * (p.hostile || p.grudge > 0 || p.tough > TOUGH ? 1 : ANGRY_DMG)));
       }
       if (t >= total) { p.atkKind = 0; p.atkE = 0; p.cool = 0.5 + Math.random() * 0.6; }
       return true;
     }
     if (d > 1.15) {
-      const s = Math.min((p.hostile ? CHASE : ANGRY_CHASE) * dt, d - 1.0);
+      const s = Math.min((p.hostile || p.grudge > 0 ? CHASE : ANGRY_CHASE) * dt, d - 1.0);
       let nx = p.x + (dx / d) * s, nz = p.z + (dz / d) * s;
       if (this.resolve) [nx, nz] = this.resolve(nx, nz);
       p.x = nx; p.z = nz; p.y = 0.05;
@@ -586,7 +635,7 @@ export class Pedestrians {
       } else if (p.block > 0) a.once('block', 'block' + p.blockN, CLIP_SECS.block / BLOCK, 0.06);
       else if (p.atkKind === 2) a.once('kick', 'atk' + p.atkN, ACTOR_KICK);
       else if (p.atkKind) a.once('punch', 'atk' + p.atkN, ACTOR_PUNCH);
-      else if (p.mode) a.move(p.moving > 0.5 ? (p.hostile ? CHASE : ANGRY_CHASE) : 0, 'fight_idle');   // on guard between blows
+      else if (p.mode) a.move(p.moving > 0.5 ? (p.hostile || p.grudge > 0 ? CHASE : ANGRY_CHASE) : 0, 'fight_idle');   // on guard between blows
       else if (p.hold > 0) a.once('shove', 'shove' + p.bumpN, CLIP_SECS.shove / 0.95);                  // brushed against: a stumble
       else a.move(p.speed * (p.panic > 0 ? 1.8 : 1) * (p.moving > 0.5 ? 1 : 0), p.wait > 0 ? p.idleClip : 'idle');
       a.update(this.dt);

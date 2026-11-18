@@ -339,7 +339,40 @@ def aunty():
     return p, looks
 
 
-for make in (uncle, college_girl, college_boy, aunty):
+def burqa():
+    """The aunty's body in a burqa: dark cloth over everything, her head too, but an eye slit and her hands; the cloth's
+    folds kept, softly (her face and sari are not cloth-shaded alike, so only a little of the old shading is used)."""
+    p = Painter('aunty', dict(hair_from=0.0, eyes=0.107, nose=0.15, lips=0.18, lip_w=0.03, lip_h=0.009, neck=0.23))
+    p.name = 'burqa'
+    hands = p.b.bone_mask('LeftHand', 'RightHand')
+    c = p.src
+    gr = c[..., 1] / np.maximum(c[..., 0], 1e-3)
+    low = p.d > (p.b.hi[1] - p.b.pos[..., 1][p.b.on].min()) - 0.06
+    br = c[..., 2] / np.maximum(c[..., 0], 1e-3)
+    feet = low & (p.skin > 0.5) & (gr < 0.74) & (br > 0.4)          # her feet and sandals at the hem, not the sari's gold border
+    slit = (np.abs(p.x) < 0.05) & (np.abs(p.d - p.f['eyes']) < 0.0135) & (p.z > 0.035)
+    w = p.b.on * ~hands * ~feet * ~slit
+    looks = []
+
+    def look(name, colour, sheen=0.0):
+        o = p.src.copy()
+        ref = np.median(p.lum[w > 0.6])
+        shade = np.clip((p.lum / ref) ** 0.3, 0.72, 1.3) * (1 + 0.06 * (p.grain - 0.5))
+        new = colour * shade[..., None] + sheen * np.clip(shade - 1.0, 0, 1)[..., None]
+        o += (np.clip(new, 0, 1) - o) * w[..., None].astype(np.float64)
+        # a band of fine embroidery round the face opening and the cuffs, as many have
+        trim = p.b.on * (((np.abs(p.d - p.f['eyes']) < 0.022) & (p.z > 0.03) & (np.abs(p.x) < 0.064)) & ~slit)
+        o += (colour * 1.6 + 0.02 - o) * (trim * 0.25)[..., None]
+        looks.append((name, p.save(o, name)))
+
+    look('burqa_a', col(16, 16, 18), sheen=0.06)       # black
+    look('burqa_b', col(24, 22, 24), sheen=0.03)       # black, worn
+    look('burqa_c', col(18, 22, 40), sheen=0.05)       # very dark navy
+    look('burqa_d', col(36, 26, 22), sheen=0.03)       # very dark brown
+    return p, looks
+
+
+for make in (uncle, college_girl, college_boy, aunty, burqa):
     if ONLY and make.__name__ != ONLY:
         continue
     p, looks = make()

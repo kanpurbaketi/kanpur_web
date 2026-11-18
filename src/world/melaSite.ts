@@ -90,14 +90,16 @@ export const KUAN = { x: DX + 90.5, z: DZ + 184.5, r: 16.5 };
 /** each box on the map is a block of stalls (a row, or two rows back to back) */
 export const STALL_BLOCKS: Rect[] = [
   rect(592, 167, 751, 245), rect(847, 167, 1005, 245),
+  rect(1028, 101, 1186, 181), rect(1213, 128, 1371, 207), rect(1438, 128, 1596, 207),   // along the top, north-east
+  rect(592, 340, 750, 418),                                                             // under the first, by the wheel
   rect(1318, 404, 1398, 562), rect(1516, 404, 1596, 562),
   rect(790, 483, 870, 642), rect(988, 483, 1068, 642), rect(1120, 483, 1279, 562),
   rect(579, 668, 738, 747), rect(777, 668, 870, 747), rect(988, 668, 1147, 747),
-  rect(579, 853, 738, 932), rect(962, 853, 1121, 932),
+  rect(500, 854, 658, 933), rect(688, 854, 846, 933), rect(962, 853, 1121, 932),       // the row by the gate
 ];
 
 /** the older rides, kept, in the free ground of the map */
 export const CAROUSEL = { x: mx(250), z: mz(820) };
 export const HINDOLA = { x: mx(430), z: mz(930) };
 export const COLUMBUS = { x: mx(400), z: mz(200) };
-export const CHAIR_SWING = { x: mx(1480), z: mz(220) };
+export const CHAIR_SWING = { x: mx(1508), z: mz(306) };      // in the open ground below the north-east stalls

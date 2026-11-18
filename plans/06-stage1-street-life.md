@@ -90,3 +90,37 @@ fights Ramu.
 - `scripts/corridorcheck.mjs`.
 - A lock-pick script: a car takes 30 s, a bike 15 s, a cycle none; moving cancels it.
 - FPS on the route still at 30 or above.
+
+## Done (2026-11-18)
+
+### What was built
+- **A.**
+  - No goons in any crowd, and no guards in the street crowd.
+  - The mela's guards (12% of its crowd) stand at posts 85% of the time.
+  - They go for Ramu only while `inMela(ramu)`, and spot him from 70 m.
+  - Checked by `scripts/peacecheck.mjs`.
+- **B.** 21 buildings dropped (10 in Japani Garden, 11 in Tulsi Upvan).
+- **C.**
+  - 37 parked vehicles (a third of the row): `Traffic.pin` with `pinned` and `locked`.
+  - The corridor's lanes are at 1.6 m from the centre, the parked row at the kerb.
+- **D.**
+  - `scripts/lockcheck.mjs`: cycle 0.2 s, Pulsar 15.2 s, Swift 30.2 s. Walking off cancels it, and so does a blow
+    (`Ramu.hits`).
+  - **Owner:** 55% chance, within 25 m. They notice 3–11 s in and chase for 25 s with full damage
+    (`scripts/ownercheck.mjs`).
+- **E.**
+  - `corridorWalks`: footpaths and road edges, cut at 8 m (1.6 m along the mela front), plus a loop in front of each
+    of the 10 carts.
+  - The crowd is the admin setting × 3 (72 at the default), at 31–40 fps.
+  - Burqa looks `burqa_a`–`burqa_d`.
+- **F.**
+  - The gate and statue as described. Before the gate, a pink railing on the left and a low crenellated stone wall on
+    the right; the park walls start at the gate.
+  - `treeClear` also keeps the gate clear.
+- **G.**
+  - `src/world/roadDirt.ts`: five decal kinds, instanced (about 750 in all), plus garbage heaps.
+- `scripts/corridorcheck.mjs`: 0 of 78 out on foot, 0 of 19 out on a bike.
+
+### Not done
+- Potholes are only decals: vehicles don't bump in them.
+- The Nagar Nigam is still not photo-matched.

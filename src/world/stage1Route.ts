@@ -9,6 +9,7 @@ import { walkAlong } from './city';
 import { offsetLines } from './meshBuilder';
 import { centroid, MapData, P2, pointInPoly, Road } from './types';
 import { STATUE } from './stage1Site';
+import { RoadDirt } from './roadDirt';
 export { SHIVAJI_START } from './stage1Site';
 
 /*
@@ -219,6 +220,12 @@ export class Stage1Route {
     this.group.add(m, this.bulbs.object(0.8));
     this.parking = this.parkingSpots();
     this.stalls = this.stallSpots();
+    // the dirt: potholes, patches, mud, litter, garbage heaps (not in the gate's opening, not under the carts)
+    const dirt = new RoadDirt({
+      line: routeLine(map), roadW: ROAD_W, walkW: WALK,
+      keep: (x, z) => inCorridor(x, z) && z > 18 && Math.abs(z - 57) > 2 && !this.stalls.some((v) => Math.hypot(v.x - x, v.z - z) < 3),
+    });
+    this.group.add(dirt.group);
   }
 
   /** food carts on the strip of ground between the footpath and the mela's cloth, thickest round its gate (main.ts gives them to Vendors) */

@@ -1,0 +1,237 @@
+"""
+Stage props from downloaded models (assets/common_assets) into the game's form:
+
+  /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_props.py -- [--preview DIR]
+
+public/models/sofas.glb   from sofa_set.glb (a SketchUp living-room set, in inches): the three-seater, the two-seater and
+                          one armchair, each its own object ('sofa3', 'sofa2', 'chair'), facing forward, standing on the
+                          ground, centred, in metres. The side tables, lamps and the glass table are left out.
+public/models/mic.glb     from boom-mic.zip (an FBX mic on a boom stand, 2K PBR maps): one object 'mic', 1.6 m tall,
+                          its base at the origin, the boom reaching forward; the textures cut to 512.
+
+Both are cut down to a triangle budget. The game's props face +z (Blender: -y) and stand on y = 0.
+"""
+import bpy, bmesh, math, os, sys, zipfile, tempfile
+from mathutils import Matrix, Vector
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ASSETS = os.path.join(ROOT, 'assets', 'common_assets')
+OUT = os.path.join(ROOT, 'public', 'models')
+argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
+PREVIEW = argv[argv.index('--preview') + 1] if '--preview' in argv else None
+
+SOFA_TRIS = {'sofa3': 1600, 'sofa2': 1200, 'chair': 900}
+MIC_TRIS = 1400
+
+
+def reset():
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+
+
+def meshes():
+    return [o for o in bpy.context.scene.objects if o.type == 'MESH']
+
+
+def bake_transforms():
+    for o in bpy.context.scene.objects: o.select_set(o.type == 'MESH')
+    bpy.context.view_layer.objects.active = meshes()[0]
+    # parents (the importers' empties) carry the units and the axis turn: keep them in the mesh
+    for o in meshes():
+        mw = o.matrix_world.copy()
+        o.parent = None
+        o.matrix_world = mw
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    for o in list(bpy.context.scene.objects):
+        if o.type != 'MESH': bpy.data.objects.remove(o)
+
+
+def box(o):
+    vs = [o.matrix_world @ v.co for v in o.data.vertices]
+    return Vector([min(v[i] for v in vs) for i in range(3)]), Vector([max(v[i] for v in vs) for i in range(3)])
+
+
+def tris(o):
+    return sum(len(p.vertices) - 2 for p in o.data.polygons)
+
+
+def cut(o, budget):
+    """planar dissolve first (SketchUp meshes are full of coplanar triangles), then collapse to the budget"""
+    bpy.context.view_layer.objects.active = o
+    for x in bpy.context.scene.objects: x.select_set(x == o)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.remove_doubles(threshold=0.0005)
+    bpy.ops.mesh.dissolve_limited(angle_limit=math.radians(2), delimit={'MATERIAL', 'UV'})
+    bpy.ops.mesh.quads_convert_to_tris()
+    bpy.ops.object.mode_set(mode='OBJECT')
+    n = tris(o)
+    if n > budget:
+        m = o.modifiers.new('cut', 'DECIMATE')
+        m.ratio = budget / n
+        m.use_collapse_triangulate = True
+        bpy.ops.object.modifier_apply(modifier='cut')
+    return tris(o)
+
+
+def ground_centre(o):
+    """origin at the middle of its footprint, on the ground"""
+    vs = [o.matrix_world @ v.co for v in o.data.vertices]
+    mn = Vector([min(v[i] for v in vs) for i in range(3)]); mx = Vector([max(v[i] for v in vs) for i in range(3)])
+    o.data.transform(Matrix.Translation(Vector(((mn.x + mx.x) / -2, (mn.y + mx.y) / -2, -mn.z))))
+    o.matrix_world = Matrix.Identity(4)
+    return mx - mn
+
+
+def export(objs, name):
+    for x in bpy.context.scene.objects: x.select_set(x in objs)
+    path = os.path.join(OUT, name)
+    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_yup=True, export_apply=True,
+                              export_animations=False, export_image_format='AUTO')
+    print('wrote', path, os.path.getsize(path) // 1024, 'KB')
+
+
+def preview(objs, name):
+    if not PREVIEW: return
+    sc = bpy.context.scene
+    sc.render.engine = 'BLENDER_WORKBENCH'
+    sc.display.shading.light = 'STUDIO'; sc.display.shading.color_type = 'TEXTURE'
+    sc.render.resolution_x = 900; sc.render.resolution_y = 500
+    for x in sc.objects: x.hide_render = x.type == 'MESH' and x not in objs
+    bpy.context.view_layer.update()
+    pts = [o.matrix_world @ Vector(c) for o in objs for c in o.bound_box]
+    mn = Vector([min(v[i] for v in pts) for i in range(3)]); mx = Vector([max(v[i] for v in pts) for i in range(3)])
+    c, size = (mn + mx) / 2, (mx - mn).length
+    cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); sc.collection.objects.link(cam)
+    d = Vector((0.45, -1, 0.45)).normalized()          # from the front (-y), a little to the side and above
+    cam.location = c + d * size * 2.0
+    cam.rotation_euler = (-d).to_track_quat('-Z', 'Y').to_euler()
+    sc.camera = cam
+    sc.render.filepath = os.path.join(PREVIEW, name + '.png')
+    bpy.ops.render.render(write_still=True)
+    bpy.data.objects.remove(cam)
+
+
+# ---- the sofas -------------------------------------------------------------------------------------------------------
+reset()
+bpy.ops.import_scene.gltf(filepath=os.path.join(ASSETS, 'sofa_set.glb'))
+bake_transforms()
+for o in meshes():                                       # inches to metres
+    o.data.transform(Matrix.Scale(0.0254, 4))
+# one mesh; its faces sorted into pieces of furniture by footprint: every face marks the 1 cm cells under it, and the
+# cells that touch make one piece (a lamp stands on its table: the two are one piece)
+bpy.ops.object.select_all(action='SELECT')
+bpy.context.view_layer.objects.active = meshes()[0]
+bpy.ops.object.join()
+whole = bpy.context.view_layer.objects.active
+me = whole.data
+vs = [v.co.copy() for v in me.vertices]
+G = 0.01
+x0 = min(v.x for v in vs); y0 = min(v.y for v in vs)
+NX = int((max(v.x for v in vs) - x0) / G) + 2; NY = int((max(v.y for v in vs) - y0) / G) + 2
+cell = bytearray(NX * NY)
+for p in me.polygons:
+    px = [vs[i].x for i in p.vertices]; py = [vs[i].y for i in p.vertices]
+    for i in range(int((min(px) - x0) / G), int((max(px) - x0) / G) + 1):
+        for j in range(int((min(py) - y0) / G), int((max(py) - y0) / G) + 1):
+            cell[i * NY + j] = 1
+label = [0] * (NX * NY)
+n = 0
+for k in range(NX * NY):
+    if not cell[k] or label[k]: continue
+    n += 1; stack = [k]; label[k] = n
+    while stack:
+        c = stack.pop(); i, j = divmod(c, NY)
+        for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            ii, jj = i + di, j + dj
+            if 0 <= ii < NX and 0 <= jj < NY:
+                q = ii * NY + jj
+                if cell[q] and not label[q]: label[q] = n; stack.append(q)
+face_piece = []
+for p in me.polygons:
+    c = p.center
+    face_piece.append(label[int((c.x - x0) / G) * NY + int((c.y - y0) / G)])
+pieces = []
+for lab in sorted(set(face_piece)):
+    fs = [i for i, l in enumerate(face_piece) if l == lab]
+    pv = [vs[v] for i in fs for v in me.polygons[i].vertices]
+    mn = Vector([min(v[k] for v in pv) for k in range(3)]); mx = Vector([max(v[k] for v in pv) for k in range(3)])
+    mats = {me.materials[me.polygons[i].material_index].name for i in fs if me.materials[me.polygons[i].material_index]}
+    pieces.append(dict(lab=lab, faces=set(fs), mn=mn, mx=mx, mats=mats, size=mx - mn, c=(mn + mx) / 2))
+    print('piece', len(fs), [round(v, 2) for v in (mx - mn)], sorted(mats))
+
+
+def take(p, name):
+    """a copy of the mesh with only this piece's faces"""
+    o = whole.copy(); o.data = whole.data.copy(); o.name = o.data.name = name
+    bpy.context.scene.collection.objects.link(o)
+    bm = bmesh.new(); bm.from_mesh(o.data)
+    bm.faces.ensure_lookup_table()
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.index not in p['faces']], context='FACES')
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    bm.to_mesh(o.data); bm.free()
+    return o
+
+
+table = next(p for p in pieces if any('Glass' in m for m in p['mats']) and p['size'].z < 0.6)
+seats = sorted([p for p in pieces if any('Carpet' in m for m in p['mats'])], key=lambda p: -max(p['size'].x, p['size'].y))
+keep = {'sofa3': seats[0], 'sofa2': seats[1], 'chair': seats[2]}
+out = []
+for name, p in keep.items():
+    o = take(p, name)
+    # turn it to face forward (-y): it faces the coffee table
+    d = table['c'] - p['c']
+    a = math.atan2(d.x, -d.y)                            # angle of its facing from -y
+    a = round(a / (math.pi / 2)) * (math.pi / 2)
+    o.data.transform(Matrix.Translation(p['c']) @ Matrix.Rotation(-a, 4, 'Z') @ Matrix.Translation(-p['c']))
+    n0 = tris(o)
+    n = cut(o, SOFA_TRIS[name])
+    s = ground_centre(o)
+    print(name, 'tris', n0, '->', n, 'size', [round(v, 2) for v in s])
+    out.append(o)
+for x in meshes():
+    if x not in out: bpy.data.objects.remove(x)
+export(out, 'sofas.glb')
+for i, o in enumerate(out): o.location.x = i * 2.6
+preview(out, 'sofas')
+
+# ---- the mic -----------------------------------------------------------------------------------------------------------
+reset()
+tmp = tempfile.mkdtemp()
+zipfile.ZipFile(os.path.join(ASSETS, 'boom-mic.zip')).extractall(tmp)
+bpy.ops.import_scene.fbx(filepath=os.path.join(tmp, 'source', 'BoomMic_Joined.fbx'))
+bake_transforms()
+o = meshes()[0]
+o.name = o.data.name = 'mic'
+n0 = tris(o)
+size = ground_centre(o)
+o.data.transform(Matrix.Scale(1.6 / size.z, 4))
+size = ground_centre(o)
+# the stand's foot at the origin (the boom overhangs): centre on the lowest vertices
+foot = [v.co for v in o.data.vertices if v.co.z < 0.05]
+fx, fy = sum(v.x for v in foot) / len(foot), sum(v.y for v in foot) / len(foot)
+o.data.transform(Matrix.Translation(Vector((-fx, -fy, 0))))
+# the boom reaches forward (-y): the head is the far end from the foot at the top
+top = [v.co for v in o.data.vertices if v.co.z > size.z * 0.6]
+hx, hy = sum(v.x for v in top) / len(top), sum(v.y for v in top) / len(top)
+o.data.transform(Matrix.Rotation(-math.atan2(hx, -hy), 4, 'Z'))
+# its maps, linked by name (the FBX loses them) and cut to 512
+TEX = os.path.join(tmp, 'textures')
+mat = bpy.data.materials.new('mic'); mat.use_nodes = True
+nt = mat.node_tree; bsdf = nt.nodes['Principled BSDF']
+def img(file, colour=True):
+    im = bpy.data.images.load(os.path.join(TEX, file)); im.scale(512, 512)
+    im.filepath_raw = os.path.join(tmp, 'small_' + file); im.file_format = 'PNG'; im.save()     # the exporter writes the file's own bytes
+    if not colour: im.colorspace_settings.name = 'Non-Color'
+    t = nt.nodes.new('ShaderNodeTexImage'); t.image = im
+    return t
+nt.links.new(img('main_material_Base_Color.png').outputs['Color'], bsdf.inputs['Base Color'])
+nt.links.new(img('main_material_Roughness.png', False).outputs['Color'], bsdf.inputs['Roughness'])
+nt.links.new(img('main_material_Metallic.png', False).outputs['Color'], bsdf.inputs['Metallic'])
+nm = nt.nodes.new('ShaderNodeNormalMap')
+nt.links.new(img('main_material_Normal_OpenGL.png', False).outputs['Color'], nm.inputs['Color'])
+nt.links.new(nm.outputs['Normal'], bsdf.inputs['Normal'])
+o.data.materials.clear(); o.data.materials.append(mat)
+n = cut(o, MIC_TRIS)
+print('mic tris', n0, '->', n, 'size', [round(v, 2) for v in box(o)[1] - box(o)[0]])
+export([o], 'mic.glb')
+preview([o], 'mic')

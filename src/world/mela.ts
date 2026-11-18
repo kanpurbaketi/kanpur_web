@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { cloneCar, loadPBR } from './vehicleModels';
@@ -476,6 +477,54 @@ export class Mela {
     this.group.add(m);
   }
 
+  /**
+   * The sofas and the mic, once their models are in: the sofas (in the stage's frame, backs to the banner, x along the row)
+   * merged by material, a few draw calls for the lot; the mic on a tripod foot in front of the reciter at (mx, mz),
+   * turned to him.
+   */
+  private stageProps(stage: THREE.Group, sofas: { name: string; x: number }[], z: number, floor: number, mx: number, mz: number): void {
+    const loader = new GLTFLoader();
+    loader.loadAsync('models/sofas.glb').then((gltf) => {
+      gltf.scene.updateMatrixWorld(true);
+      const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+      gltf.scene.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        let name = m.name;
+        for (let p: THREE.Object3D | null = m; p; p = p.parent) if (/^(sofa2|sofa3|chair)$/.test(p.name)) { name = p.name; break; }
+        for (const s of sofas) {
+          if (s.name !== name) continue;
+          const geo = m.geometry.clone().applyMatrix4(m.matrixWorld).applyMatrix4(new THREE.Matrix4().makeTranslation(s.x, floor, z));
+          const mat = m.material as THREE.Material;
+          if (!byMat.has(mat)) byMat.set(mat, []);
+          byMat.get(mat)!.push(geo);
+        }
+      });
+      for (const [mat, geos] of byMat) {
+        const merged = mergeGeometries(geos.map((g) => (g.index ? g.toNonIndexed() : g)), false);
+        if (!merged) continue;
+        const mesh = new THREE.Mesh(merged, mat);
+        mesh.castShadow = mesh.receiveShadow = true;
+        stage.add(mesh);
+      }
+    }).catch(() => {});
+    loader.loadAsync('models/mic.glb').then((gltf) => {
+      const mic = gltf.scene;
+      mic.position.set(mx, floor, mz + 0.6);
+      mic.rotation.y = Math.PI;                      // its head toward him
+      mic.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
+      // the tripod foot it stands on
+      const g = new Geo();
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2;
+        g.rod(new THREE.Vector3(0, 0.32, 0), new THREE.Vector3(Math.cos(a) * 0.26, 0.01, Math.sin(a) * 0.26), 0.012, '#1b1b1d', 5);
+      }
+      g.cyl(0, 0.3, 0, 0.022, 0.06, '#1b1b1d', 8);
+      mic.add(new THREE.Mesh(g.build(), litMat({ metalness: 0.6, roughness: 0.4 })));
+      stage.add(mic);
+    }).catch(() => {});
+  }
+
   private buildStage(lights: LightPool | null, desktop: boolean): void {
     // The stage is built in its own frame (centre at the origin, front toward +z, audience beyond) and the group is turned so the
     // front faces east, as on the map.
@@ -492,13 +541,10 @@ export class Mela {
     g.box(cx, SH / 2, cz, W, SH, D, '#6b4a2a');
     g.box(cx, SH + 0.04, cz, W - 0.4, 0.08, D - 0.4, '#bdb8a8');                                     // white gaddi (a dull white: under the stage lights a true white burns out)
     g.box(cx, SH + 0.04, cz + 1.5, 10, 0.1, 2.8, '#aca697');                                          // second sheet
-    for (let i = 0; i < 9; i++) g.cyl(cx - 6 + i * 1.5, SH + 0.1, cz - 2.6, 0.2, 1.2, i % 2 ? '#b3261e' : '#e9c46a', 8, 0.2); // takiya
     for (const sx of [-1, 1]) {
       g.box(cx + sx * 6, 0.5, cz + D / 2 + 1.0, 1.4, 1.0, 0.5, '#8a5a2a');                          // steps
       for (let k = 0; k < 3; k++) g.box(cx + sx * 9.5, 0.5 + k * 1.0, cz + 2.4, 1.2, 0.95, 1.2, '#161616');   // speaker stacks
     }
-    g.box(cx - 3.6, SH + 0.45, cz + 3.0, 0.9, 0.9, 0.7, '#6b3d1f');                                     // podium
-    g.box(cx - 3.6, SH + 1.0, cz + 2.8, 0.04, 0.5, 0.04, '#222');
     // truss, pillars, roof
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.rod(new THREE.Vector3(cx + sx * (W / 2 - 0.2), SH, cz + sz * (D / 2 - 0.2)), new THREE.Vector3(cx + sx * (W / 2 - 0.2), 7.4, cz + sz * (D / 2 - 0.2)), 0.16, '#8f8f94');
     g.box(cx, 7.5, cz + D / 2 - 0.2, W, 0.5, 0.5, '#9a9aa0');
@@ -558,11 +604,30 @@ export class Mela {
 
     // people (figures.ts): poets on the gaddi, one at the mic, the audience on the floor
     const people: Spot[] = [];
+    // the poets on a row of sofas along the back (sofas.glb: tools/blender/build_props.py), the one reciting at the mic in
+    // front; his seat, the armchair at the left end, stands empty
+    const FLOOR = SH + 0.08, SEAT_Z = cz - D / 2 + 1.35;
+    const row: { name: 'chair' | 'sofa2' | 'sofa3'; w: number; seats: number[] }[] = [
+      { name: 'chair', w: 0.67, seats: [0] }, { name: 'sofa2', w: 1.23, seats: [-0.3, 0.3] }, { name: 'sofa3', w: 1.8, seats: [-0.56, 0, 0.56] },
+      { name: 'sofa2', w: 1.23, seats: [-0.3, 0.3] }, { name: 'chair', w: 0.67, seats: [0] },
+    ];
+    const GAP = 0.35, span = row.reduce((a, r) => a + r.w, 0) + GAP * (row.length - 1);
+    const sofas: { name: string; x: number }[] = [], seats: number[] = [];
+    let at = cx - span / 2;
+    for (const r of row) {
+      const x = at + r.w / 2;
+      sofas.push({ name: r.name, x });
+      for (const s of r.seats) seats.push(x + s);
+      post(x, SEAT_Z, r.w / 2, FLOOR + 0.9, FLOOR);
+      at += r.w + GAP;
+    }
+    this.stageProps(stage, sofas, SEAT_Z, FLOOR, cx - 3.6, cz + 3.0);
     const poets: FigureKind[] = ['uncle', 'uncle', 'boy', 'aunty', 'uncle', 'girl', 'uncle', 'boy'];
     poets.forEach((kind, i) => {
-      people.push({ x: cx - 6 + i * 1.7, y: SH + 0.09, z: cz - 1.1 + (i % 2) * 0.4, ry: Math.PI, pose: 'sit', kind, look: i * 3 + 1 });
+      // sitting back on the cushion (its top 0.38 m; the pose's seat is 0.41 m above its feet)
+      people.push({ x: seats[i + 1], y: FLOOR - 0.03, z: SEAT_Z - 0.08, ry: Math.PI, pose: 'chair', kind, look: i * 3 + 1 });
     });
-    people.push({ x: cx - 3.6, y: SH + 0.08, z: cz + 3.6, ry: Math.PI, pose: 'talk_b', kind: 'uncle', look: 4 });      // reciting, arms raised
+    people.push({ x: cx - 3.6, y: FLOOR, z: cz + 3.0, ry: Math.PI, pose: 'talk_b', kind: 'uncle', look: 4 });      // reciting, arms raised
     const cols = Math.floor((AUDIENCE.z1 - AUDIENCE.z0) / 0.86), rowsN = Math.floor((AUDIENCE.x1 - AUDIENCE.x0) / 0.95);
     const aud0 = AUDIENCE.x0 - sx0 + 0.5;       // first row, in the stage frame
     for (let r = 0; r < rowsN; r++) for (let c = 0; c < cols; c++) {

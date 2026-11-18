@@ -5,7 +5,7 @@ import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { cloneCar, loadPBR } from './vehicleModels';
 import { Pedestrians } from './pedestrians';
 import { addFigures, FigureKind, figurePosts, ONLOOKER, someone, Spot } from './figures';
-import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, GATE, HINDOLA, INFLATABLE, KUAN, MELA, Rect, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
+import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, DX, DZ, GATE, HINDOLA, INFLATABLE, KUAN, MELA, Rect, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
 import { buildInflatable } from './inflatable';
 import { buildMautKuan } from './mautKuan';
 import { MapData } from './types';
@@ -453,7 +453,7 @@ export class Mela {
 
   update(dt: number, fx: number, fz: number, dirX: number, dirZ: number, px: number, pz: number, py = 0): void {
     this.t += dt;
-    const far = Math.hypot(fx - 50, fz - 165) > 260;
+    const far = Math.hypot(fx - MELA.cx, fz - MELA.cz) > 260;
     if (far) return;
     for (const r of this.rides) r.update(this.t, dt);
     this.crowd.update(dt, fx, fz, dirX, dirZ, px, pz, py);
@@ -467,7 +467,8 @@ export class Mela {
     const pos = geo.getAttribute('position');
     for (let i = 0; i < pos.count; i++) pos.setY(i, 0.05);
     g.add(geo.index ? geo.toNonIndexed() : geo, '#6f624d');
-    g.box(GATE.x, 0.07, (GATE.z + 150) / 2, 7, 0.02, GATE.z - 150, '#7b6d56');
+    const mid = DZ + 150;   // the packed aisle runs from the gate to the middle
+    g.box(GATE.x, 0.07, (GATE.z + mid) / 2, 7, 0.02, GATE.z - mid, '#7b6d56');
     const m = new THREE.Mesh(g.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }));
     m.receiveShadow = true;
     this.group.add(m);
@@ -734,7 +735,8 @@ export class Mela {
   // tall floodlight masts on the edges: the white glare that makes a mela visible from far away
   private buildMasts(lights: LightPool | null): void {
     const g = new Geo(), bulbs = new Bulbs();
-    for (const [x, z] of [[-5.5, 131], [105.5, 131], [-5.5, 199], [105.5, 199], [44, 129.5], [30, 201], [75, 201]]) {
+    for (const [lx, lz] of [[-5.5, 131], [105.5, 131], [-5.5, 199], [105.5, 199], [44, 129.5], [30, 201], [75, 201]]) {
+      const x = DX + lx, z = DZ + lz;
       g.rod(new THREE.Vector3(x, 0, z), new THREE.Vector3(x, 11, z), 0.12, '#7a7d82');
       g.box(x, 11.2, z, 1.7, 0.5, 0.3, '#2a2a2e');
       for (let k = 0; k < 4; k++) bulbs.add(x - 0.6 + k * 0.4, 11.0, z - 0.2, '#fff7e0', -1, 3.2);
@@ -858,7 +860,7 @@ export class Mela {
     // the torn place: a warm glow leaks out through it, a trodden path leads to it from the park
     lights?.add(TEAR.x + 4, 2.2, TEAR.z, '#ffbf7a', 150, 20);
     const path = new Geo();
-    path.box(TEAR.x - 6, 0.06, TEAR.z, 12, 0.02, 3.2, '#8a7a60');
+    path.box(TEAR.x - 3, 0.06, TEAR.z, 6, 0.02, 3.2, '#8a7a60');   // the alley beside the building west of the wall is ~6 m wide
     this.group.add(new THREE.Mesh(path.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 })));
   }
 
@@ -877,15 +879,16 @@ export class Mela {
     const solids: Rect[] = [...STALL_BLOCKS.map((r) => pad(r, 1.4)), pad(STAGE, 1.2), pad(AUDIENCE, 0.4)];
     const discs = [{ ...WHEEL, r: WHEEL.r + 1.5 }, { ...INFLATABLE, r: INFLATABLE.r + 2 }, { ...KUAN, r: KUAN.r + 1.5 },
       { ...CAROUSEL, r: 6.5 }, { ...HINDOLA, r: 7 }, { ...COLUMBUS, r: 8 }, { ...CHAIR_SWING, r: 8 }];
+    const X0 = MELA.x0 + 1.5, X1 = MELA.x1 - 1.5, Z0 = MELA.z0 + 0.5, Z1 = MELA.z1 - 0.5;
     const free = (x: number, z: number) =>
-      x > -6.5 && x < 106.5 && z > 129 && z < 201.5 &&
+      x > X0 && x < X1 && z > Z0 && z < Z1 &&
       !solids.some((r) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1) && !discs.some((c) => Math.hypot(x - c.x, z - c.z) < c.r);
     const S = 4.5, roads: ReturnType<typeof road>[] = [];
-    const gx = (i: number) => -6 + i * S, gz = (j: number) => 130 + j * S;
-    for (let i = 0; gx(i) < 106.5; i++) for (let j = 0; gz(j) < 201.5; j++) {
+    const gx = (i: number) => MELA.x0 + 2 + i * S, gz = (j: number) => MELA.z0 + 1.5 + j * S;
+    for (let i = 0; gx(i) < X1; i++) for (let j = 0; gz(j) < Z1; j++) {
       if (!free(gx(i), gz(j))) continue;
-      if (free(gx(i + 1), gz(j)) && gx(i + 1) < 106.5) roads.push(road([[gx(i), gz(j)], [gx(i + 1), gz(j)]]));
-      if (free(gx(i), gz(j + 1)) && gz(j + 1) < 201.5) roads.push(road([[gx(i), gz(j)], [gx(i), gz(j + 1)]]));
+      if (free(gx(i + 1), gz(j)) && gx(i + 1) < X1) roads.push(road([[gx(i), gz(j)], [gx(i + 1), gz(j)]]));
+      if (free(gx(i), gz(j + 1)) && gz(j + 1) < Z1) roads.push(road([[gx(i), gz(j)], [gx(i), gz(j + 1)]]));
     }
     return { ...map, roads };
   }

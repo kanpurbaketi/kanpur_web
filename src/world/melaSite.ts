@@ -5,15 +5,21 @@
 */
 
 const K = 119 / 1558;                                   // the wall is 119 m wide on the map (1558 px)
-export const mx = (px: number): number => -9.5 + (px - 91) * K;
-export const mz = (py: number): number => 127 + (py - 62) * K;
+/**
+ * Where the ground is: the real numaish ground, south of Japani Garden, on the right of the park road once it turns west at
+ * the Nagar Nigam (plans/05-stage1-route.md). The layout was first drawn for Tulsi Upvan, so it is that layout moved by
+ * (DX, DZ): its gate in the south wall faces the road.
+ */
+export const DX = -203, DZ = 115.5;
+export const mx = (px: number): number => DX - 9.5 + (px - 91) * K;
+export const mz = (py: number): number => DZ + 127 + (py - 62) * K;
 
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 const rect = (a: number, b: number, c: number, d: number): Rect => ({ x0: mx(a), x1: mx(c), z0: mz(b), z1: mz(d) });
 const circle = (px: number, py: number, rpx: number) => ({ x: mx(px), z: mz(py), r: rpx * K });
 
 /** the trodden ground inside the cloth wall */
-export const MELA = { x0: -8, x1: 108, z0: 128.5, z1: 202, cx: 50, gateZ: 203.5 };
+export const MELA = { x0: DX - 8, x1: DX + 108, z0: DZ + 128.5, z1: DZ + 202, cx: DX + 50, cz: DZ + 165, gateZ: DZ + 203.5 };
 
 export function inMela(x: number, z: number, margin = 0): boolean {
   return x > MELA.x0 - margin && x < MELA.x1 + margin && z > MELA.z0 - margin && z < MELA.z1 + margin;
@@ -50,12 +56,12 @@ export function clipRoadsToMela<T extends { pts: [number, number][] }>(roads: T[
 }
 
 /** The torn place in the boundary cloth, west side, level with the stage entry. */
-export const TEAR = { x: -9.5, z: mz(620) };
+export const TEAR = { x: DX - 9.5, z: mz(620) };
 /** The mela gate, in the middle of the south wall (a real opening, `half` metres each side of x). */
-export const GATE = { x: mx(895), z: 203.5, half: 4.2 };
+export const GATE = { x: mx(895), z: DZ + 203.5, half: 4.2 };
 
 /** Outline of the boundary cloth (clockwise from the north-west corner). */
-export const WALL_LOOP: [number, number][] = [[-9.5, 127], [109.5, 127], [109.5, 203.5], [-9.5, 203.5]];
+export const WALL_LOOP: [number, number][] = [[DX - 9.5, DZ + 127], [DX + 109.5, DZ + 127], [DX + 109.5, DZ + 203.5], [DX - 9.5, DZ + 203.5]];
 
 // ---- the layout on the map ---------------------------------------------------------------------------
 /** kavi sammelan stage: its front faces east, towards the audience */
@@ -67,7 +73,7 @@ export const AUDIENCE = rect(355, 384, 553, 675);         // people sitting, cla
 export const WHEEL = circle(926, 329, 122);
 export const INFLATABLE = circle(1232, 272, 59.5);
 /** maut ka kuan: far bigger than the map drew it, so it has the whole south-east corner (the radius takes in the round stair) */
-export const KUAN = { x: 90.5, z: 184.5, r: 16.5 };
+export const KUAN = { x: DX + 90.5, z: DZ + 184.5, r: 16.5 };
 
 /** each box on the map is a block of stalls (a row, or two rows back to back) */
 export const STALL_BLOCKS: Rect[] = [

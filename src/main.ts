@@ -164,7 +164,7 @@ async function main() {
     spawn = project(map, lat, lon);
   }
   const spawnMode = params.get('spawn') ?? (map.area === 'moti_jheel' ? 'inside' : null);
-  if (spawnMode === 'mela') spawn = [TEAR.x - 7, TEAR.z];   // in the park, outside the torn place in the cloth wall
+  if (spawnMode === 'mela') spawn = [TEAR.x - 3.5, TEAR.z]; // in the alley outside the torn place in the cloth wall
   if (spawnMode === 'inside') spawn = [TEAR.x + 2.2, TEAR.z]; // the game starts in the mela, just past the tear (beside the stage entry)
   let best = spawn, bd = Infinity;
   for (const p of city.roadPoints) {

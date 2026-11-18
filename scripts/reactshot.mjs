@@ -64,7 +64,7 @@ await page.evaluate(() => { const p = window.__g; p.block = 0; p.flinch = 0; p.c
 await page.waitForTimeout(430); await shot('4c_kick');
 await page.waitForTimeout(900); await page.evaluate(() => { window.__g.cool = 5; }); await page.waitForTimeout(500); await shot('4d_fight_idle');
 // 3. Ramu knocked out, then waking
-await page.evaluate(() => { const r = window.__ramu; r.position.set(40, 0, 150); r.yaw = 2.3; r.pitch = -0.3; window.__health.hurt(500); });
+await page.evaluate(() => { const r = window.__ramu; r.position.set(40 - 203, 0, 150 + 115.5); r.yaw = 2.3; r.pitch = -0.3; window.__health.hurt(500); });
 await page.waitForTimeout(1900); await shot('5_ramu_out');
 await page.waitForTimeout(1300);
 await page.evaluate(() => { const r = window.__ramu; r.yaw = 2.3; r.pitch = -0.3; });

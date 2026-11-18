@@ -213,9 +213,10 @@ async function main() {
   };
 
   // Blender-built props: traffic (buses, autos, e-rickshaws) and panipuri stalls. ?traffic=0 turns traffic off.
-  const traffic = params.get('traffic') === '0' ? null : await Traffic.create(map, desktop);
+  const traffic = params.get('traffic') === '0' ? null : await Traffic.create(map, desktop, route?.parking ?? []);
   if (traffic) {
     scene.add(traffic.group);
+    if (route) traffic.pin(route.parking);      // stage 1: parked along the kerbs, locked (Ramu can pick a lock)
     peds.vehicleAt = (x, z, r) => traffic.hit(x, z, r);
     peds.vehiclePush = (x, z, r) => traffic.pushOut(x, z, r);
   }

@@ -91,7 +91,14 @@ export interface Vehicle {
    * was last knocked (a scrape is one knock, not one a frame).
    */
   damage: number; broken: number; own: THREE.Group | null; hitT: number;
+  /** parked at the kerb by its owner (stage 1): stands there for good, costs nothing until Ramu touches it */
+  pinned: boolean;
+  /** locked: Ramu has to pick the lock to take it (drive.ts) */
+  locked: boolean;
 }
+
+/** a kerbside spot for a parked vehicle: its kind's name, where, which way it faces */
+export interface ParkSpot { kind: string; x: number; z: number; heading: number }
 
 export const BRAKE = 1, REVERSE = 2, LEFT = 4, RIGHT = 8;
 
@@ -202,7 +209,8 @@ export class Traffic {
   /** every road's segments in 24 m cells: [x0, z0, x1, z1, half width] (onRoad) */
   private roadCells = new Map<string, [number, number, number, number, number][]>();
 
-  static async create(map: MapData, desktop: boolean): Promise<Traffic> {
+  /** `parked`: vehicles to stand at the kerb for good (pin): made on top of the traffic's own of each kind */
+  static async create(map: MapData, desktop: boolean, parked: ParkSpot[] = []): Promise<Traffic> {
     const kinds: Kind[] = [
       { name: 'bus', count: desktop ? 3 : 2, speed: 7.5, halfL: 4.8, halfW: 1.3, majorOnly: true },
       { name: 'bus_green', count: desktop ? 2 : 1, speed: 7.0, halfL: 4.8, halfW: 1.3, majorOnly: true },
@@ -224,6 +232,10 @@ export class Traffic {
         seats: [{ pose: 'ride', at: [0, 0.36, -0.02], who: ['uncle'] },
           { pose: 'chair', at: [-0.24, 0.36, -1.0], scale: 0.95, maybe: true }, { pose: 'chair', at: [0.24, 0.36, -1.0], scale: 0.95, maybe: true }] },
     ];
+    for (const p of parked) {
+      const k = kinds.find((k) => k.name === p.kind);
+      if (k) k.count++;
+    }
     const parts: Parts[] = await Promise.all(kinds.map((k) => loadAny(k.name)));
     // the far models: the same parts (matched by material) cut down; a kind without one is drawn in full at any distance
     const far = await Promise.all(kinds.map(async (k, ki) => {
@@ -320,7 +332,7 @@ export class Traffic {
         this.cars.push({
           kind: ki, slot: i, vmax: k.speed * (0.85 + Math.random() * 0.3), v: 0,
           a: 0, b: 0, link: { to: 0, off: 0, bus: false }, t: 0, len: 1, x: 0, z: 0, heading: 0, fresh: true, near: false,
-          player: false, parked: false, empty: false, dist: 0, steer: 0, sim: null, lamps: 0, dark: false, next: null, blinkT: 0, roll: 0, pitch: 0, damage: 0, broken: 0, own: null, hitT: 0,
+          player: false, parked: false, empty: false, dist: 0, steer: 0, sim: null, lamps: 0, dark: false, next: null, blinkT: 0, roll: 0, pitch: 0, damage: 0, broken: 0, own: null, hitT: 0, pinned: false, locked: false,
         });
       }
     });
@@ -360,6 +372,19 @@ export class Traffic {
     return null;
   }
 
+  /**
+   * Stand vehicles at the kerb, locked, nobody on them: they stay there (never recycled, no physics) until Ramu takes
+   * one. Each takes a slot of its kind that is not out in the traffic yet.
+   */
+  pin(spots: ParkSpot[]): void {
+    for (const p of spots) {
+      const ki = this.kinds.findIndex((k) => k.name === p.kind);
+      const c = this.cars.find((c) => c.kind === ki && c.fresh && !c.pinned);
+      if (!c) continue;
+      Object.assign(c, { x: p.x, z: p.z, heading: p.heading, v: 0, fresh: false, parked: true, empty: true, pinned: true, locked: true, dark: true });
+    }
+  }
+
   /** where the vehicles are (for tests) */
   positions(): { kind: string; x: number; z: number; heading: number }[] {
     return this.cars.filter((c) => !c.fresh).map((c) => ({ kind: this.kinds[c.kind].name, x: c.x, z: c.z, heading: c.heading }));
@@ -394,8 +419,9 @@ export class Traffic {
     }
     for (const r of map.roads) {
       if (r.bridge || r.w < 3.5) continue;
-      const off = r.oneway ? 0 : Math.max(0.9, Math.min(2.2, r.w / 4));
       const slow = map.area === 'moti_jheel' && r.pts.some(([x, z]) => inCorridor(x, z));   // stage 1's park road: crowded, slow
+      // (its lanes keep in from the parked rows along both kerbs)
+      const off = r.oneway ? 0 : slow ? 1.6 : Math.max(0.9, Math.min(2.2, r.w / 4));
       // the stubs left where the corridor's edge cut a lane (to a closed gate, a barricade): nobody drives into those
       if (slow && r.pts.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - r.pts[i - 1][0], p[1] - r.pts[i - 1][1]) : 0), 0) < 25) continue;
       const bus = MAJOR.has(r.cls) && r.w >= 6.5 && !slow;
@@ -580,6 +606,7 @@ export class Traffic {
     this.clock += dt;
     for (const c of this.cars) {
       if (c.player) continue;                 // Ramu drives it (drive())
+      if (c.pinned && !c.sim) continue;       // parked by its owner, untouched: stands where it is
       if (c.fresh) this.place(c, fx, fz, 25, SPAWN_MAX, 0, 0);
       else if (Math.hypot(c.x - fx, c.z - fz) > DESPAWN) {
         c.fresh = true;
@@ -734,6 +761,8 @@ export class Traffic {
     c.player = true;
     c.parked = false;
     c.empty = true;
+    c.locked = false;
+    c.pinned = false;                         // his now: left where he gets off, back to the traffic in time
     this.takeOwn(c);
     const fx = Math.sin(c.heading), fz = Math.cos(c.heading), lx = fz, lz = -fx;
     return out.map((o) => {

@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { BULB, Bulbs, banner, bannerMat, Geo, litMat, rnd } from './geo';
 import { LightPool } from './night';
 import { DX, DZ, GATE } from './melaSite';
-import { loadPBR, PBRPart } from './vehicleModels';
+import type { ParkSpot } from './props';
 import { walkAlong } from './city';
 import { offsetLines } from './meshBuilder';
-import { MapData, P2, pointInPoly, Road } from './types';
+import { centroid, MapData, P2, pointInPoly, Road } from './types';
 import { STATUE } from './stage1Site';
 export { SHIVAJI_START } from './stage1Site';
 
@@ -103,6 +103,12 @@ export function prepareRoute(map: MapData): void {
   const line = routeLine(map);
   // nothing standing on the road or its footpaths
   map.buildings = map.buildings.filter((b) => !b.pts.some(([x, z]) => distToLine(x, z, line) < ROAD_W / 2 + WALK + 0.4));
+  // the two parks are lawns and trees, as in the video: nothing built in them
+  const parks = map.parks.filter((p) => p.name === 'Japani Garden' || p.name === 'Tulsi Upvan');
+  map.buildings = map.buildings.filter((b) => {
+    const [cx, cz] = centroid(b.pts);
+    return !parks.some((p) => pointInPoly(cx, cz, p.pts));
+  });
   // Japani Garden steps round the mela's north-east corner
   const jg = map.parks.find((p) => p.name === 'Japani Garden');
   if (jg) {
@@ -206,8 +212,11 @@ export class Stage1Route {
     const m = new THREE.Mesh(this.solid.build(), litMat({ metalness: 0.05, roughness: 0.85 }));
     m.castShadow = m.receiveShadow = true;
     this.group.add(m, this.bulbs.object(0.8));
-    void this.parked();
+    this.parking = this.parkingSpots();
   }
+
+  /** where vehicles stand parked, locked (main.ts hands them to the traffic) */
+  readonly parking: ParkSpot[];
 
   private wallRing(a: P2, b: P2, h: number): void {
     const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1, nx = (-dz / L) * 0.2, nz = (dx / L) * 0.2;
@@ -436,22 +445,26 @@ export class Stage1Route {
     for (let x = MX0 + 12; x < MX1; x += 26) this.lights?.add(x, 3, MZ1 + 4, '#ffc58a', 70, 14);
   }
 
-  /** cars, autos, bikes and cycles parked nose to tail along both kerbs, with gaps; instanced per model part */
-  private async parked(): Promise<void> {
+  /**
+   * Cars, bikes and cycles parked along both kerbs, with long gaps (a third of a full row). They are the traffic's own
+   * vehicles (Traffic.pin), locked: Ramu can pick a lock and take one (drive.ts).
+   */
+  private parkingSpots(): ParkSpot[] {
     const line = routeLine(this.map);
-    if (line.length < 2) return;
-    const KINDS: { name: string; len: number; w: number; paints: string[] }[] = [
-      { name: 'swift', len: 3.9, w: 1.8, paints: ['#e8e8e8', '#9a1c1c', '#c9c9c9', '#2a3d66'] },
-      { name: 'maruti', len: 3.4, w: 1.5, paints: ['#f2f2f2', '#d8d0c0'] },
-      { name: 'bolero', len: 4.0, w: 1.9, paints: ['#f4f4f4', '#3b3b3b'] },
-      { name: 'ambassador', len: 4.3, w: 1.9, paints: ['#f4f1e8'] },
-      { name: 'pulsar', len: 2.0, w: 0.8, paints: ['#1e1e1e', '#2b4aa0', '#9a1c1c'] },
-      { name: 'enfield', len: 2.1, w: 0.85, paints: ['#1e1e1e', '#5b3a22'] },
-      { name: 'cycle', len: 1.8, w: 0.6, paints: ['#2b2b2b'] },
+    if (line.length < 2) return [];
+    const KINDS: { name: string; len: number; w: number }[] = [
+      { name: 'swift', len: 3.9, w: 1.8 },
+      { name: 'maruti', len: 3.4, w: 1.5 },
+      { name: 'bolero', len: 4.0, w: 1.9 },
+      { name: 'ambassador', len: 4.3, w: 1.9 },
+      { name: 'pulsar', len: 2.0, w: 0.8 },
+      { name: 'pulsar', len: 2.0, w: 0.8 },
+      { name: 'cycle', len: 1.8, w: 0.6 },
     ];
-    const spots: { k: number; x: number; z: number; ry: number; paint: string }[] = [];
+    const spots: ParkSpot[] = [];
+    let n = 0;
     for (const side of [0, 1] as const) {
-      const kerb = offsetLines(line, ROAD_W / 2 - 1.15)[side];
+      const kerb = offsetLines(line, ROAD_W / 2 - 0.95)[side];
       let s = 0, seed = side * 101;
       walkAlong(kerb, 0.5, (x, z, dx, dz) => {
         s -= 0.5;
@@ -464,43 +477,17 @@ export class Stage1Route {
           z < 70 || x < -214 || !inCorridor(x, z);
         if (k < 0 || clear) { s = 4 + rnd(seed) * 8; return; }
         const K = KINDS[k], bike = k >= 4;
-        // cars along the kerb; two-wheelers angled in, nose to the footpath
-        const ry = Math.atan2(dx, dz) + (bike ? (side === 0 ? 1 : -1) * 1.1 : side === 0 ? 0 : Math.PI) + (rnd(seed * 2.1) - 0.5) * 0.08;
-        const off = bike ? 0.25 : 0;
-        const nx = side === 0 ? -dz : dz, nz = side === 0 ? dx : -dx;    // toward the kerb
-        spots.push({ k, x: x + nx * off, z: z + nz * off, ry, paint: K.paints[Math.floor(rnd(seed * 9.9) * K.paints.length)] });
-        if (bike) this.posts.push([x, z, 0.5, 1.3]);
-        else {
-          const fx = Math.sin(ry), fz = Math.cos(ry), q = K.len / 2 - K.w / 2;
-          this.posts.push([x + fx * q, z + fz * q, K.w / 2, 1.6], [x - fx * q, z - fz * q, K.w / 2, 1.6]);
-        }
         s = (bike ? 1.1 : K.len + 0.9) + (rnd(seed * 4.4) < 0.15 ? 6 + rnd(seed) * 10 : 0);
+        if (n++ % 3) return;                     // a third of the row: the rest is gaps
+        // cars along the kerb; two-wheelers angled in, nose to the footpath
+        const heading = Math.atan2(dx, dz) + (bike ? (side === 0 ? 1 : -1) * 1.1 : side === 0 ? 0 : Math.PI) + (rnd(seed * 2.1) - 0.5) * 0.08;
+        const off = bike ? 0.15 : 0;
+        const nx = side === 0 ? -dz : dz, nz = side === 0 ? dx : -dx;    // toward the kerb
+        spots.push({ kind: K.name, x: x + nx * off, z: z + nz * off, heading });
       }, 0);
     }
-    this.parkedSpots = spots.length;
-    await Promise.all(KINDS.map(async (K, ki) => {
-      const mine = spots.filter((p) => p.k === ki);
-      if (!mine.length) return;
-      let parts: PBRPart[];
-      try { parts = await loadPBR(K.name); } catch (e) { console.error('parked', K.name, e); return; }
-      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
-      for (const { geo, mat } of parts) {
-        const tint = mat.name === 'paint' || !!mat.map;
-        const mm = tint ? mat.clone() : mat;
-        if (tint) mm.color.set('#ffffff');
-        const im = new THREE.InstancedMesh(geo, mm, mine.length);
-        mine.forEach((p, i) => {
-          im.setMatrixAt(i, m4.compose(new THREE.Vector3(p.x, 0.02, p.z), q.setFromAxisAngle(up, p.ry), one));
-          if (tint) im.setColorAt(i, new THREE.Color(p.paint).lerp(new THREE.Color('#ffffff'), mat.map ? 0.55 : 0));
-        });
-        im.castShadow = mat.name !== 'glass';
-        if (mat.name === 'glass') im.renderOrder = 1;
-        im.computeBoundingSphere();
-        this.group.add(im);
-      }
-    }));
+    return spots;
   }
-  parkedSpots = 0;
 }
 
 /** each straight stretch of a line: ends, length, the y-rotation that lays a box's x along it */

@@ -9,6 +9,14 @@ import { Pedestrians } from '../world/pedestrians';
 const REACH = 2.4;
 /** seconds to get on, and off */
 const MOUNT = 0.75, DISMOUNT = 0.55;
+/** seconds to pick a parked vehicle's lock: a car, a two-wheeler with an engine; a cycle has none worth the name */
+const PICK_CAR = 30, PICK_BIKE = 15;
+/** how far Ramu can shift while picking before he has let go of it, m */
+const PICK_STILL = 0.6;
+/** the owner, if they are about: within this of their vehicle when he starts; how likely it is that they are; how long they keep after him */
+const OWNER_NEAR = 25, OWNER_CHANCE = 0.55, OWNER_GRUDGE = 25;
+
+interface Picking { car: Vehicle; t: number; need: number; x: number; z: number; owner: number; notice: number; seen: boolean }
 
 /**
  * Ramu takes vehicles. The get-on key on foot: onto the nearest vehicle within reach; whoever was on it is thrown off
@@ -37,6 +45,11 @@ export class Driving {
   private audio = new VehicleAudio();
   /** seconds since the last knock was heard (scraping along a wall is not a thud every frame) */
   private sinceThud = 0;
+  /** picking a lock: which vehicle, how far along, where he stands, the owner (a crowd handle, -1: nobody) and when they notice */
+  private pick: Picking | null = null;
+  /** a line shown in the tip for a while (the owner shouting), and how long it stays */
+  private shout = '';
+  private shoutT = 0;
 
   constructor(scene: THREE.Scene, private traffic: Traffic, private ramu: Ramu, private peds: Pedestrians, private key: () => string) {
     ramu.onUse = () => this.use();
@@ -67,8 +80,31 @@ export class Driving {
     }
     const p = this.ramu.position;
     if (p.y > 0.6) return;                          // up on a roof or a stair: no vehicle up there
+    if (this.pick) { this.pick = null; return; }             // the key again: he gives up on the lock
     const c = this.traffic.nearest(p.x, p.z, REACH);
     if (!c) return;
+    if (c.locked) {
+      const need = this.pickTime(c);
+      if (need > 0) {
+        // the owner may be about: they notice him at it a few seconds in (if he is still at it)
+        const owner = Math.random() < OWNER_CHANCE ? this.peds.ownerNear(c.x, c.z, OWNER_NEAR) : -1;
+        this.pick = { car: c, t: 0, need, x: p.x, z: p.z, owner, notice: 3 + Math.random() * Math.min(8, need - 4), seen: false };
+        this.ramu.faceTowards(c.x, c.z);
+        return;
+      }
+    }
+    this.take(c);
+  }
+
+  /** seconds to pick the lock of this vehicle */
+  private pickTime(c: Vehicle): number {
+    const kind = this.traffic.kindOf(c);
+    return kind === 'cycle' || kind === 'rickshaw' ? 0 : this.traffic.seatOf(c).pose === 'ride' ? PICK_BIKE : PICK_CAR;
+  }
+
+  /** the lock is open (or there was none): on it, whoever was on it thrown off */
+  private take(c: Vehicle): void {
+    const p = this.ramu.position;
     for (const t of this.traffic.board(c)) this.peds.throwOut(t.x, t.z, t.vx, t.vz, t.driver);
     this.car = c;
     this.lights = !c.dark;
@@ -89,7 +125,41 @@ export class Driving {
     this.ramu.ride = null;
   }
 
+  /** picking a lock (null when he is not) for tests / the HUD: seconds done and needed */
+  get picking(): { t: number; need: number } | null {
+    return this.pick ? { t: this.pick.t, need: this.pick.need } : null;
+  }
+
+  /** at the lock: it opens in time if he keeps still; moving off, being hit or knocked out stops him */
+  private picking_(dt: number): void {
+    const k = this.pick!, p = this.ramu.position;
+    if (this.ramu.knockedOut || this.ramu.stun > 0 || Math.hypot(p.x - k.x, p.z - k.z) > PICK_STILL || k.car.player || !k.car.locked) {
+      this.pick = null;
+      return;
+    }
+    k.t += dt;
+    if (!k.seen && k.owner >= 0 && k.t >= k.notice) {
+      k.seen = true;
+      if (this.peds.where(k.owner)) {
+        this.peds.comeFor(k.owner, OWNER_GRUDGE);
+        this.say('"Oye! Meri gaadi!" The owner saw you');
+      }
+    }
+    if (k.t >= k.need) {
+      this.pick = null;
+      k.car.locked = false;
+      this.take(k.car);
+    }
+  }
+
+  private say(text: string): void {
+    this.shout = text;
+    this.shoutT = 3;
+  }
+
   update(dt: number): void {
+    if (this.shoutT > 0) this.shoutT -= dt;
+    if (this.pick) this.picking_(dt);
     if (this.car) {
       // getting on or off: the vehicle held still meanwhile; on it: the keys drive
       const busy = this.w < 1 || this.leaving;
@@ -155,17 +225,23 @@ export class Driving {
       const dead = this.car.damage >= 100 ? ' (engine dead)' : '';
       text = Math.abs(this.car.v) < 0.5 && this.w >= 1 && !this.leaving ? `${this.key()} — get off${dead}` : '';
     }
+    else if (this.pick) {
+      const k = this.pick, f = k.t / k.need, bar = 20;
+      text = `Picking the lock  ${'█'.repeat(Math.round(f * bar))}${'░'.repeat(bar - Math.round(f * bar))}  ${Math.ceil(k.need - k.t)} s — keep still (${this.key()}: give up)`;
+    }
     else {
       const p = this.ramu.position;
       const c = !this.ramu.knockedOut && p.y < 0.6 ? this.traffic.nearest(p.x, p.z, REACH) : null;
-      if (c) text = `${this.key()} — ${this.traffic.seatOf(c).pose === 'ride' ? 'get on' : 'get in'}`;
+      const need = c?.locked ? this.pickTime(c) : 0;
+      if (c) text = need ? `${this.key()} — pick the lock (${need} s)` : `${this.key()} — ${this.traffic.seatOf(c).pose === 'ride' ? 'get on' : 'get in'}`;
     }
+    if (this.shoutT > 0) text = text ? `${this.shout}\n${text}` : this.shout;
     if (text === this.tipText) return;
     this.tipText = text;
     if (this.tip) {
       this.tip.textContent = text;
       this.tip.style.display = text ? 'block' : 'none';
     }
-    if (this.btn) this.btn.textContent = this.car ? 'GET OFF' : 'GET IN';
+    if (this.btn) this.btn.textContent = this.car ? 'GET OFF' : this.pick ? 'STOP' : 'GET IN';
   }
 }

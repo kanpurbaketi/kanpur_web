@@ -46,7 +46,7 @@ Map facts (public/data/moti_jheel/map.json; x east, z south, metro at about the 
 - Keep the video findings about the mela's look as a short "later" section; the user will fix the mela afterwards.
 - Commit only; no push.
 
-## Phase 1: Move the mela (translation only)
+## Phase 1: Move the mela (translation only) — done
 The mela's gate is in its south wall, and the new ground has the road to its south. So **no rotation**: only a shift
 of about (DX, DZ) ≈ (−210, +118). That puts the wall at about x −219..−100, z 245..322.
 - `src/world/melaSite.ts`:
@@ -70,7 +70,7 @@ of about (DX, DZ) ≈ (−210, +118). That puts the wall at about x −219..−1
   traffic links dropped (props.ts:401), vendors.
 - The old Tulsi Upvan site goes back to being park, with trees, because inMela no longer covers it.
 
-## Phase 2: The route, walls and barricades (new `src/world/stage1Route.ts`)
+## Phase 2: The route, walls and barricades (new `src/world/stage1Route.ts`) — done
 Built when `map.area === 'moti_jheel'`. Look and feel come from the video frames: frame 3 (gate), frames 8–14 (road),
 frame 16 (approach).
 
@@ -131,7 +131,7 @@ frame 16 (approach).
 - **Lights:** white LED and sodium street lamps, green tree uplights, and fairy-light strings on the mela's road-side
   cloth wall.
 
-## Phase 3: Where the game starts (menu)
+## Phase 3: Where the game starts (menu) — done
 **src/ui/menu.ts**
 - The Places section gets a **Start at** choice: **Shivaji Putla gate** (default) or **Inside the mela**.
 - It is stored in localStorage `kanpur.start.v1`. settings.ts is numbers-only and admin-edited, so it isn't used.
@@ -144,6 +144,38 @@ frame 16 (approach).
 - `'metro'` stays for test scripts. It is outside the corridor, so it is only for debugging.
 - Health respawn keeps using `spawnAt`, so a knockout wakes Ramu at the start.
 - scripts/reactshot.mjs:67 hardcodes a mela point (40,150); it moves with the shift.
+
+## Done as
+- **Mela:** shifted by (DX, DZ) = (−203, +115.5). The cloth wall is at x −212.5..−93.5, z 242.5..319.
+  - Small sheds in the ground were cleared.
+  - The torn place faces a ~6.5 m alley along the building to the west. The alley is reachable, with a tin fence
+    across its far end.
+- **Corridor walls:** built from the `CORRIDOR` ring in `stage1Route.ts`; `world.addWall(CORRIDOR, 80, false)` backs
+  them invisibly.
+  - Every road crossing the ring is cut at it, so traffic and walkers inside stay inside.
+  - `parkEdge` skips Japani Garden and Tulsi Upvan, whose corridor sides are walled by the route.
+- **Park road:** that OSM way's piece inside the ring becomes `tertiary`, 10 m, two-way, with footpaths, so it gets a
+  centre line, kerbs and lamps.
+  - One building on its line, at (−42..−37, 133..153), is removed.
+- **Traffic:** links touching the corridor are `slow`.
+  - Speed cap 5.5 m/s, no buses or trucks, at most 6 vehicles at a time.
+  - Stubs under 25 m left by the cuts are not driven.
+- **Parked vehicles:** instanced per model part; they are scenery only. The moving ones can be taken with E.
+- **Statue:** in the island where the way in splits. Trees within 9 m are cleared so it reads at the start
+  (`stage1Site.ts`).
+- **Nagar Nigam:** the entrance and name board are on the front block, at x −70..−50, z 394..407. You see it through
+  the closed lane gate.
+- **Start choice:** stored in `localStorage` `kanpur.start.v1` (`src/game/start.ts`); the default is the Shivaji gate.
+- **Checks:**
+  - `scripts/corridorcheck.mjs`: running and jumping at every edge, Ramu got out 0 of 78 times. Riding a bike flat
+    out at the edges, 0 of 19.
+  - `scripts/startshot.mjs`: the menu choice, the reload, and the remembered start.
+  - FPS: 30–35 along the route, 29 at the mela gate. The start is 30–32, against 37–38 before. The extra cost is the
+    statue, gate and walls in view.
+- **Not done yet:**
+  - parked bikes you can take
+  - chowmein / papad carts with steam near the mela gate (the town's automatic roadside vendors do appear)
+  - a photo-matched Nagar Nigam
 
 ## Critical files
 - src/world/melaSite.ts, src/world/mela.ts (shift only)

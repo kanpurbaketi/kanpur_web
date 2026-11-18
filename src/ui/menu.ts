@@ -1,4 +1,5 @@
 import { Stats } from '../game/stats';
+import { setStartChoice, startChoice, STARTS } from '../game/start';
 import type { Part } from '../game/parts';
 import { ACTIONS, Action, Controls, DEFAULTS, label } from '../game/controls';
 import { MapData, P2, centroid } from '../world/types';
@@ -407,7 +408,35 @@ export class Menu {
     search.addEventListener('input', draw);
     draw();
     const note = text('p', parts.length > 1 ? 'Places open to play. Going to one reloads the game there.' : 'Only Moti Jheel is open for now.', 'muted');
+    if (this.d.area === 'moti_jheel') this.body.append(this.startAt());
     this.body.append(search, list, note);
+  }
+
+  /** Moti Jheel: where the game starts (stage 1 from the Shivaji Putla gate, or straight into the mela). Choosing one restarts there. */
+  private startAt(): HTMLElement {
+    const box = el('div', 'start-at');
+    box.append(text('h3', 'Start at'));
+    const now = new URLSearchParams(location.search).get('spawn') ?? startChoice();
+    const list = el('div', 'place-list');
+    for (const s of STARTS) {
+      const here = s.id === now;
+      const b = el('button', 'place-row');
+      b.setAttribute('aria-pressed', String(here));
+      b.innerHTML = `<span><span class="place-name"></span><br><span class="place-meta"></span></span><span class="place-meta"></span>`;
+      const [name, note, state] = b.querySelectorAll('span.place-name, span.place-meta') as NodeListOf<HTMLElement>;
+      name.textContent = s.title;
+      note.textContent = s.note;
+      state.textContent = here ? 'Chosen' : 'Start here';
+      b.addEventListener('click', () => {
+        setStartChoice(s.id);
+        const u = new URL(location.href);
+        for (const k of ['spawn', 'cam', 'at']) u.searchParams.delete(k);
+        location.href = u.toString();
+      });
+      list.append(b);
+    }
+    box.append(list, text('p', 'Choosing one restarts the game there; it is remembered for next time.', 'muted'));
+    return box;
   }
 
   // ---------- Controls ----------

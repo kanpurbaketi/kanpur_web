@@ -34,7 +34,8 @@ import { startChoice } from './game/start';
  Debug URL params:
    ?cam=x,y,z,yaw,pitch   fixed camera (meters, radians), player hidden
    ?at=lat,lon,heading    camera at eye height at a real spot, heading in compass degrees (Mapillary photo spots)
-   ?spawn=lat,lon         start Ramu at a real spot (?spawn=mela: outside the torn place in the mela's wall)
+   ?spawn=lat,lon         start Ramu at a real spot (?spawn=shivaji: by the statue, stage 1's start; inside: in the mela;
+                          mela: in the alley outside the torn place; metro: by the station, outside stage 1's walls)
    ?time=day              afternoon instead of the default night
    ?debug                 FPS / draw-call overlay
    ?traffic=0             no vehicles

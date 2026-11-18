@@ -27,6 +27,8 @@ import { Mela } from './world/mela';
 import { Vendors } from './world/vendors';
 import { HOME, loadManifest, playable } from './game/parts';
 import { clipRoadsToMela, TEAR } from './world/melaSite';
+import { CORRIDOR, prepareRoute, SHIVAJI_START, Stage1Route } from './world/stage1Route';
+import { startChoice } from './game/start';
 
 /*
  Debug URL params:
@@ -51,7 +53,10 @@ async function main() {
   let AREA = params.get('area') ?? HOME;
   if (AREA !== HOME && !open.has(AREA)) AREA = HOME;
   const map: MapData = await (await fetch(`data/${AREA}/map.json`)).json();
-  if (map.area === 'moti_jheel') map.roads = clipRoadsToMela(map.roads);   // no park path across the mela ground
+  if (map.area === 'moti_jheel') {
+    map.roads = clipRoadsToMela(map.roads);   // no park path across the mela ground
+    prepareRoute(map);                        // stage 1: the way from the Shivaji Putla gate to the mela (plans/05)
+  }
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('cam') || params.has('at') });
   renderer.setPixelRatio(Math.min(2, devicePixelRatio));
@@ -125,6 +130,15 @@ async function main() {
   scene.add(landmarks.group);
   for (const [x, z, r] of landmarks.posts) world.addPost(x, z, r);
   for (const ring of landmarks.walls) world.addWall(ring, 6);
+  // stage 1: Ramu can only reach the way from the Shivaji Putla gate to the mela (walls, barricades, an invisible edge behind them)
+  const route = map.area === 'moti_jheel' ? new Stage1Route(map, NIGHT ? lightPool : null) : null;
+  if (route) {
+    scene.add(route.group);
+    for (const [x, z, r, h] of route.posts) world.addPost(x, z, r, h);
+    for (const [ring, h] of route.walls) world.addWall(ring, h, true, 2.6);
+    world.addWall(CORRIDOR, 80, false);
+    if (params.has('debug')) (window as unknown as { __corridor: typeof CORRIDOR }).__corridor = CORRIDOR;   // scripts/corridorcheck.mjs
+  }
   const controls = new Controls();
   const hintEl = document.getElementById('hint')!;
   hintEl.textContent = controls.hint();
@@ -159,11 +173,12 @@ async function main() {
   // Spawn: near the Moti Jheel metro on the nearest road point.
   const m = map.landmarks.moti_jheel_metro ?? [0, 0];
   let spawn: [number, number] = [m[0] + 6, m[1] + 45]; // just south of the station, facing it
-  if (params.get('spawn') && !['mela', 'inside', 'metro'].includes(params.get('spawn')!)) {
+  if (params.get('spawn') && !['mela', 'inside', 'metro', 'shivaji'].includes(params.get('spawn')!)) {
     const [lat, lon] = params.get('spawn')!.split(',').map(Number);
     spawn = project(map, lat, lon);
   }
-  const spawnMode = params.get('spawn') ?? (map.area === 'moti_jheel' ? 'inside' : null);
+  const spawnMode = params.get('spawn') ?? (map.area === 'moti_jheel' ? startChoice() : null);
+  if (spawnMode === 'shivaji') spawn = SHIVAJI_START;   // by the statue, the Shivaji Putla gate ahead (the real start of stage 1)
   if (spawnMode === 'mela') spawn = [TEAR.x - 3.5, TEAR.z]; // in the alley outside the torn place in the cloth wall
   if (spawnMode === 'inside') spawn = [TEAR.x + 2.2, TEAR.z]; // the game starts in the mela, just past the tear (beside the stage entry)
   let best = spawn, bd = Infinity;
@@ -171,7 +186,7 @@ async function main() {
     const d = Math.hypot(p[0] - spawn[0], p[1] - spawn[1]);
     if (d < bd) [bd, best] = [d, p];
   }
-  if (spawnMode === 'mela' || spawnMode === 'inside') best = spawn;
+  if (spawnMode === 'mela' || spawnMode === 'inside' || spawnMode === 'shivaji') best = spawn;
   ramu.position.set(best[0], 0, best[1]);
   const spawnAt: [number, number] = [best[0], best[1]];
   // life bar: vehicles hurt; a knockout wakes Ramu back at the spawn point
@@ -216,7 +231,8 @@ async function main() {
   console.log('street life', vendors.stats);
   if (params.has('debug')) (window as unknown as { __vendors: Vendors }).__vendors = vendors;   // for test scripts
   console.log('props', { stalls: stalls.posts.length, traffic: !!traffic });
-  ramu.yaw = spawnMode === 'mela' || spawnMode === 'inside' ? -Math.PI / 2 : Math.atan2(best[0] - m[0], best[1] - m[1]); // camera looks toward the metro (or into the mela)
+  ramu.yaw = spawnMode === 'shivaji' ? Math.PI                                    // facing south, through the gate
+    : spawnMode === 'mela' || spawnMode === 'inside' ? -Math.PI / 2 : Math.atan2(best[0] - m[0], best[1] - m[1]); // camera looks toward the metro (or into the mela)
 
   // Fixed debug cameras.
   let fixed = false;

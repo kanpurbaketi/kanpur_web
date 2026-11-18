@@ -16,7 +16,10 @@ export class Landmarks {
   constructor(map: MapData) {
     const mb = new MeshBuilder();
     for (const w of map.water) if (w.name === 'Moti Jheel') this.lake(mb, w.pts);
-    for (const p of map.parks) this.parkEdge(mb, p.pts, p.kind);
+    for (const p of map.parks) {
+      if (map.area === 'moti_jheel' && (p.name === 'Japani Garden' || p.name === 'Tulsi Upvan')) continue;   // walled by the stage-1 route
+      this.parkEdge(mb, p.pts, p.kind);
+    }
     const st = map.pois.find((p) => p.kind === 'stop' && p.name === 'Moti Jheel');
     if (st) this.metroStation(mb, map, st.p, st.name, st.name_hi);
     const mesh = new THREE.Mesh(mb.build(), makeGroundMaterial()); // weathered concrete / stone

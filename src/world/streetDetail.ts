@@ -4,6 +4,7 @@ import { makeGroundMaterial, SURF } from './ground';
 import { MeshBuilder, offsetLines } from './meshBuilder';
 import { makeTrees } from './trees';
 import { inMela } from './melaSite';
+import { treeClear } from './stage1Site';
 import { lampColor } from './lampPools';
 import { DRIVABLE, hash2, MapData, P2, pointInPoly } from './types';
 import { halos, NIGHT } from './night';
@@ -106,7 +107,7 @@ export class StreetDetail {
     this.addPoles(poles);
     this.addLamps(lamps);
     for (const [x, z] of lamps) this.lamps.push([x, z]);
-    this.addTrees(map.area === 'moti_jheel' ? trees.filter(([x, z]) => !inMela(x, z, 3)) : trees);   // none inside the mela
+    this.addTrees(map.area === 'moti_jheel' ? trees.filter(([x, z]) => !inMela(x, z, 3) && treeClear(x, z)) : trees);   // none inside the mela, none hiding the statue
     const wg = new THREE.BufferGeometry();
     wg.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));
     const wl = new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: '#1b1b1b' }));

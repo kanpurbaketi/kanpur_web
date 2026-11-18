@@ -5,6 +5,7 @@ import { MeshBuilder, offsetLines } from './meshBuilder';
 import { waterNormal } from './textures';
 import { makeTrees, TreeSpot } from './trees';
 import { inMela } from './melaSite';
+import { treeClear } from './stage1Site';
 import { centroid, DRIVABLE, hash2, MapData, MARKED, P2, pointInPoly, signedArea } from './types';
 
 const TILE = 250;
@@ -159,7 +160,7 @@ export class City {
       const m = this.add(t.bld, this.mats.facade, true, true);
       if (m) this.buildingMeshes.push(m);
     }
-    this.addTrees(trees.filter(([x, z]) => map.area !== 'moti_jheel' || !inMela(x, z, 12)));   // the mela occupies a clearing
+    this.addTrees(trees.filter(([x, z]) => map.area !== 'moti_jheel' || (!inMela(x, z, 12) && treeClear(x, z))));   // the mela occupies a clearing; the statue stands clear
     this.addTanks(tanks);
   }
 

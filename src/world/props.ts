@@ -6,6 +6,7 @@ import { beamMaterial, NIGHT } from './night';
 import { loadPBR, loadWheels, PBRPart, Wheel } from './vehicleModels';
 import { FigureKind, Pose, riderParts } from './figures';
 import { inMela } from './melaSite';
+import { inCorridor } from './stage1Route';
 import { Body, newBody, SPECS, step } from './vehicleSim';
 import { Smoke } from './smoke';
 
@@ -53,7 +54,9 @@ interface Seat { pose: Pose; at: [number, number, number]; who?: FigureKind[]; s
 /** `edge`: how far toward the kerb of its lane it keeps (cycles and bikes ride at the edge, and are overtaken) */
 interface Kind { name: string; count: number; speed: number; halfL: number; halfW: number; majorOnly: boolean; edge?: number; seats?: Seat[] }
 const RIDER_LOOKS = 3;      // different people per seat of each kind of vehicle
-interface Link { to: number; off: number; bus: boolean }
+interface Link { to: number; off: number; bus: boolean; slow?: boolean }
+/** most vehicles at a time on the slow (stage 1 corridor) roads */
+const SLOW_MAX = 6;
 interface Node { x: number; z: number; links: Link[] }
 export interface Vehicle {
   kind: number; slot: number;
@@ -392,15 +395,18 @@ export class Traffic {
     for (const r of map.roads) {
       if (r.bridge || r.w < 3.5) continue;
       const off = r.oneway ? 0 : Math.max(0.9, Math.min(2.2, r.w / 4));
-      const bus = MAJOR.has(r.cls) && r.w >= 6.5;
+      const slow = map.area === 'moti_jheel' && r.pts.some(([x, z]) => inCorridor(x, z));   // stage 1's park road: crowded, slow
+      // the stubs left where the corridor's edge cut a lane (to a closed gate, a barricade): nobody drives into those
+      if (slow && r.pts.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - r.pts[i - 1][0], p[1] - r.pts[i - 1][1]) : 0), 0) < 25) continue;
+      const bus = MAJOR.has(r.cls) && r.w >= 6.5 && !slow;
       for (let i = 0; i < r.pts.length - 1; i++) {
         const a = nodeAt(r.pts[i][0], r.pts[i][1]), b = nodeAt(r.pts[i + 1][0], r.pts[i + 1][1]);
         if (a === b) continue;
         // nothing drives through the mela ground
         const [p0, p1] = [r.pts[i], r.pts[i + 1]];
         if (map.area === 'moti_jheel' && [0, 0.25, 0.5, 0.75, 1].some((t) => inMela(p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t, 2))) continue;
-        this.nodes[a].links.push({ to: b, off, bus });
-        if (!r.oneway) this.nodes[b].links.push({ to: a, off, bus });
+        this.nodes[a].links.push({ to: b, off, bus, slow });
+        if (!r.oneway) this.nodes[b].links.push({ to: a, off, bus, slow });
       }
     }
   }
@@ -417,6 +423,8 @@ export class Traffic {
       if (d < min || d > max) continue;
       if (d < 150 && dx * dirX + dz * dirZ > 0.2 * d) continue; // not where the camera is looking
       if (!n.links.some((l) => this.usable(c, l))) continue;
+      // stage 1's corridor: a handful at a time (they can't drive out, so they stay till Ramu is far away)
+      if (n.links.every((l) => l.slow) && this.cars.filter((o) => !o.fresh && o.link.slow).length >= SLOW_MAX) continue;
       // keep clear of vehicles already there
       if (this.cars.some((o) => o !== c && !o.fresh && Math.hypot(o.x - n.x, o.z - n.z) < 14)) continue;
       cands.push(i);
@@ -590,7 +598,7 @@ export class Traffic {
       }
       const k = this.kinds[c.kind];
       const fxv = Math.sin(c.heading), fzv = Math.cos(c.heading); // forward
-      let want = c.vmax;
+      let want = c.link.slow ? Math.min(c.vmax, 5.5) : c.vmax;
       // the player in the way: stop
       {
         const dx = px - c.x, dz = pz - c.z;

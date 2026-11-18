@@ -15,7 +15,9 @@ import { centroid, DRIVABLE, MapData, P2, hash2, pointInPoly } from './types';
  Everything is procedural, merged into a few meshes; bulbs and signboards glow at night.
 */
 
-type Kind = 'chai' | 'paan' | 'chaat' | 'juice' | 'fruit' | 'momos' | 'kulfi';
+export type Kind = 'chai' | 'paan' | 'chaat' | 'juice' | 'fruit' | 'momos' | 'kulfi';
+/** a stall put at a given spot (stage 1's carts outside the mela): its kind, where (y: the ground), which way it faces */
+export interface VendorSpot { kind: Kind; x: number; y: number; z: number; rot: number }
 const KINDS: { kind: Kind; weight: number; r: number; label: string; sub: string; bg: string; fg: string }[] = [
   { kind: 'chai', weight: 28, r: 1.7, label: 'चाय', sub: 'TEA STALL', bg: '#1f6f43', fg: '#ffe9a8' },
   { kind: 'paan', weight: 22, r: 1.1, label: 'पान भंडार', sub: 'PAN • CIGARETTE', bg: '#b3261e', fg: '#fff1c9' },
@@ -268,7 +270,8 @@ export class Vendors {
   /** where signboards hang: [x, z, facing angle] (for test scripts / debugging) */
   readonly signSpots: [number, number, number][] = [];
 
-  constructor(map: MapData, occupied: (x: number, z: number) => boolean, avoid: [number, number, number][], lights: LightPool | null, desktop = true) {
+  constructor(map: MapData, occupied: (x: number, z: number) => boolean, avoid: [number, number, number][], lights: LightPool | null, desktop = true,
+              extra: VendorSpot[] = []) {
     const geos: THREE.BufferGeometry[] = [];
     const bulbs = new Bulbs();
     const atlas = new SignAtlas();
@@ -322,6 +325,9 @@ export class Vendors {
       for (const k of KINDS) { a -= k.weight; if (a <= 0) return k.kind; }
       return 'chai';
     };
+
+    // 0. the ones asked for, where they are asked for
+    for (const v of extra) place(v.kind, v.x, v.y, v.z, v.rot, hash2(v.x, v.z));
 
     // 1. along the roads: a vendor here and there, more on busy roads
     const cap = desktop ? 220 : 110;

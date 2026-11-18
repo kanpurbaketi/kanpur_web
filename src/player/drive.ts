@@ -16,7 +16,7 @@ const PICK_STILL = 0.6;
 /** the owner, if they are about: within this of their vehicle when he starts; how likely it is that they are; how long they keep after him */
 const OWNER_NEAR = 25, OWNER_CHANCE = 0.55, OWNER_GRUDGE = 25;
 
-interface Picking { car: Vehicle; t: number; need: number; x: number; z: number; owner: number; notice: number; seen: boolean }
+interface Picking { car: Vehicle; t: number; need: number; x: number; z: number; owner: number; notice: number; seen: boolean; hits: number }
 
 /**
  * Ramu takes vehicles. The get-on key on foot: onto the nearest vehicle within reach; whoever was on it is thrown off
@@ -88,7 +88,7 @@ export class Driving {
       if (need > 0) {
         // the owner may be about: they notice him at it a few seconds in (if he is still at it)
         const owner = Math.random() < OWNER_CHANCE ? this.peds.ownerNear(c.x, c.z, OWNER_NEAR) : -1;
-        this.pick = { car: c, t: 0, need, x: p.x, z: p.z, owner, notice: 3 + Math.random() * Math.min(8, need - 4), seen: false };
+        this.pick = { car: c, t: 0, need, x: p.x, z: p.z, owner, notice: 3 + Math.random() * Math.min(8, need - 4), seen: false, hits: this.ramu.hits };
         this.ramu.faceTowards(c.x, c.z);
         return;
       }
@@ -133,7 +133,7 @@ export class Driving {
   /** at the lock: it opens in time if he keeps still; moving off, being hit or knocked out stops him */
   private picking_(dt: number): void {
     const k = this.pick!, p = this.ramu.position;
-    if (this.ramu.knockedOut || this.ramu.stun > 0 || Math.hypot(p.x - k.x, p.z - k.z) > PICK_STILL || k.car.player || !k.car.locked) {
+    if (this.ramu.knockedOut || this.ramu.stun > 0 || this.ramu.hits !== k.hits || Math.hypot(p.x - k.x, p.z - k.z) > PICK_STILL || k.car.player || !k.car.locked) {
       this.pick = null;
       return;
     }

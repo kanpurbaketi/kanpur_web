@@ -27,7 +27,7 @@ import { Mela } from './world/mela';
 import { Vendors } from './world/vendors';
 import { HOME, loadManifest, playable } from './game/parts';
 import { clipRoadsToMela, TEAR } from './world/melaSite';
-import { CORRIDOR, prepareRoute, SHIVAJI_START, Stage1Route } from './world/stage1Route';
+import { CORRIDOR, corridorWalks, prepareRoute, SHIVAJI_START, Stage1Route } from './world/stage1Route';
 import { startChoice } from './game/start';
 
 /*
@@ -149,8 +149,10 @@ async function main() {
   if (params.has('debug')) (window as unknown as { __ramu: Ramu }).__ramu = ramu;   // for test scripts
   // Crowd size comes from the admin portal (admin.html); ?peds=N overrides it for testing.
   const forced = params.has('peds') ? Number(params.get('peds')) || 0 : null;
-  const crowdFor = (n: number) => Math.round(n * (desktop ? 1 : 0.5)); // half on touch devices
-  const peds = new Pedestrians(map);
+  // half on touch devices; stage 1's corridor is busier than a street (it is the way to the mela)
+  const crowdFor = (n: number) => Math.round(n * (desktop ? 1 : 0.5) * (map.area === 'moti_jheel' ? 3 : 1));
+  // stage 1: the crowd is the corridor's own (footpaths, road edges, round the carts), not the city's around Ramu
+  const peds = route ? new Pedestrians(corridorWalks(map, route.stalls), true) : new Pedestrians(map);
   peds.setCount(forced ?? crowdFor(loadSettings().crowd));
   if (forced === null) onSettingsChange((s) => peds.setCount(crowdFor(s.crowd)));
   scene.add(peds.group);
@@ -227,7 +229,7 @@ async function main() {
   const stalls = await makeStalls(map, occupied, solid, best);
   scene.add(stalls.mesh);
   for (const [x, z, r] of stalls.posts) world.addPost(x, z, r, 1.15);   // low enough to jump up on
-  const vendors = new Vendors(map, occupied, [...solid, ...stalls.posts], NIGHT ? lightPool : null, desktop);
+  const vendors = new Vendors(map, occupied, [...solid, ...stalls.posts], NIGHT ? lightPool : null, desktop, route?.stalls ?? []);
   scene.add(vendors.group);
   for (const [x, z, r] of vendors.posts) world.addPost(x, z, r, 1.15);
   console.log('street life', vendors.stats);

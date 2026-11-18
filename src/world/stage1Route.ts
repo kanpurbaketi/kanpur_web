@@ -3,6 +3,7 @@ import { BULB, Bulbs, banner, bannerMat, Geo, litMat, rnd } from './geo';
 import { LightPool } from './night';
 import { DX, DZ, GATE } from './melaSite';
 import type { ParkSpot } from './props';
+import type { Kind as StallKind, VendorSpot } from './vendors';
 import { walkAlong } from './city';
 import { offsetLines } from './meshBuilder';
 import { centroid, MapData, P2, pointInPoly, Road } from './types';
@@ -213,6 +214,32 @@ export class Stage1Route {
     m.castShadow = m.receiveShadow = true;
     this.group.add(m, this.bulbs.object(0.8));
     this.parking = this.parkingSpots();
+    this.stalls = this.stallSpots();
+  }
+
+  /** food carts on the strip of ground between the footpath and the mela's cloth, thickest round its gate (main.ts gives them to Vendors) */
+  readonly stalls: VendorSpot[];
+
+  private stallSpots(): VendorSpot[] {
+    const line = routeLine(this.map);
+    if (line.length < 2) return [];
+    const KINDS: StallKind[] = ['momos', 'chaat', 'chai', 'juice', 'kulfi', 'fruit', 'momos', 'paan', 'chaat', 'chai'];
+    const xs = [GATE.x - 11, GATE.x + 11, GATE.x - 15.5, GATE.x + 15.5, GATE.x - 21, GATE.x + 21, GATE.x - 34, GATE.x + 36, MX0 + 9, MX1 - 12];
+    // the carts' row: north of the road, past the footpath
+    const rows = offsetLines(line, ROAD_W / 2 + WALK + 2.2);
+    const out: VendorSpot[] = [];
+    xs.forEach((want, i) => {
+      let best: [number, number, number, number] | null = null, bd = 3;
+      for (const row of rows) walkAlong(row, 0.5, (x, z, dx, dz) => {
+        if (z > 333 || z < MZ1 + 2 || !inCorridor(x, z)) return;       // the mela side of the road only
+        if (Math.abs(x - want) < bd) { bd = Math.abs(x - want); best = [x, z, dx, dz]; }
+      }, 0);
+      if (!best) return;
+      const [x, z] = best as [number, number, number, number];   // (set in the callback: TS cannot see it)
+      // facing the road (south)
+      out.push({ kind: KINDS[i % KINDS.length], x, y: 0.02, z, rot: 0 });
+    });
+    return out;
   }
 
   /** where vehicles stand parked, locked (main.ts hands them to the traffic) */
@@ -488,6 +515,45 @@ export class Stage1Route {
     }
     return spots;
   }
+}
+
+/** cut a line into pieces no longer than `step` m (walkers spread evenly over a graph made of them) */
+function subdivide(pts: P2[], step: number): P2[] {
+  const out: P2[] = [pts[0]];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    // along the mela (the road west of the bend) five times as many: that is where the crowd is
+    const st = (a[0] + b[0]) / 2 < -55 && (a[1] + b[1]) / 2 > 300 ? step / 5 : step;
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / st));
+    for (let k = 1; k <= n; k++) out.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+  }
+  return out;
+}
+
+/**
+ * Where the stage 1 crowd walks (a map of its own for a local Pedestrians): both footpaths of the corridor road, its
+ * edges among the parked vehicles, the little roads at the start, and a small round in front of each food cart where
+ * people stand about eating.
+ */
+export function corridorWalks(map: MapData, stalls: VendorSpot[]): MapData {
+  const line = routeLine(map);
+  const road = (pts: P2[], sidewalk: string, w: number): Road => ({
+    id: 0, pts, w, cls: 'footway', name: '', oneway: false, lanes: 1, bridge: false, layer: 0, divider: false, sidewalk, surface: '',
+  } as unknown as Road);
+  const keep = (pts: P2[]) => pts.filter(([x, z]) => inCorridor(x, z));
+  const roads: Road[] = [];
+  if (line.length > 1) {
+    // footpaths: the walker's line is the road's + 1 m out (sidewalk), so these lines run just inside the kerb
+    for (const side of offsetLines(line, ROAD_W / 2 + 0.1)) { const p = keep(subdivide(side, 8)); if (p.length > 1) roads.push(road(p, 'yes', 0)); }
+    // the road's edges, among the parked cars and bikes
+    for (const side of offsetLines(line, ROAD_W / 2 - 1.0)) { const p = keep(subdivide(side, 16)); if (p.length > 1) roads.push(road(p, 'no', 1)); }
+  }
+  for (const r of map.roads) if (r.id !== PARK_ROAD && !r.bridge && r.pts.every(([x, z]) => inCorridor(x, z))) roads.push({ ...r, pts: subdivide(r.pts, 8) });
+  for (const v of stalls) {
+    const c = Math.cos(v.rot), s = Math.sin(v.rot), cx = v.x + s * 2.4, cz = v.z + c * 2.4;   // in front of it
+    roads.push(road([[cx - 1.4, cz - 0.9], [cx + 1.4, cz - 0.9], [cx + 1.4, cz + 0.9], [cx - 1.4, cz + 0.9], [cx - 1.4, cz - 0.9]], 'no', 1));
+  }
+  return { ...map, roads };
 }
 
 /** each straight stretch of a line: ends, length, the y-rotation that lays a box's x along it */

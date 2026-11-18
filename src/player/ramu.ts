@@ -38,6 +38,8 @@ export class Ramu {
   /** laid out (the life bar ran out): he falls and lies there until the game wakes him */
   knockedOut = false;
   private reel = 0;        // seconds left of taking a blow
+  /** blows taken so far (whatever he was at, a blow stops it: picking a lock) */
+  hits = 0;
   private punchT = 0;      // seconds since the punch in the air began
   private reelClip = 'hit';   // which way he takes this blow (head / body, turn about)
   private wake = 0;        // seconds left of getting up after a knock-out (no control while it runs)
@@ -120,6 +122,7 @@ export class Ramu {
 
   /** He has been hit: a short recoil (a punch of his own already in the air still goes through). */
   flinch(): void {
+    this.hits++;
     if (this.punching) return;
     this.reel = 0.5;
     this.reelClip = this.reelClip === 'hit' && this.actions.hit2 ? 'hit2' : 'hit';

@@ -7,7 +7,7 @@ import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { cloneCar, loadPBR } from './vehicleModels';
 import { MELA_MIX, Pedestrians } from './pedestrians';
 import { addFigures, FigureKind, figurePosts, ONLOOKER, someone, Spot } from './figures';
-import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, DX, DZ, GATE, HINDOLA, inMela, INFLATABLE, KUAN, MELA, Rect, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
+import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, DX, DZ, GATE, HINDOLA, inMela, INFLATABLE, KUAN, MELA, Rect, SAMMELAN, SAMMELAN_GATES, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
 import { buildInflatable } from './inflatable';
 import { buildMautKuan } from './mautKuan';
 import { MapData } from './types';
@@ -431,6 +431,7 @@ export class Mela {
     this.addRide(buildMautKuan(), KUAN.x, KUAN.z, -Math.PI / 2, lights);   // the foot of its stair is to the north-west, towards the aisles
     this.addRide(buildInflatable(), INFLATABLE.x, INFLATABLE.z, 0, lights);
     this.buildStage(lights, desktop);
+    this.buildSammelanFence();
     this.buildStalls(lights);
     this.buildGate(lights);
     this.buildParking();
@@ -650,10 +651,11 @@ export class Mela {
     const [px, pz] = toW(cx, SEAT_Z);
     this.poetsAt = [px, pz];
     people.push({ x: cx - 3.6, y: FLOOR, z: cz + 3.0, ry: Math.PI, pose: 'talk_b', kind: 'uncle', look: 4 });      // reciting, arms raised
-    const cols = Math.floor((AUDIENCE.z1 - AUDIENCE.z0) / 0.86), rowsN = Math.floor((AUDIENCE.x1 - AUDIENCE.x0) / 0.95);
+    // the audience: the front rows fairly full, a few scattered behind (about 75 people); the rows stop short of the fence
+    const cols = Math.floor((AUDIENCE.z1 - AUDIENCE.z0) / 0.86), rowsN = Math.min(11, Math.floor((SAMMELAN.x1 - 1.6 - AUDIENCE.x0) / 0.95));
     const aud0 = AUDIENCE.x0 - sx0 + 0.5;       // first row, in the stage frame
     for (let r = 0; r < rowsN; r++) for (let c = 0; c < cols; c++) {
-      if (rnd(r * 97 + c * 13 + 5) < 0.4 || (!desktop && (r + c) % 2)) continue;
+      if (rnd(r * 97 + c * 13 + 5) > (r < 5 ? 0.42 : 0.15) || (!desktop && (r + c) % 2)) continue;
       const x = cx - (cols - 1) * 0.43 + c * 0.86 + (rnd(r * 7 + c) - 0.5) * 0.15, z = aud0 + r * 0.95 + (rnd(c * 5 + r) - 0.5) * 0.12;
       // facing the stage (-z) with a little turn
       people.push({ x, y: 0.09, z, ry: (rnd(r * 3 + c * 11) - 0.5) * 0.5, pose: 'sit', n: r * 131 + c * 17 });
@@ -662,7 +664,7 @@ export class Mela {
     for (const [x, z, r, h, base] of figurePosts(people)) post(x, z, r, h, base);   // the poets and the audience: you go round them
     // the white dari sheets under the audience
     const d = new Geo();
-    const dw = AUDIENCE.z1 - AUDIENCE.z0, dd = AUDIENCE.x1 - AUDIENCE.x0, dcz = (AUDIENCE.x0 + AUDIENCE.x1) / 2 - sx0;
+    const dw = AUDIENCE.z1 - AUDIENCE.z0, dd = rowsN * 0.95 + 0.4, dcz = AUDIENCE.x0 + dd / 2 - sx0;
     d.box(0, 0.09, dcz, dw, 0.04, dd, '#c9c5b6');
     for (let i = 0; i < Math.floor(dw / 3.1); i++) d.box(-dw / 2 + 1.5 + i * 3.1, 0.115, dcz, 0.05, 0.01, dd, '#cfc9b8');
     const dm = new THREE.Mesh(d.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
@@ -680,7 +682,60 @@ export class Mela {
     ex.box(doorX, SH + 2.7, -D / 2 - 0.1, 2.8, 0.1, 0.1, '#b8b8bc');
     for (const sx of [-1, 1]) ex.box(doorX + sx * 0.7, SH + 1.3, -D / 2 - 0.12, 1.3, 2.4, 0.04, '#7b1113');   // curtain halves
     stage.add(new THREE.Mesh(ex.build(), litMat({ metalness: 0.1, roughness: 0.8 })));
-    L(doorX, 3.6, -D / 2 - 2.2, '#ffbf7a', 26, 14);
+  }
+
+  /**
+   * A wooden fence round the kavi sammelan, from the cloth wall at the back round the stage and its audience: posts of
+   * rough timber every two metres, three planks, two ways in framed by taller posts and a beam with marigolds. It is a
+   * railing Ramu can't climb (the camera passes over it).
+   */
+  private buildSammelanFence(): void {
+    const { x0, x1, z0, z1 } = SAMMELAN, { east, north } = SAMMELAN_GATES;
+    const g = new Geo();
+    const WOOD = ['#6b4a2b', '#7a5532', '#5f4126', '#735030'];
+    const H = 1.25, STEP = 2.0;
+    // straight runs [ax, az] -> [bx, bz] with the gaps cut out
+    const runs: [number, number, number, number][] = [
+      [x0 + 0.15, z0, north.x - north.half, z0], [north.x + north.half, z0, x1, z0],
+      [x1, z0, x1, east.z - east.half], [x1, east.z + east.half, x1, z1],
+      [x1, z1, x0 + 0.15, z1],
+    ];
+    let n = 0;
+    for (const [ax, az, bx, bz] of runs) {
+      const len = Math.hypot(bx - ax, bz - az), alongX = Math.abs(bx - ax) > Math.abs(bz - az);
+      const k = Math.max(1, Math.round(len / STEP));
+      for (let i = 0; i <= k; i++, n++) {
+        const x = ax + ((bx - ax) * i) / k, z = az + ((bz - az) * i) / k, h = H + 0.08 + (rnd(n * 3 + 1) - 0.5) * 0.08;
+        g.box(x, h / 2, z, 0.11, h, 0.11, WOOD[n % 4]);
+        g.box(x, h + 0.02, z, 0.13, 0.04, 0.13, '#4e3520');              // a cut top, darker
+      }
+      const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+      for (const [j, y] of [0.32, 0.72, 1.12].entries()) {
+        const sag = (rnd(n * 7 + j) - 0.5) * 0.03;
+        g.box(mx, y + sag, mz, alongX ? len : 0.035, 0.13, alongX ? 0.035 : len, WOOD[(n + j + 1) % 4]);
+      }
+      this.rails.push({ h: H, camH: 0, ring: alongX
+        ? [[ax, az - 0.1], [bx, bz - 0.1], [bx, bz + 0.1], [ax, az + 0.1]]
+        : [[ax - 0.1, az], [bx - 0.1, bz], [bx + 0.1, bz], [ax + 0.1, az]] });
+    }
+    // the ways in: taller posts, a beam over, a string of marigolds under it
+    const gate = (ax: number, az: number, bx: number, bz: number) => {
+      for (const [x, z] of [[ax, az], [bx, bz]]) {
+        g.box(x, 1.4, z, 0.16, 2.8, 0.16, '#5f4126');
+        this.posts.push([x, z, 0.12, 2.8]);
+      }
+      const alongX = Math.abs(bx - ax) > Math.abs(bz - az), w = Math.hypot(bx - ax, bz - az) + 0.5;
+      g.box((ax + bx) / 2, 2.72, (az + bz) / 2, alongX ? w : 0.18, 0.16, alongX ? 0.18 : w, '#6b4a2b');
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12, y = 2.55 - Math.sin(t * Math.PI) * 0.3;
+        g.sphere(ax + (bx - ax) * t, y, az + (bz - az) * t, 0.08, i % 3 === 0 ? '#f9a825' : '#ef6c00', 1, 1, 1);
+      }
+    };
+    gate(x1, east.z - east.half, x1, east.z + east.half);
+    gate(north.x - north.half, z0, north.x + north.half, z0);
+    const m = new THREE.Mesh(g.build(), litMat({ metalness: 0, roughness: 0.95 }));
+    m.castShadow = m.receiveShadow = true;
+    this.group.add(m);
   }
 
   private buildStalls(lights: LightPool | null): void {
@@ -946,8 +1001,8 @@ export class Mela {
       this.group.add(m);
     });
     this.group.add(new THREE.Mesh(poles.build(), litMat({ metalness: 0, roughness: 0.9 })));
-    // the torn place: a warm glow leaks out through it, a trodden path leads to it from the park
-    lights?.add(TEAR.x + 4, 2.2, TEAR.z, '#ffbf7a', 150, 20);
+    // the torn place: a trodden path leads to it from the park (no glow of its own: it stood at the stage's back corner
+    // and burnt the stage out)
     const path = new Geo();
     path.box(TEAR.x - 3, 0.06, TEAR.z, 6, 0.02, 3.2, '#8a7a60');   // the alley beside the building west of the wall is ~6 m wide
     this.group.add(new THREE.Mesh(path.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 })));
@@ -965,7 +1020,7 @@ export class Mela {
   private aisles(map: MapData): MapData {
     const road = (pts: [number, number][]) => ({ id: 0, pts, w: 1.0, cls: 'service', name: '', oneway: false, lanes: 1, bridge: false, layer: 0, divider: false, sidewalk: 'no', surface: '' });
     const pad = (r: Rect, m: number): Rect => ({ x0: r.x0 - m, x1: r.x1 + m, z0: r.z0 - m, z1: r.z1 + m });
-    const solids: Rect[] = [...STALL_BLOCKS.map((r) => pad(r, 1.4)), pad(STAGE, 1.2), pad(AUDIENCE, 0.4)];
+    const solids: Rect[] = [...STALL_BLOCKS.map((r) => pad(r, 1.4)), pad(STAGE, 1.2), pad(AUDIENCE, 0.4), pad(SAMMELAN, 0.8)];
     const discs = [{ ...WHEEL, r: WHEEL.r + 1.5 }, { ...INFLATABLE, r: INFLATABLE.r + 2 }, { ...KUAN, r: KUAN.r + 1.5 },
       { ...CAROUSEL, r: 6.5 }, { ...HINDOLA, r: 7 }, { ...COLUMBUS, r: 8 }, { ...CHAIR_SWING, r: 8 }];
     const X0 = MELA.x0 + 1.5, X1 = MELA.x1 - 1.5, Z0 = MELA.z0 + 0.5, Z1 = MELA.z1 - 0.5;

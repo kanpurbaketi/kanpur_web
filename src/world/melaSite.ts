@@ -69,6 +69,10 @@ export const STAGE = rect(144, 417, 302, 642);
 export const STAGE_STAIRS = rect(210, 365, 276, 417);     // on the stage's north side
 export const STAGE_ENTRY = rect(144, 562, 170, 642);      // back-stage door, next to the torn place in the wall
 export const AUDIENCE = rect(355, 384, 553, 675);         // people sitting, clapping
+/** the wooden fence round the stage and its audience: from the cloth wall (west) out past the last row, short of the stalls */
+export const SAMMELAN: Rect = { x0: DX - 9.5, x1: mx(553) - 3.3, z0: mz(365) - 1.6, z1: mz(675) + 2.3 };
+/** its two ways in: on the east side facing the stage, and on the north side by the aisle */
+export const SAMMELAN_GATES = { east: { z: (mz(384) + mz(675)) / 2, half: 2.5 }, north: { x: mx(553) - 9.5, half: 1.8 } };
 
 export const WHEEL = circle(926, 329, 122);
 export const INFLATABLE = circle(1232, 272, 59.5);

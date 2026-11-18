@@ -12,11 +12,13 @@ const MOUNT = 0.75, DISMOUNT = 0.55;
 /** seconds to pick a parked vehicle's lock: a car, a two-wheeler with an engine; a cycle has none worth the name */
 const PICK_CAR = 15, PICK_BIKE = 5;
 /** how far Ramu can shift while picking before he has let go of it, m */
+/** seconds he has to step over to the lock before keeping still counts */
+const PICK_SETTLE = 0.5;
 const PICK_STILL = 0.6;
 /** the owner, if they are about: within this of their vehicle when he starts; how likely it is that they are; how long they keep after him */
 const OWNER_NEAR = 25, OWNER_CHANCE = 0.55, OWNER_GRUDGE = 25;
 
-interface Picking { car: Vehicle; t: number; need: number; x: number; z: number; owner: number; notice: number; seen: boolean; hits: number }
+interface Picking { car: Vehicle; t: number; need: number; x: number; z: number; lock: THREE.Vector3; low: boolean; owner: number; notice: number; seen: boolean; hits: number }
 
 /**
  * Ramu takes vehicles. The get-on key on foot: onto the nearest vehicle within reach; whoever was on it is thrown off
@@ -88,8 +90,9 @@ export class Driving {
       if (need > 0) {
         // the owner may be about: they notice him at it a few seconds in (if he is still at it)
         const owner = Math.random() < OWNER_CHANCE ? this.peds.ownerNear(c.x, c.z, OWNER_NEAR) : -1;
-        this.pick = { car: c, t: 0, need, x: p.x, z: p.z, owner, notice: Math.min(need * 0.5, 2) + Math.random() * Math.max(0.5, Math.min(8, need - 4)), seen: false, hits: this.ramu.hits };
-        this.ramu.faceTowards(c.x, c.z);
+        // he goes to the lock (the driver's door, or a bike's front disc) and bends to it
+        const at = this.traffic.lockSpot(c, p.x, p.z);
+        this.pick = { car: c, t: 0, need, x: at.stand[0], z: at.stand[1], lock: new THREE.Vector3(...at.lock), low: at.low, owner, notice: Math.min(need * 0.5, 2) + Math.random() * Math.max(0.5, Math.min(8, need - 4)), seen: false, hits: this.ramu.hits };
         return;
       }
     }
@@ -133,7 +136,7 @@ export class Driving {
   /** at the lock: it opens in time if he keeps still; moving off, being hit or knocked out stops him */
   private picking_(dt: number): void {
     const k = this.pick!, p = this.ramu.position;
-    if (this.ramu.knockedOut || this.ramu.stun > 0 || this.ramu.hits !== k.hits || Math.hypot(p.x - k.x, p.z - k.z) > PICK_STILL || k.car.player || !k.car.locked) {
+    if (this.ramu.knockedOut || this.ramu.stun > 0 || this.ramu.hits !== k.hits || (k.t > PICK_SETTLE && Math.hypot(p.x - k.x, p.z - k.z) > PICK_STILL) || k.car.player || !k.car.locked) {
       this.pick = null;
       return;
     }
@@ -160,6 +163,8 @@ export class Driving {
   update(dt: number): void {
     if (this.shoutT > 0) this.shoutT -= dt;
     if (this.pick) this.picking_(dt);
+    const k = this.pick;
+    this.ramu.lockPick = k ? { lock: k.lock, stand: [k.x, k.z], low: k.low, t: k.t } : null;
     if (this.car) {
       // getting on or off: the vehicle held still meanwhile; on it: the keys drive
       const busy = this.w < 1 || this.leaving;

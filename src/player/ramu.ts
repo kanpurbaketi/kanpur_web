@@ -9,6 +9,14 @@ import { CLIP_SECS, ONCE, prepareClips, PUNCH_LANDS } from '../world/actors';
 import { Rider, RidePose } from './rider';
 
 const CROUCH = 1.2, ACCEL = 12, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
+/**
+ * The jump, against the jump clip (2.2 s, made for a standing jump): its knees bend 0.30-0.72 s, it leaves the ground at
+ * 0.74, lands at 1.36 and has absorbed the landing by 1.85. The game runs those parts at the speed of the real jump: a
+ * short knee bend first (a standing jump only: running, he takes off at once), the flight stretched over the real time
+ * in the air, the landing played after he is down.
+ */
+const J_BEND = [0.30, 0.72], J_AIR = [0.74, 1.36], J_LAND = [1.36, 1.85];
+const WINDUP = 0.15;    // seconds of the knee bend before a standing jump leaves the ground
 const CAM_DIST = 3.2, EYE = 1.35;
 
 /**
@@ -49,10 +57,13 @@ export class Ramu {
   private touchMove = new THREE.Vector2();
   private touchRun = false;
   private jumpQueued = false;
+  /** the jump under way: 0 none, 1 bending to spring, 2 in the air, 3 landing; seconds into the phase; how long the flight should last */
+  private jumpPhase = 0;
+  private jumpT = 0;
+  private airFor = 1;
   private mixer: THREE.AnimationMixer | null = null;
   private actions: Record<string, THREE.AnimationAction> = {};
   private current: THREE.AnimationAction | null = null;
-  private wasGrounded = true;
   private punchQueued = false;
   private punching = false;
   /** admin settings (walk / run / jump / punch speeds, skin tone); updated live from the admin tab */
@@ -60,6 +71,11 @@ export class Ramu {
   private blob: THREE.Mesh | null = null;
   /** on a vehicle: he sits, posed, and the camera follows the vehicle; null on foot */
   ride: Ride | null = null;
+  /** at a lock (set by Driving each frame, null when not): where the lock is, where he stands to it, low for a bike's */
+  lockPick: { lock: THREE.Vector3; stand: [number, number]; low: boolean; t: number } | null = null;
+  /** how far into the picking pose (eases in and out), and the last lock (for easing out) */
+  private pickW = 0;
+  private lastPick: { lock: THREE.Vector3; low: boolean; t: number } | null = null;
   /** the get on / off key (or button) was pressed */
   onUse: (() => void) | null = null;
   /** the vehicle keys: headlights (pressed), horn (down and up) */
@@ -106,6 +122,9 @@ export class Ramu {
     this.vel.z = vz;
     this.vel.y = vy;
     this.grounded = false;
+    this.jumpPhase = 2;                       // thrown: in the air (the flying pose) until he comes down
+    this.jumpT = 0;
+    this.airFor = Math.max(0.3, (2 * vy) / GRAVITY);
     this.stun = 0.9;
     this.punching = false;
   }
@@ -160,6 +179,7 @@ export class Ramu {
     this.root.position.set(x, this.world.floorAt(x, z, 0.5), z);
     this.vel.set(0, 0, 0);
     this.grounded = true;
+    this.jumpPhase = 0;
     this.punching = false;
   }
 
@@ -215,13 +235,17 @@ export class Ramu {
       if (c.held('left', this.keys)) input.x -= 1;
       if (c.held('right', this.keys)) input.x += 1;
       input.add(this.touchMove);
-      if (this.jumpQueued && this.grounded) {
-        this.vel.y = this.cfg.jumpSpeed;
-        this.grounded = false;
-        this.jumps++;
+      if (this.jumpQueued && this.grounded && this.jumpPhase !== 1 && this.jumpPhase !== 2) {
+        // standing: the knees bend first; on the move he springs off at once
+        if (Math.hypot(this.vel.x, this.vel.z) < 1.2 && this.actions.jump) { this.jumpPhase = 1; this.jumpT = 0; }
+        else this.takeOff();
       }
     }
     this.jumpQueued = false;
+    this.jumpT += dt;
+    if (this.jumpPhase === 1 && (this.stun > 0 || !this.enabled)) this.jumpPhase = 0;
+    if (this.jumpPhase === 1 && this.jumpT >= WINDUP) this.takeOff();
+    if (this.jumpPhase === 3 && this.jumpT > 0.5) this.jumpPhase = 0;
     const crouching = this.enabled && this.controls.held('crouch', this.keys);
     if (this.punchQueued && this.enabled && this.stun <= 0 && this.wake <= 0 && this.grounded && !this.punching && this.actions.punch) {
       this.punching = true;
@@ -254,9 +278,20 @@ export class Ramu {
       p.y = floor;
       this.vel.y = 0;
       this.grounded = true;
+      if (this.jumpPhase === 2) { this.jumpPhase = 3; this.jumpT = 0; }   // down: the landing
     }
     [p.x, p.z] = this.world.resolve(p.x, p.z, RADIUS, p.y);
 
+    // at a lock and not moving off: he steps over to it and turns to it
+    const lp = this.lockPick;
+    if (lp && dir.lengthSq() < 0.0025 && this.grounded) {
+      const e = Math.min(1, dt * 8);
+      p.x += (lp.stand[0] - p.x) * e;
+      p.z += (lp.stand[1] - p.z) * e;
+      const want = Math.atan2(-(lp.lock.x - p.x), -(lp.lock.z - p.z));
+      const d = Math.atan2(Math.sin(want - this.model.rotation.y), Math.cos(want - this.model.rotation.y));
+      this.model.rotation.y += d * Math.min(1, dt * 10);
+    }
     // face movement direction + simple limb swing
     const hs = Math.hypot(this.vel.x, this.vel.z);
     if (dir.lengthSq() > 0.0025) {
@@ -266,9 +301,23 @@ export class Ramu {
       this.model.rotation.y += d * Math.min(1, TURN * dt);
     }
     this.animate(dt, hs, crouching);
+    // the hands on the lock, over the clip
+    if (lp) this.lastPick = { lock: lp.lock, low: lp.low, t: lp.t };
+    this.pickW = Math.max(0, Math.min(1, this.pickW + (lp && hs < 0.8 ? dt / 0.35 : -dt / 0.2)));
+    if (this.pickW > 0 && this.lastPick && this.rider) this.rider.pick(this.model, this.lastPick.lock, this.lastPick.t, this.lastPick.low, this.pickW);
     this.updateBlob();
 
     this.updateCamera(p.x, p.y + EYE, p.z, CAM_DIST);
+  }
+
+  /** off the ground: up at the jump speed; the flight should take 2 v / g */
+  private takeOff(): void {
+    this.vel.y = this.cfg.jumpSpeed;
+    this.grounded = false;
+    this.jumps++;
+    this.jumpPhase = 2;
+    this.jumpT = 0;
+    this.airFor = (2 * this.cfg.jumpSpeed) / GRAVITY;
   }
 
   /** the camera on its arm from the point (px, py, pz), pulled in where something is in the way */
@@ -555,9 +604,17 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
     } else if (this.reel > 0 && A[this.reelClip]) {
       const h = this.play(this.reelClip, 0.06);
       if (h) h.timeScale = this.reelClip === 'hit' ? 2.4 : 2.0;
-    } else if (!this.grounded) {
-      // the jump clip is ~2.2 s with a wind-up; the game's jump is ~1 s, hence the double speed
-      if (this.wasGrounded) { const j = this.play('jump', 0.08); if (j) { j.reset().play(); j.timeScale = 2.0; } }
+    } else if (this.jumpPhase && A.jump && (this.jumpPhase !== 3 || this.jumpT < (hs > 1.2 ? 0.12 : (J_LAND[1] - J_LAND[0]) / 1.5))) {
+      // the clip's time is set from the jump itself (see J_BEND): the bend, the flight stretched over the time in the
+      // air (held just before touchdown if the fall is longer), then the landing at 1.5x
+      const t = this.jumpT, ph = this.jumpPhase;
+      const ct = ph === 1 ? J_BEND[0] + (J_BEND[1] - J_BEND[0]) * Math.min(1, t / WINDUP)
+        : ph === 2 ? J_AIR[0] + (J_AIR[1] - J_AIR[0] - 0.06) * Math.min(1, t / this.airFor)
+          : J_LAND[0] + t * 1.5;
+      const j = this.play('jump', ph === 3 ? 0.04 : 0.1);
+      if (j) { j.timeScale = 0; j.time = ct; }
+    } else if (this.lockPick && hs < 0.8) {
+      set(this.lockPick.low && A.crouch ? 'crouch' : 'idle', 'idle', this.lockPick.low ? 1 : 0.6);
     } else if (crouching) {
       if (hs < 0.25) set('crouch', 'idle', 1);
       else set('crouch_walk', 'crouch', Math.max(0.6, hs / 0.9));
@@ -568,7 +625,6 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
     } else {
       set('run', 'run', hs / 5.0);
     }
-    this.wasGrounded = this.grounded;
     this.mixer.update(dt);
   }
 }

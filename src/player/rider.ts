@@ -169,6 +169,52 @@ export class Rider {
     if (b.Neck) this.turn(b.Neck, _q1.setFromAxisAngle(up, p.steer * 0.7 * w));
   }
 
+  /**
+   * Picking a lock (after the mixer has set the standing idle, or the crouch for a low lock): bent toward it, the left
+   * hand holding the tension tool steady in it, the right working the pick: small quick rakes and a twist of the wrist,
+   * a pause now and then to feel, and every few seconds the pick drawn out a little and set again. Head down, watching.
+   * `t`: seconds at it; `w`: 0..1, how far into the pose (eases in as he settles).
+   */
+  pick(model: THREE.Object3D, lock: THREE.Vector3, t: number, low: boolean, w: number): void {
+    if (!this.ok) return;
+    const b = this.bone;
+    model.updateMatrixWorld(true);
+    const e = smooth(w);
+    const hips = this.world(b.Hips, _v0);
+    const fwd = _v1.set(lock.x - hips.x, 0, lock.z - hips.z);
+    if (fwd.lengthSq() < 1e-6) return;
+    fwd.normalize();
+    const up = _v2.set(0, 1, 0), side = _v3.crossVectors(fwd, up).normalize();     // his right
+    const tilt = _v4.crossVectors(up, fwd).normalize();                               // turning about this leans him forward
+    // bend over to it: as far as the hands need, more for a lock down by a wheel
+    const lean = (low ? 0.55 : 0.32) * e;
+    this.turn(b.Spine, _q1.setFromAxisAngle(tilt, lean * 0.5));
+    this.turn(b.Spine1 ?? b.Spine, _q1.setFromAxisAngle(tilt, lean * 0.5));
+    // the pick's motion: raking strokes (9 a second) in bursts, a pause to feel, a reset every ~3.4 s
+    const burst = 0.5 + 0.5 * Math.sin(t * 1.7), rake = Math.sin(t * 2 * Math.PI * 4.5) * 0.012 * burst;
+    const cycle = t % 3.4, reset = cycle > 3.0 ? Math.sin(((cycle - 3.0) / 0.4) * Math.PI) : 0;
+    const along = _v5.crossVectors(up, fwd).normalize();          // along the vehicle (across his front)
+    const pickAt = _v6.copy(lock).addScaledVector(along, -0.035).addScaledVector(up, rake).addScaledVector(fwd, -0.02 - reset * 0.06);
+    const holdAt = _v7.copy(lock).addScaledVector(along, 0.04).addScaledVector(up, -0.03).addScaledVector(fwd, -0.03);
+    SIDES.forEach((s, i) => {
+      const sh = this.world(b[s + 'Arm'], new THREE.Vector3());
+      const hang = sh.clone().addScaledVector(up, -this.arm * 0.95).addScaledVector(side, (i ? 1 : -1) * 0.04);
+      const target = hang.lerp(i ? pickAt : holdAt, e);
+      // elbows out to the side and down
+      const pole = sh.clone().addScaledVector(side, (i ? 1 : -1) * 0.45).addScaledVector(up, -0.45).addScaledVector(fwd, -0.15);
+      this.ik(b[s + 'Arm'], b[s + 'ForeArm'], b[s + 'Hand'], target.addScaledVector(fwd, -0.06), pole);
+    });
+    // the right wrist turns the pick (a twist about the forearm), the left holds its turn on the wrench
+    const fa = this.world(b.RightHand, _v8).sub(this.world(b.RightForeArm, _v9)).normalize();
+    this.turn(b.RightHand, _q1.setFromAxisAngle(fa, (0.25 + Math.sin(t * 2 * Math.PI * 1.3) * 0.35 * burst) * e));
+    const fl = this.world(b.LeftHand, _v8).sub(this.world(b.LeftForeArm, _v9)).normalize();
+    this.turn(b.LeftHand, _q1.setFromAxisAngle(fl, -0.3 * e));
+    // head down, on the lock (and a glance round now and then, in case somebody is watching)
+    const glance = Math.max(0, Math.sin(t * 0.55) - 0.82) * 4;     // 0 most of the time, up to ~0.7
+    if (b.Neck) this.turn(b.Neck, _q1.setFromAxisAngle(tilt, (low ? 0.25 : 0.35) * e * (1 - glance)));
+    if (b.Head) this.turn(b.Head, _q1.setFromAxisAngle(up, glance * 0.9 * e));
+  }
+
   /** where the hands hold (vehicle frame): the grips turned about the steering pivot, or on the wheel's rim */
   private grips(p: RidePose, seat: Seat, mirror: (v: V) => V): THREE.Vector3[] {
     const h = seat.hands;

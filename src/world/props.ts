@@ -780,6 +780,25 @@ export class Traffic {
     return this.standPoint(c);
   }
 
+  /**
+   * Where the lock is that Ramu picks, on the side of the vehicle he is on (world: x, y, z), where he stands to work at
+   * it (x, z), and whether he crouches for it. A car: the front door's handle. A two-wheeler: the disc lock on its
+   * front brake disc, low on the wheel.
+   */
+  lockSpot(c: Vehicle, px: number, pz: number): { lock: [number, number, number]; stand: [number, number]; low: boolean } {
+    const k = this.kinds[c.kind], seat = DRIVER[k.name];
+    const s = Math.sin(c.heading), co = Math.cos(c.heading);
+    const side = (px - c.x) * co - (pz - c.z) * s >= 0 ? 1 : -1;      // his side: +1 the vehicle's left
+    if (seat.pose === 'ride') {
+      const z = k.halfL - 0.3;
+      const [lx, lz] = this.toWorld(c, side * 0.1, z), [sx, sz] = this.toWorld(c, side * (k.halfW + 0.5), z - 0.15);
+      return { lock: [lx, 0.34, lz], stand: [sx, sz], low: true };
+    }
+    const z = seat.at[2] - 0.15, y = k.name === 'bolero' ? 1.05 : 0.92;
+    const [lx, lz] = this.toWorld(c, side * (k.halfW + 0.02), z), [sx, sz] = this.toWorld(c, side * (k.halfW + 0.48), z);
+    return { lock: [lx, y, lz], stand: [sx, sz], low: false };
+  }
+
   /** where one stands beside the driver's seat, to its right (out of the way of walls) */
   standPoint(c: Vehicle): [number, number] {
     const k = this.kinds[c.kind], seat = DRIVER[k.name];

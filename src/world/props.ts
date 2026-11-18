@@ -187,6 +187,45 @@ const ENGINE_AT: Record<string, [number, number, number] | null> = {
 const C_TAIL = new THREE.Color(0.55, 0.02, 0.01), C_BRAKE = new THREE.Color(4, 0.12, 0.05);
 const C_REV = new THREE.Color(2.4, 2.4, 2.2), C_IND = new THREE.Color(3.2, 1.3, 0.05);
 
+/**
+ * Where a rear lamp's lens really is: the body's surface at the lamp's centre (r.x: its side), found by a ray from behind (the lamps are
+ * painted into the models' textures, and on a hatchback they sit well forward of the bumper, z = -halfL, where the glow
+ * used to float), and which way the surface faces there.
+ */
+function rearLens(geos: THREE.BufferGeometry[], r: { x: number; y: number }, halfL: number): { z: number; n: THREE.Vector3 } | null {
+  const ray = new THREE.Raycaster(new THREE.Vector3(r.x, r.y, -halfL - 3), new THREE.Vector3(0, 0, 1), 0, 6);
+  const mat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  let best: THREE.Intersection | null = null;
+  for (const g of geos) {
+    if (!g.getAttribute('position')) continue;
+    const hit = ray.intersectObject(new THREE.Mesh(g, mat), false)[0];
+    if (hit && (!best || hit.distance < best.distance)) best = hit;
+  }
+  mat.dispose();
+  // nothing there, or a hit deep inside (the ray went past the body into the cabin): keep it on the back
+  if (!best || !best.face || best.point.z > -halfL + 0.45) return null;
+  const n = best.face.normal.clone();
+  if (n.z > 0) n.negate();                                   // it faces back
+  if (n.z > -0.35) n.set(0, 0, -1);                          // a glancing hit: keep it square to the back
+  return { z: best.point.z, n: n.normalize() };
+}
+
+/** a soft round glow, bright in the middle: the lit lens and the light around it, not a flat patch */
+function lampGlow(): THREE.CanvasTexture {
+  const S = 64, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.85)');
+  grad.addColorStop(0.7, 'rgba(255,255,255,0.25)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, S, S);
+  return new THREE.CanvasTexture(c);
+}
+const BACK = new THREE.Vector3(0, 0, -1), LQ = new THREE.Quaternion(), LS = new THREE.Vector3();
+
 export class Traffic {
   readonly group = new THREE.Group();
   private nodes: Node[] = [];
@@ -201,9 +240,13 @@ export class Traffic {
   private riderSeat: number[][] = [];
   /** the walls and posts of the world, for a vehicle Ramu drives: the corrected [x, z] for a circle of radius r */
   resolve: ((x: number, z: number, r: number) => [number, number]) | null = null;
+  /** whether the straight way between two points crosses a wall (getting off: not onto the far side of one) */
+  crosses: ((x0: number, z0: number, x1: number, z1: number) => boolean) | null = null;
   private pools: THREE.InstancedMesh | null = null;
   /** the small lamps: tail, brake, reversing and indicators (glowing quads, only the lit ones drawn) */
   private lamps: THREE.InstancedMesh;
+  /** per kind: the rear lamps' lens (from rearLens), or null to keep them on the back of the body */
+  private rear: { [side: number]: { z: number; n: THREE.Vector3 } | null }[] = [];
   private clock = 0;
   /** smoke from damaged engines */
   private smoke = new Smoke();
@@ -339,7 +382,15 @@ export class Traffic {
     });
     this.group.add(this.smoke.points);
     const lampN = kinds.reduce((a, k) => a + k.count * 10, 0);
-    this.lamps = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ toneMapped: false }), lampN);
+    this.rear = kinds.map((k, ki) => {
+      const r = REAR[k.name], p = parts[ki];
+      const geos = p.pbr ? p.pbr.map((q) => q.geo) : [p.body];
+      // each side on its own: the models are not quite symmetric
+      return r ? Object.fromEntries((r.x ? [1, -1] : [0]).map((sd) => [sd, rearLens(geos, { x: sd * r.x, y: r.y }, k.halfL)])) : {};
+    });
+    this.lamps = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
+      toneMapped: false, map: lampGlow(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    }), lampN);
     this.lamps.setColorAt(0, C_TAIL);
     this.lamps.frustumCulled = false;
     this.lamps.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -810,9 +861,23 @@ export class Traffic {
   /** where one stands beside the driver's seat, to its right (out of the way of walls) */
   standPoint(c: Vehicle): [number, number] {
     const k = this.kinds[c.kind], seat = DRIVER[k.name];
-    let [x, z] = this.toWorld(c, -(k.halfW + 0.55), seat.at[2]);
-    if (this.resolve) [x, z] = this.resolve(x, z, 0.35);
-    return [x, z];
+    // the right side if it is open, else the left, behind, in front: never through a wall or into a ride (parked up
+    // against one, the right side was inside the carousel)
+    const tries: [number, number][] = [[-(k.halfW + 0.55), seat.at[2]], [k.halfW + 0.55, seat.at[2]], [0, -(k.halfL + 0.6)], [0, k.halfL + 0.6]];
+    let best: [number, number] | null = null;
+    for (const [lx, lz] of tries) {
+      let [x, z] = this.toWorld(c, lx, lz);
+      if (this.crosses?.(c.x, c.z, x, z)) continue;
+      if (this.resolve) [x, z] = this.resolve(x, z, 0.35);
+      if (this.crosses?.(c.x, c.z, x, z)) continue;
+      best = [x, z];
+      break;
+    }
+    if (!best) {
+      best = this.toWorld(c, -(k.halfW + 0.55), seat.at[2]);
+      if (this.resolve) best = this.resolve(best[0], best[1], 0.35);
+    }
+    return best;
   }
 
   /** on a road (or its verge): full grip; off it (dirt, grass) less */
@@ -1052,12 +1117,16 @@ export class Traffic {
   private writeLamps(): void {
     const blink = (this.clock * BLINK_HZ) % 1 < 0.55;
     let n = 0;
-    const quad = (c: Vehicle, x: number, y: number, z: number, w: number, h: number, back: boolean, col: THREE.Color) => {
+    // each lamp a soft glow a little larger than the lens, just off the body's surface and turned to it
+    const quad = (c: Vehicle, x: number, y: number, z: number, w: number, h: number, back: boolean, col: THREE.Color, nrm?: THREE.Vector3) => {
       if (n >= this.lamps.count) return;
       this.bodyMatrix(c, M);
       M.multiply(WT.makeTranslation(x, y, z));
-      if (back) M.multiply(WT.makeRotationY(Math.PI));
-      M.multiply(WT.makeScale(w, h, 1));
+      if (back) {
+        LQ.setFromUnitVectors(new THREE.Vector3(0, 0, 1), nrm ?? BACK);
+        M.multiply(WT.makeRotationFromQuaternion(LQ));
+      }
+      M.multiply(WT.makeScale(w * 1.6, h * 1.8, 1));
       this.lamps.setMatrixAt(n, M);
       this.lamps.setColorAt(n, col);
       n++;
@@ -1067,16 +1136,18 @@ export class Traffic {
       const k = this.kinds[c.kind], r = REAR[k.name];
       const brake = (c.lamps & BRAKE) !== 0, ind = blink ? c.lamps & (LEFT | RIGHT) : 0;
       if (r) {
-        const z = -k.halfL - 0.015, sides = r.x ? [1, -1] : [0];
+        const sides = r.x ? [1, -1] : [0];
         for (const sd of sides) {
-          const x = sd * r.x;
-          if (brake || NIGHT) quad(c, x, r.y, z, r.w, r.h, true, brake ? C_BRAKE : C_TAIL);
-          if (c.lamps & REVERSE) quad(c, x - sd * (r.w * 0.5 + 0.04), r.y, z, 0.06, r.h * 0.8, true, C_REV);
+          const lens = this.rear[c.kind][sd], x = sd * r.x, nrm = lens ? LS.copy(lens.n) : BACK;
+          // just off the lens, along its facing
+          const z = lens ? lens.z + nrm.z * 0.02 : -k.halfL - 0.015, px = x + nrm.x * 0.02, py = r.y + nrm.y * 0.02;
+          if (brake || NIGHT) quad(c, px, py, z, r.w, r.h, true, brake ? C_BRAKE : C_TAIL, nrm);
+          if (c.lamps & REVERSE) quad(c, px - sd * (r.w * 0.5 + 0.04), py, z, 0.06, r.h * 0.8, true, C_REV, nrm);
           const want = sd > 0 ? LEFT : sd < 0 ? RIGHT : 0;
-          if (sd && ind & want) quad(c, x + sd * (r.w * 0.5 + 0.06), r.y, z, 0.09, Math.max(0.07, r.h * 0.8), true, C_IND);
+          if (sd && ind & want) quad(c, px + sd * (r.w * 0.5 + 0.06), py, z, 0.09, Math.max(0.07, r.h * 0.8), true, C_IND, nrm);
         }
         if (!r.x && ind) {                 // a bike: indicators either side of the tail lamp
-          for (const sd of [1, -1]) if (ind & (sd > 0 ? LEFT : RIGHT)) quad(c, sd * 0.15, r.y, z, 0.07, 0.05, true, C_IND);
+          for (const sd of [1, -1]) if (ind & (sd > 0 ? LEFT : RIGHT)) quad(c, sd * 0.15, r.y, (this.rear[c.kind][0]?.z ?? -k.halfL) - 0.02, 0.07, 0.05, true, C_IND);
         }
       }
       // front indicators, beside the headlamps

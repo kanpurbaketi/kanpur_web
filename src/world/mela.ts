@@ -35,6 +35,11 @@ interface Ride {
   rails?: { ring: [number, number][]; h: number; camH?: number }[]; floor?: (x: number, z: number) => number | null;
 }
 
+/** collision outlines for rides (the ride's own frame): a box round its footing, a circle round a round one */
+const boxRing = (hx: number, hz: number): [number, number][] => [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]];
+const roundRing = (r: number, n = 24): [number, number][] => Array.from({ length: n }, (_, k) => [Math.cos((k / n) * Math.PI * 2) * r, Math.sin((k / n) * Math.PI * 2) * r] as [number, number]);
+const solid = (ring: [number, number][]) => ({ ring, h: 10 });
+
 /** Giant wheel: legs, two rims with chasing bulbs, 16 hanging cabins that stay upright. Wheel plane = the z-y plane. */
 function giantWheel(): Ride {
   const R = 11, HUB = 13.2, N = 16, group = new THREE.Group();
@@ -113,7 +118,7 @@ function giantWheel(): Ride {
     cabins.push(g);
   }
   return {
-    group, post: [[0, -6, 1.2], [0, 6, 1.2], [0, 0, 1.6]], light: [0, 4, 0, '#ffb060'],
+    group, post: [], rails: [solid(boxRing(2.5, 9.0))], light: [0, 4, 0, '#ffb060'],      // the footing: the low cabins swing down to it
     update: (t, dt) => {
       wheel.rotation.x += dt * 0.22;
       for (const c of cabins) c.rotation.x = -wheel.rotation.x;
@@ -168,7 +173,7 @@ function columbus(): Ride {
   }
   group.add(pend);
   return {
-    group, post: [[-3.4, -5.2, 0.9], [3.4, -5.2, 0.9], [-3.4, 5.2, 0.9], [3.4, 5.2, 0.9], [0, 0, 1.5]], light: [0, 3, 0, '#ffc870'],
+    group, post: [], rails: [solid(boxRing(4.0, 6.0))], light: [0, 3, 0, '#ffc870'],      // the footing: the boat swings over it
     update: (t) => { pend.rotation.x = 0.95 * Math.sin(t * 0.85) * (0.75 + 0.25 * Math.sin(t * 0.13)); },
   };
 }
@@ -306,7 +311,7 @@ function carousel(): Ride {
     });
   }).catch(() => {});
   return {
-    group, post: [[0, 0, 4.8]], light: [0, 5, 0, '#ffb870'],
+    group, post: [], rails: [solid(roundRing(4.75))], light: [0, 5, 0, '#ffb870'],
     update: (t, dt) => {
       spin.rotation.y += dt * 0.5 * dir;
       for (const h of horses) h.o.position.y = h.low + 0.3 * (1 - Math.cos(t * 2.0 + h.k * 1.7));
@@ -359,7 +364,7 @@ function hindola(): Ride {
   }
   group.add(wheel);
   return {
-    group, post: [[0, 0, 2.1]], light: [0, 3, 0, '#ffc070'],
+    group, post: [], rails: [solid(boxRing(1.9, 3.5))], light: [0, 3, 0, '#ffc070'],      // its footing, the cradles' sweep
     update: (t, dt) => {
       wheel.rotation.x += dt * (0.3 + 0.25 * Math.sin(t * 0.4));
       for (const c of cabins) c.rotation.x = -wheel.rotation.x;

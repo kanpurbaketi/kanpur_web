@@ -112,6 +112,21 @@ export class CollisionWorld {
     return [x, z];
   }
 
+  /** Whether walking straight from (x0, z0) to (x1, z1) at foot height y crosses a wall too tall to step over. */
+  crosses(x0: number, z0: number, x1: number, z1: number, y = 0): boolean {
+    const rx = x1 - x0, rz = z1 - z0;
+    for (const s of this.near(Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1))) {
+      if (y >= s.h - 0.5 || y + HEAD <= s.base) continue;
+      const sx = s.bx - s.ax, sz = s.bz - s.az;
+      const den = rx * sz - rz * sx;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((s.ax - x0) * sz - (s.az - z0) * sx) / den;
+      const u = ((s.ax - x0) * rz - (s.az - z0) * rx) / den;
+      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return true;
+    }
+    return false;
+  }
+
   /**
    * Fraction (0..1) along the segment from (x0,y0,z0) to (x1,y1,z1) where it first hits a wall,
    * or 1 if clear. Used to pull the camera in front of buildings.

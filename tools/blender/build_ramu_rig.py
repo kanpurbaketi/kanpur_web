@@ -37,7 +37,7 @@ BODY_LIFT = 0.92       # <1 lightens everything a little
 ANIMS = os.path.join(ROOT, 'assets', 'anims')   # Mixamo FBX clips, shared by every character (see import_mixamo_clips)
 KEEP_ROOT = {'fall', 'fall2', 'get_up'}
 # clips in the folder that nothing plays yet (every clip baked goes into every character's file): left out until used
-UNUSED = {'falling', 'gunplay', 'singing', 'sweep fall', 'throw object'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
+UNUSED = {'falling', 'gunplay', 'sweep fall', 'throw object'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.fbx(filepath=SRC)
@@ -113,6 +113,103 @@ for n in nt.nodes:
         nt.links.new(n.outputs['Color'], bsdf.inputs['Base Color'])
 mat.name = CHAR
 mat.blend_method = 'OPAQUE'        # the FBX comes in as alpha-hashed; the texture has no real transparency
+
+# ---- the face: a mouth that opens and eyes that close (two shape keys), for talking and blinking -------------
+# The faces are one painted skin with no jaw or lids, so both are made by moving the skin: the lower lip and chin drop,
+# the upper lid slides down over the painted eye. Where they are was read off a front view of each head (600 px across
+# 0.3 m, centred on the head: tools: a front ortho render, x = cx + (px - 300) / 2000, z = top - 0.13 - (py - 300) / 2000):
+# the eyes' centres and width, the line where the lips meet and its width. The game darkens the parted lips
+# (src/world/face.ts) from the same landmarks, exported on the mesh.
+FACE = {
+    'ramu': dict(eyes=[(228, 362), (370, 362)], ew=52, mouth=(293, 490), mw=110),
+    'uncle': dict(eyes=[(228, 292), (360, 292)], ew=52, mouth=(300, 421), mw=125, lid=0.6),       # his brows sit low
+    'security': dict(eyes=[(222, 325), (365, 325)], ew=52, mouth=(298, 470), mw=100, lid=0.7),
+    'college_girl': dict(eyes=[(265, 283), (400, 283)], ew=48, mouth=(332, 412), mw=95),
+    'college_boy': dict(eyes=[(232, 298), (355, 298)], ew=50, mouth=(295, 428), mw=110),
+    'aunty': dict(eyes=[(198, 256), (322, 256)], ew=50, mouth=(262, 382), mw=110),
+}
+
+
+def build_face():
+    import bmesh
+    lm = FACE.get(CHAR)
+    if not lm:
+        return
+    me = mesh.data
+    top = max(v.co.z for v in me.vertices)
+    head = [v.co for v in me.vertices if v.co.z > top - 0.26 and abs(v.co.x) < 0.13]
+    cx = (min(v.x for v in head) + max(v.x for v in head)) / 2
+    cy = (min(v.y for v in head) + max(v.y for v in head)) / 2          # the head's middle, front to back
+    P2 = lambda p: (cx + (p[0] - 300) / 2000, top - 0.13 - (p[1] - 300) / 2000)
+    eyes = [P2(e) for e in lm['eyes']]
+    ehw = lm['ew'] / 2000 / 2
+    mx, mz = P2(lm['mouth'])
+    mhw = lm['mw'] / 2000 / 2
+    front = lambda co: co.y < cy - 0.02                                 # the face, not the back of the head
+
+    # more skin to move round the eyes and the mouth: their faces cut in three each way (weights and UVs carry over)
+    bm = bmesh.new(); bm.from_mesh(me)
+    near = lambda c: front(c) and (any(abs(c.x - ex) < ehw * 1.8 and abs(c.z - ez) < ehw * 1.3 for ex, ez in eyes)
+                                   or (abs(c.x - mx) < mhw * 1.5 and mz - 0.085 < c.z < mz + 0.025))
+    faces = [f for f in bm.faces if near(f.calc_center_median())]
+    edges = list({e for f in faces for e in f.edges})
+    n0 = len(bm.verts)
+    bmesh.ops.subdivide_edges(bm, edges=edges, cuts=2, use_grid_fill=True)
+    bm.to_mesh(me); bm.free()
+    print(f'RIG face: {len(faces)} faces round the eyes and mouth cut finer, {n0} -> {len(me.vertices)} vertices')
+
+    smooth = lambda a, b, x: 0.0 if x <= a else 1.0 if x >= b else (lambda t: t * t * (3 - 2 * t))((x - a) / (b - a))
+    mesh.shape_key_add(name='Basis', from_mix=False)
+    mouth = mesh.shape_key_add(name='mouth_open', from_mix=False)
+    blink = mesh.shape_key_add(name='blink', from_mix=False)
+    D = 0.008                                                            # the lower lip drops this much, wide open
+    moved = [0, 0]
+    for i, v in enumerate(me.vertices):
+        c = v.co
+        if not front(c):
+            continue
+        # mouth: the lower lip and the chin under it down (and a little back), the upper lip a touch up
+        lat = 1 - smooth(mhw * 0.15, mhw * 1.05, abs(c.x - mx))      # open in the middle, the corners stay shut
+        if lat > 0:
+            t = mz - c.z
+            if 0 < t < 0.085:
+                d = D * (1 - smooth(0.03, 0.085, t)) * lat
+                mouth.data[i].co = c + Vector((0, d * 0.25, -d)); moved[0] += 1
+            elif -0.016 < t <= 0:
+                d = 0.25 * D * (1 - smooth(0.004, 0.016, -t)) * lat
+                mouth.data[i].co = c + Vector((0, 0, d)); moved[0] += 1
+        # blink: what lies between the lower lid's line and the crease above folds down onto that line, the painted eye
+        # pressed thin under the upper lid's skin
+        for ex, ez in eyes:
+            lat = 1 - smooth(ehw * 1.0, ehw * 1.55, abs(c.x - ex))
+            eb, et, lt = ez - ehw * 0.55, ez + ehw * 0.42, ez + ehw * lm.get('lid', 0.9)
+            if lat <= 0 or not eb < c.z < lt:
+                continue
+            z2 = eb + (c.z - eb) * 0.08 if c.z <= et else eb + (et - eb) * 0.08 + (c.z - et) * (lt - eb - (et - eb) * 0.08) / (lt - et)
+            blink.data[i].co = c + Vector((0, -0.0015 * lat, (z2 - c.z) * lat)); moved[1] += 1
+    print(f'RIG face: mouth moves {moved[0]} vertices, blink {moved[1]}')
+    # where they are, in the glTF's frame (x, y up, z forward = -Blender y), for the game's shader
+    mesh['face'] = {'mouth': [mx, mz, -(cy - 0.02)], 'mhw': mhw, 'eyes': [[ex, ez] for ex, ez in eyes], 'ehw': ehw}
+
+
+build_face()
+if '--face-preview' in argv:          # renders of the head with the mouth and eyes shut and open, then stop (no export)
+    FP = argv[argv.index('--face-preview') + 1]
+    sc = bpy.context.scene
+    sc.render.engine = 'BLENDER_WORKBENCH'; sc.display.shading.light = 'FLAT'; sc.display.shading.color_type = 'TEXTURE'
+    sc.render.resolution_x = sc.render.resolution_y = 600
+    cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); sc.collection.objects.link(cam)
+    cam.data.type = 'ORTHO'; cam.data.ortho_scale = 0.3
+    top = max(v.co.z for v in mesh.data.vertices)
+    head = [v.co for v in mesh.data.vertices if v.co.z > top - 0.26 and abs(v.co.x) < 0.13]
+    cam.location = ((min(v.x for v in head) + max(v.x for v in head)) / 2, -3, top - 0.13); cam.rotation_euler = (1.5708, 0, 0)
+    sc.camera = cam
+    keys = mesh.data.shape_keys.key_blocks
+    for tag, m, b in (('rest', 0, 0), ('talk', 1, 0), ('blink', 0, 1)):
+        keys['mouth_open'].value = m; keys['blink'].value = b
+        sc.render.filepath = os.path.join(FP, f'{CHAR}_{tag}.png')
+        bpy.ops.render.render(write_still=True)
+    sys.exit(0)
 
 # ---- animation helpers -------------------------------------------------------------------------------------
 bpy.context.view_layer.objects.active = arm
@@ -416,5 +513,6 @@ for ob in bpy.context.scene.objects:
 path = os.path.join(OUT, OUT_NAME)
 bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=False, export_yup=True, export_apply=False,
                           export_skins=True, export_animations=True, export_animation_mode='ACTIONS',
-                          export_image_format='JPEG', export_jpeg_quality=88, export_materials='EXPORT')
+                          export_image_format='JPEG', export_jpeg_quality=88, export_materials='EXPORT',
+                          export_extras=True, export_morph=True, export_morph_normal=False)
 print('RIG exported', round(os.path.getsize(path) / 1e6, 2), 'MB')

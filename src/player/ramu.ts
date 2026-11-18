@@ -7,6 +7,7 @@ import { loadSettings, onSettingsChange, Settings } from '../game/settings';
 import { skinParams } from '../game/skin';
 import { CLIP_SECS, ONCE, prepareClips, PUNCH_LANDS } from '../world/actors';
 import { Rider, RidePose } from './rider';
+import { Face } from '../world/face';
 
 const CROUCH = 1.2, ACCEL = 12, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
 /**
@@ -62,6 +63,8 @@ export class Ramu {
   private jumpT = 0;
   private airFor = 1;
   private mixer: THREE.AnimationMixer | null = null;
+  /** his mouth and eyes (off until switched on: `face.talking`, `face.blinking`); null until the model has loaded */
+  face: Face | null = null;
   private actions: Record<string, THREE.AnimationAction> = {};
   private current: THREE.AnimationAction | null = null;
   private punchQueued = false;
@@ -195,6 +198,7 @@ export class Ramu {
       if (this.mixer && this.rider) {
         this.play('idle', 0.15);
         this.mixer.update(dt);
+        this.face?.update(dt);
         this.rider.apply(this.root, this.model, r);
       }
       // the camera swings round behind the vehicle as it goes, unless the player is looking about
@@ -487,6 +491,7 @@ export class Ramu {
         glow.position.set(0, 2.4, 0.6);
         this.root.add(glow);
       }
+      this.face = new Face(gltf.scene);
       this.mixer = new THREE.AnimationMixer(gltf.scene);
       for (const clip of prepareClips(gltf.animations)) {
         const a = this.mixer.clipAction(clip);
@@ -626,6 +631,7 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
       set('run', 'run', hs / 5.0);
     }
     this.mixer.update(dt);
+    this.face?.update(dt);
   }
 }
 

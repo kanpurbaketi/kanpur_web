@@ -467,7 +467,13 @@ export class Mela {
     this.t += dt;
     const far = Math.hypot(fx - MELA.cx, fz - MELA.cz) > 260;
     if (far) return;
-    if (Math.hypot(fx - this.poetsAt[0], fz - this.poetsAt[1]) < 70) for (const a of this.poets) a.update(dt);
+    if (Math.hypot(fx - this.poetsAt[0], fz - this.poetsAt[1]) < 70) {
+      for (const c of this.chat) {
+        c.t -= dt;
+        if (c.t <= 0) { c.a.face.talking = !c.a.face.talking; c.t = c.a.face.talking ? 1.5 + Math.random() * 3.5 : 2 + Math.random() * 5; }
+      }
+      for (const a of this.poets) a.update(dt);
+    }
     for (const r of this.rides) r.update(this.t, dt);
     this.crowd.update(dt, fx, fz, dirX, dirZ, px, pz, py);
   }
@@ -538,6 +544,8 @@ export class Mela {
   /** the poets on the stage's sofas (animated, so updated while Ramu is near enough to see them), and where they sit */
   private poets: Actor[] = [];
   private poetsAt: [number, number] = [0, 0];
+  /** the poets chatting on the sofas: seconds until each next starts or stops talking */
+  private chat: { a: Actor; t: number }[] = [];
 
   private buildStage(lights: LightPool | null, desktop: boolean): void {
     // The stage is built in its own frame (centre at the origin, front toward +z, audience beyond) and the group is turned so the
@@ -639,8 +647,10 @@ export class Mela {
     // the poets: rigged people on the cushions, listening and talking among themselves, now and then laughing or clapping
     const poets: FigureKind[] = ['uncle', 'uncle', 'boy', 'aunty', 'uncle', 'girl', 'uncle', 'boy'];
     const CLIPS = ['sitting_talking', 'sitting_clap', 'sitting_talking', 'sitting_laughing', 'sitting_talking', 'sitting_clap', 'sitting_laughing', 'sitting_talking'];
-    const kinds = [...new Set(poets)];
-    Promise.all(kinds.map((k) => makeActors(k, poets.filter((p) => p === k).length))).then((made) => {
+    // ... and one more: the poet reciting at the mic, on his feet (the singing clip: a hand out, the head up)
+    const cast: FigureKind[] = [...poets, 'uncle'];
+    const kinds = [...new Set(cast)];
+    Promise.all(kinds.map((k) => makeActors(k, cast.filter((p) => p === k).length))).then((made) => {
       const left = new Map(kinds.map((k, i) => [k, made[i]]));
       poets.forEach((kind, i) => {
         const a = left.get(kind)!.shift()!;
@@ -648,14 +658,25 @@ export class Mela {
         a.root.rotation.y = Math.PI;                 // facing the audience
         a.play(CLIPS[i], 0.85 + rnd(i * 7 + 3) * 0.3, 0);
         a.update(rnd(i * 13 + 1) * 20);              // not all at the same moment of it
+        a.face.blinking = true;
+        a.face.laughing = CLIPS[i] === 'sitting_laughing';
         stage.add(a.root);
         this.poets.push(a);
+        // those talking among themselves say a few words, then listen (turned on and off in update)
+        if (CLIPS[i] === 'sitting_talking') this.chat.push({ a, t: rnd(i * 5 + 2) * 4 });
       });
+      const r = left.get('uncle')!.shift()!;
+      r.root.position.set(cx - 3.6, FLOOR, cz + 3.0);
+      r.root.rotation.y = Math.PI;
+      r.play('singing', 0.9, 0);
+      r.face.talking = r.face.blinking = true;      // reciting, all the while
+      stage.add(r.root);
+      this.poets.push(r);
     }).catch(() => {});
     for (let i = 0; i < poets.length; i++) post(seats[i + 1], SEAT_Z - 0.05, 0.3, FLOOR + 1.3, FLOOR);
+    post(cx - 3.6, cz + 3.0, 0.3, FLOOR + 1.8, FLOOR);
     const [px, pz] = toW(cx, SEAT_Z);
     this.poetsAt = [px, pz];
-    people.push({ x: cx - 3.6, y: FLOOR, z: cz + 3.0, ry: Math.PI, pose: 'talk_b', kind: 'uncle', look: 4 });      // reciting, arms raised
     // the audience: the front rows fairly full, a few scattered behind (about 75 people); the rows stop short of the fence
     const cols = Math.floor((AUDIENCE.z1 - AUDIENCE.z0) / 0.86), rowsN = Math.min(11, Math.floor((SAMMELAN.x1 - 1.6 - AUDIENCE.x0) / 0.95));
     const aud0 = AUDIENCE.x0 - sx0 + 0.5;       // first row, in the stage frame

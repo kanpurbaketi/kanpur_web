@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { Face } from './face';
 import { NIGHT } from './night';
 
 /*
@@ -141,12 +142,15 @@ export class Actor {
   private state = '';        // what is playing: a looping clip's name, or the key of a one-shot
   /** where the body lies after the backward fall, relative to where it stood (in the root's frame): the get-up starts there */
   readonly lie: THREE.Vector3;
+  /** the mouth and eyes: still unless switched on (`face.talking`, `face.laughing`, `face.blinking`) */
+  readonly face: Face;
 
   constructor(name: RigName, src: Source, material = src.material) {
     const body = clone(src.scene);
     if (material !== src.material) body.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = material; });
     body.rotation.y = Math.PI;                   // the file faces +Z, the game's people face -Z
     this.root.add(body);
+    this.face = new Face(body);
     this.step = RIGS[name].step ?? 1;
     this.stride = (RIGS[name].height / CLIP_HEIGHT) * this.step;
     this.lie = src.lie;
@@ -207,6 +211,7 @@ export class Actor {
 
   update(dt: number): void {
     this.mixer.update(dt);
+    this.face.update(dt);
   }
 }
 

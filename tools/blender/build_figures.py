@@ -1,6 +1,6 @@
 """
 Still figures for the places where people sit or stand and never walk (the kavi sammelan's poets and audience, the gallery
-of the maut ka kuan, the riders on its wall, the children in the inflatable): each rigged character of the crowd, posed,
+of the maut ka kuan, the riders on its wall, the children in the inflatable, the drivers and passengers in the traffic): each rigged character of the crowd, posed,
 cut down to a few thousand triangles and baked to a plain mesh. One file per character, one mesh per pose, no texture:
 the game puts the character's own texture, or any of its looks (tools/people/make_variants.py), on them.
 
@@ -36,6 +36,8 @@ def build(char):
     arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
     mesh = max((o for o in bpy.data.objects if o.type == 'MESH'), key=lambda o: len(o.data.vertices))     # not the importer's bone shapes
     bpy.context.view_layer.objects.active = mesh
+    if mesh.data.shape_keys:                        # the face's keys (talking, blinking): a still figure has no use for them
+        mesh.shape_key_clear()
     # fewer triangles first (the skin weights survive it), then pose
     n = sum(len(p.vertices) - 2 for p in mesh.data.polygons)
     dec = mesh.modifiers.new('dec', 'DECIMATE')
@@ -141,8 +143,6 @@ def build(char):
     }
     if char == 'ramu':
         poses = {k: v for k, v in poses.items() if k in RAMU_POSES}
-    else:
-        poses.pop('drive')
     made = []
     for pose, set_pose in poses.items():
         set_pose()

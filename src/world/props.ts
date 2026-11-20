@@ -55,6 +55,27 @@ interface Seat { pose: Pose; at: [number, number, number]; who?: FigureKind[]; s
 /** `edge`: how far toward the kerb of its lane it keeps (cycles and bikes ride at the edge, and are overtaken) */
 interface Kind { name: string; count: number; speed: number; halfL: number; halfW: number; majorOnly: boolean; edge?: number; seats?: Seat[] }
 const RIDER_LOOKS = 3;      // different people per seat of each kind of vehicle
+
+/*
+ Who sits in the vehicles with a roof. A figure's `at` is where its feet go, its hips over it: the seated poses have the
+ hips 0.57 m (drive) / 0.55 m (chair) above the feet. The drivers' hips are where Ramu's go at the wheel (SEATS,
+ src/player/rider.ts); the cars are right-hand drive. Seat 0 is the driver, always there; the rest are there on some.
+*/
+const MEN: FigureKind[] = ['uncle', 'boy', 'uncle'];
+const driverAt = (hx: number, hy: number, hz: number): Seat => ({ pose: 'drive', at: [hx, hy - 0.57, hz], who: MEN });
+const passenger = (x: number, hipY: number, z: number, s = 1): Seat => ({ pose: 'chair', at: [x, hipY - 0.55 * s, z], scale: s, maybe: true });
+/** a car: the driver, somebody beside him, and two in the back. Seated, a figure's head is 1.38 m above its feet and
+ its arms 0.4 m out from its middle: in a small car, everyone is drawn a little smaller (`s`), so that with the feet
+ on the floor (`floor`, above the sills: below them they show under the car) the head stays under the roof and the
+ elbows inside the doors */
+const carSeats = (hx: number, hz: number, rearZ: number, rearX: number, floor: number, s: number): Seat[] => [
+  { pose: 'drive', at: [hx, floor, hz], who: MEN, scale: s },
+  { pose: 'chair', at: [-hx, floor, hz], scale: s, maybe: true },
+  { pose: 'chair', at: [rearX, floor + 0.02, rearZ], scale: s, maybe: true },
+  { pose: 'chair', at: [-rearX, floor + 0.02, rearZ], scale: s, maybe: true }];
+/** a bus: the driver, and people at the windows, now one side, now the other, down its length */
+const busSeats: Seat[] = [driverAt(-0.82, 1.5, 3.9),
+  ...([[0.78, 2.5], [-0.78, 1.6], [0.78, 0.4], [-0.78, -0.8], [0.78, -2.0], [-0.78, -3.1]] as const).map(([x, z]) => passenger(x, 1.45, z))];
 interface Link { to: number; off: number; bus: boolean; slow?: boolean }
 /** most vehicles at a time on the slow (stage 1 corridor) roads */
 const SLOW_MAX = 6;
@@ -262,18 +283,24 @@ export class Traffic {
   /** `parked`: vehicles to stand at the kerb for good (pin): made on top of the traffic's own of each kind */
   static async create(map: MapData, desktop: boolean, parked: ParkSpot[] = []): Promise<Traffic> {
     const kinds: Kind[] = [
-      { name: 'bus', count: desktop ? 3 : 2, speed: 7.5, halfL: 4.8, halfW: 1.3, majorOnly: true },
-      { name: 'bus_green', count: desktop ? 2 : 1, speed: 7.0, halfL: 4.8, halfW: 1.3, majorOnly: true },
-      { name: 'autorickshaw', count: desktop ? 16 : 9, speed: 6.5, halfL: 1.35, halfW: 0.75, majorOnly: false },      // tools/blender/import_vehicle.py
-      { name: 'tirri', count: desktop ? 12 : 7, speed: 4.5, halfL: 1.42, halfW: 0.55, majorOnly: false },
-      { name: 'maruti', count: desktop ? 2 : 1, speed: 6.2, halfL: 1.7, halfW: 0.75, majorOnly: false },
-      { name: 'maruti_red', count: 1, speed: 6.6, halfL: 1.7, halfW: 0.75, majorOnly: false },
-      { name: 'maruti_green', count: 1, speed: 5.8, halfL: 1.7, halfW: 0.75, majorOnly: false },
+      // a bus: the driver, and people at the windows down both sides
+      { name: 'bus', count: desktop ? 3 : 2, speed: 7.5, halfL: 4.8, halfW: 1.3, majorOnly: true, seats: busSeats },
+      { name: 'bus_green', count: desktop ? 2 : 1, speed: 7.0, halfL: 4.8, halfW: 1.3, majorOnly: true, seats: busSeats },
+      // an auto: the driver in front, up to three on the bench behind him
+      { name: 'autorickshaw', count: desktop ? 16 : 9, speed: 6.5, halfL: 1.35, halfW: 0.75, majorOnly: false,      // tools/blender/import_vehicle.py
+        seats: [driverAt(0, 0.82, 0.3), passenger(0.34, 0.86, -0.42), passenger(0, 0.86, -0.42), passenger(-0.34, 0.86, -0.42)] },
+      // an e-rickshaw: the driver, and two on the seat behind
+      { name: 'tirri', count: desktop ? 12 : 7, speed: 4.5, halfL: 1.42, halfW: 0.55, majorOnly: false,
+        seats: [driverAt(0, 1.0, 0.38), passenger(0.24, 1.0, -0.42), passenger(-0.24, 1.0, -0.42)] },
+      { name: 'maruti', count: desktop ? 2 : 1, speed: 6.2, halfL: 1.7, halfW: 0.75, majorOnly: false, seats: carSeats(-0.31, -0.07, -0.85, 0.28, 0.2, 0.78) },
+      { name: 'maruti_red', count: 1, speed: 6.6, halfL: 1.7, halfW: 0.75, majorOnly: false, seats: carSeats(-0.31, -0.07, -0.85, 0.28, 0.2, 0.78) },
+      { name: 'maruti_green', count: 1, speed: 5.8, halfL: 1.7, halfW: 0.75, majorOnly: false, seats: carSeats(-0.31, -0.07, -0.85, 0.28, 0.2, 0.78) },
       // downloaded models (tools/blender/import_vehicle.py)
-      { name: 'swift', count: desktop ? 4 : 2, speed: 7.2, halfL: 1.93, halfW: 0.9, majorOnly: false },
-      { name: 'ambassador', count: desktop ? 3 : 1, speed: 6.0, halfL: 2.16, halfW: 0.95, majorOnly: false },
-      { name: 'bolero', count: desktop ? 3 : 1, speed: 7.0, halfL: 2.0, halfW: 0.95, majorOnly: false },
-      { name: 'truck', count: desktop ? 2 : 1, speed: 5.6, halfL: 2.8, halfW: 1.35, majorOnly: true },
+      { name: 'swift', count: desktop ? 4 : 2, speed: 7.2, halfL: 1.93, halfW: 0.9, majorOnly: false, seats: carSeats(-0.36, -0.12, -0.95, 0.36, 0.15, 0.88) },
+      { name: 'ambassador', count: desktop ? 3 : 1, speed: 6.0, halfL: 2.16, halfW: 0.95, majorOnly: false, seats: carSeats(-0.4, -0.12, -1.05, 0.4, 0.15, 0.95) },
+      { name: 'bolero', count: desktop ? 3 : 1, speed: 7.0, halfL: 2.0, halfW: 0.95, majorOnly: false, seats: carSeats(-0.42, -0.02, -0.92, 0.4, 0.29, 1) },
+      // a truck: the driver, and now and then his helper
+      { name: 'truck', count: desktop ? 2 : 1, speed: 5.6, halfL: 2.8, halfW: 1.35, majorOnly: true, seats: [driverAt(-0.55, 1.6, 1.9), passenger(0.55, 1.6, 1.9)] },
       { name: 'pulsar', count: desktop ? 10 : 5, speed: 8.0, halfL: 1.0, halfW: 0.4, majorOnly: false, edge: 0.5,
         seats: [{ pose: 'ride', at: [0, 0.13, -0.3], who: ['boy', 'uncle', 'boy'] }] },
       // Royal Enfield Classic 350s, a red one and a black one

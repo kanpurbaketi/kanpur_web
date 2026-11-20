@@ -12,7 +12,7 @@ import { lookCount, rigMaterial } from './actors';
 */
 
 export type FigureKind = 'uncle' | 'aunty' | 'girl' | 'boy';
-export type Pose = 'stand' | 'stand_b' | 'stand_c' | 'talk' | 'talk_b' | 'hop' | 'sit' | 'ride' | 'chair';
+export type Pose = 'stand' | 'stand_b' | 'stand_c' | 'talk' | 'talk_b' | 'hop' | 'sit' | 'ride' | 'chair' | 'drive';
 const FILES: Record<FigureKind, string> = { uncle: 'uncle', aunty: 'aunty', girl: 'college_girl', boy: 'college_boy' };
 const KINDS: FigureKind[] = ['uncle', 'aunty', 'girl', 'boy', 'uncle', 'girl', 'boy', 'aunty', 'uncle'];
 /** standing about, for a crowd of onlookers: mostly just standing, some talking, a few with their arms up */

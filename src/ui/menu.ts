@@ -4,10 +4,15 @@ import type { Part } from '../game/parts';
 import { ACTIONS, Action, Controls, DEFAULTS, label } from '../game/controls';
 import { MapData, P2, centroid } from '../world/types';
 import { Hud, PX_PER_M } from './hud';
+import { account } from '../game/account';
+import { fmtNum, onLang, t, tk } from '../i18n';
+import { goHome, settingsView, stagesView } from './shell';
 
-const PROFILE_KEY = 'kanpur.profile.v1';
-type Item = 'profile' | 'map' | 'places' | 'stats' | 'controls';
-const TITLES: Record<Item, string> = { profile: 'Profile', map: 'Map', places: 'Places', stats: 'Statistics', controls: 'Controls' };
+type Item = 'stages' | 'settings' | 'profile' | 'map' | 'places' | 'stats' | 'controls';
+const ITEMS: Item[] = ['stages', 'settings', 'profile', 'map', 'places', 'stats', 'controls'];
+const TITLE: Record<Item, Parameters<typeof t>[0]> = {
+  stages: 'menu.stages', settings: 'menu.settings', profile: 'menu.profile', map: 'menu.map', places: 'menu.places', stats: 'menu.stats', controls: 'menu.controls',
+};
 
 export interface MenuDeps {
   map: MapData;
@@ -19,13 +24,15 @@ export interface MenuDeps {
   parts: Part[];
   /** every part of Kanpur, open or not (the city map greys out the unopened ones) */
   allParts: Part[];
+  /** the stage being played (none in development with ?debug) */
+  stage?: number;
   player: () => { x: number; z: number; yaw: number };
   /** called when a panel opens / closes, so the game can pause */
   onPause: (paused: boolean) => void;
 }
 
 /**
- * Top-left menu button -> dropdown (Profile, Map, Statistics) -> one panel at a time.
+ * Top-left menu button -> dropdown (Stages, Settings, Profile, Map, ...) -> one panel at a time.
  * The game is paused while a panel is open. Esc closes; M toggles the map.
  */
 export class Menu {
@@ -41,21 +48,31 @@ export class Menu {
 
   constructor(private d: MenuDeps) {
     this.btn.innerHTML = '<span></span><span></span><span></span>';
-    this.btn.setAttribute('aria-label', 'Menu');
+    this.btn.setAttribute('aria-label', t('menu.menu'));
     this.btn.setAttribute('aria-expanded', 'false');
     this.btn.addEventListener('click', () => this.toggleDrop());
 
-    for (const it of Object.keys(TITLES) as Item[]) {
-      const b = el('button', 'menu-item');
-      b.innerHTML = `${ICONS[it]}<span>${TITLES[it]}</span>`;
-      b.addEventListener('click', () => this.show(it));
-      this.drop.append(b);
-    }
+    const items = () => {
+      this.drop.replaceChildren();
+      for (const it of ITEMS) {
+        const b = el('button', 'menu-item');
+        b.innerHTML = `${ICONS[it]}<span></span>`;
+        (b.lastElementChild as HTMLElement).textContent = t(TITLE[it]);
+        b.addEventListener('click', () => this.show(it));
+        this.drop.append(b);
+      }
+    };
+    items();
+    onLang(() => {                                    // the new language straight away, in the open panel too
+      items();
+      this.btn.setAttribute('aria-label', t('menu.menu'));
+      if (this.open) { const it = this.open; this.open = null; this.show(it, true); }
+    });
 
     const head = el('div', 'menu-head');
     const close = el('button', 'menu-close');
     close.textContent = '×';
-    close.setAttribute('aria-label', 'Close');
+    close.setAttribute('aria-label', t('nav.close'));
     close.addEventListener('click', () => this.close());
     head.append(this.title, close);
     this.panel.append(head, this.body);
@@ -90,16 +107,18 @@ export class Menu {
     if (on) document.exitPointerLock?.();
   }
 
-  private show(it: Item): void {
+  private show(it: Item, again = false): void {
     this.toggleDrop(false);
-    const wasOpen = this.open !== null;
+    const wasOpen = this.open !== null || again;
     this.open = it;
-    this.title.textContent = TITLES[it];
+    this.title.textContent = t(TITLE[it]);
     this.body.replaceChildren();
     this.panel.dataset.item = it;
     this.overlay.classList.add('on');
     if (!wasOpen) this.d.onPause(true);
-    if (it === 'profile') this.renderProfile();
+    if (it === 'stages') this.renderStages();
+    else if (it === 'settings') this.body.append(settingsView({ onLogout: () => goHome() }));
+    else if (it === 'profile') this.renderProfile();
     else if (it === 'map') this.renderMap();
     else if (it === 'controls') this.renderControls();
     else if (it === 'places') this.renderPlaces();
@@ -114,31 +133,28 @@ export class Menu {
     this.d.onPause(false);
   }
 
+  // ---------- Stages ----------
+  private renderStages(): void {
+    const note = text('p', '', 'muted');
+    note.setAttribute('role', 'status');
+    this.body.append(text('p', t('stage.pick'), 'muted'), stagesView({ current: this.d.stage, onMsg: (m) => (note.textContent = m) }), note);
+  }
+
   // ---------- Profile ----------
   private renderProfile(): void {
-    const prof = loadProfile();
     const s = this.d.stats.data;
+    const me = account.me;
     const avatar = el('div', 'avatar');
-    const name = el('input', 'name-input') as HTMLInputElement;
-    name.value = prof.name;
-    name.maxLength = 24;
-    name.placeholder = 'Your name';
-    name.setAttribute('aria-label', 'Player name');
-    const setAvatar = () => (avatar.textContent = (name.value.trim()[0] ?? '?').toUpperCase());
-    setAvatar();
-    name.addEventListener('input', () => {
-      setAvatar();
-      saveProfile({ ...prof, name: name.value.trim() || 'Player' });
-    });
+    avatar.textContent = (me?.username[0] ?? '?').toUpperCase();
     const top = el('div', 'profile-top');
-    const label = el('label', 'field');
-    label.append(text('span', 'Name'), name);
-    top.append(avatar, label);
+    const who = el('div');
+    who.append(text('div', me?.username ?? t('user.guest'), 'profile-name'), text('div', me?.email ?? t('profile.guest'), 'muted'));
+    top.append(avatar, who);
     this.body.append(top, rows([
-      ['Character', 'Ramu'],
-      ['Area', this.d.map.title || 'Moti Jheel, Kanpur'],
-      ['Playing since', new Date(s.firstPlayed).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })],
-      ['Sessions', String(s.sessions)],
+      [t('profile.character'), t('profile.ramu')],
+      [t('profile.area'), this.d.area === 'moti_jheel' ? tk('place.moti_jheel') : this.d.map.title || 'Kanpur'],
+      [t('profile.since'), new Date(s.firstPlayed).toLocaleDateString(lang(), { day: 'numeric', month: 'short', year: 'numeric' })],
+      [t('profile.sessions'), fmtNum(s.sessions)],
     ]));
   }
 
@@ -171,19 +187,19 @@ export class Menu {
       this.mapView.scale = Math.max(fit(), Math.min(6, this.mapView.scale * k));
       draw();
     };
-    mk('▦', 'Switch between the whole city and the local map', () => {
+    mk('▦', t('map.toggle'), () => {
       this.cityView = !this.cityView;
       draw();
     });
-    mk('+', 'Zoom in', () => zoom(1.5));
-    mk('−', 'Zoom out', () => zoom(1 / 1.5));
-    mk('◎', 'Centre on me', () => {
+    mk('+', t('map.in'), () => zoom(1.5));
+    mk('−', t('map.out'), () => zoom(1 / 1.5));
+    mk('◎', t('map.me'), () => {
       const p = this.d.player();
       this.mapView.cx = p.x;
       this.mapView.cz = p.z;
       draw();
     });
-    mk('⤢', 'Whole area', () => {
+    mk('⤢', t('map.all'), () => {
       this.mapView = { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, scale: fit() };
       draw();
     });
@@ -304,10 +320,10 @@ export class Menu {
     g.stroke();
     g.fillStyle = '#222';
     g.font = 'bold 13px system-ui';
-    g.fillText('N ↑', W - 22, 16);
+    g.fillText(t('map.north'), W - 22, 16);
     g.textAlign = 'left';
     g.font = '11px system-ui';
-    g.fillText('Kanpur. Greyed parts are not open yet. ▦ switches to the local map.', 12, H - 12);
+    g.fillText(t('map.cityNote'), 12, H - 12);
   }
 
   private drawMap(canvas: HTMLCanvasElement): void {
@@ -343,7 +359,7 @@ export class Menu {
     if (st) {
       g.fillStyle = '#1f3b57';
       g.fillRect(sx(st[0]) - 5, sz(st[1]) - 5, 10, 10);
-      label([st[0], st[1] - 14 / scale], 'Metro', '#1f3b57');
+      label([st[0], st[1] - 14 / scale], t('map.metro'), '#1f3b57');
     }
 
     // player arrow (points where the camera looks)
@@ -367,7 +383,7 @@ export class Menu {
     // north + scale bar
     g.fillStyle = '#222';
     g.font = 'bold 13px system-ui';
-    g.fillText('N ↑', W - 22, 16);
+    g.fillText(t('map.north'), W - 22, 16);
     const bar = niceLength(90 / scale);
     g.fillRect(12, H - 16, bar * scale, 3);
     g.textAlign = 'left';
@@ -381,8 +397,8 @@ export class Menu {
     const parts = [...this.d.parts].sort((a, b) => a.title.localeCompare(b.title));
     const search = el('input', 'place-search') as HTMLInputElement;
     search.type = 'search';
-    search.placeholder = 'Search places';
-    search.setAttribute('aria-label', 'Search places');
+    search.placeholder = t('places.search');
+    search.setAttribute('aria-label', t('places.search'));
     const list = el('div', 'place-list');
     const draw = () => {
       const q = search.value.trim().toLowerCase();
@@ -394,7 +410,7 @@ export class Menu {
         b.disabled = here;
         b.innerHTML = `<span class="place-name"></span><span class="place-meta"></span>`;
         (b.querySelector('.place-name') as HTMLElement).textContent = p.title;
-        (b.querySelector('.place-meta') as HTMLElement).textContent = here ? 'You are here' : p.buildings ? `${p.buildings.toLocaleString()} buildings` : 'Go';
+        (b.querySelector('.place-meta') as HTMLElement).textContent = here ? t('places.here') : p.buildings ? t('places.buildings', { n: fmtNum(p.buildings) }) : t('places.go');
         b.addEventListener('click', () => {
           const u = new URL(location.href);
           u.searchParams.set('area', p.id);
@@ -403,11 +419,11 @@ export class Menu {
         });
         list.append(b);
       }
-      if (!list.children.length) list.append(text('p', 'No places match.', 'muted'));
+      if (!list.children.length) list.append(text('p', t('places.none'), 'muted'));
     };
     search.addEventListener('input', draw);
     draw();
-    const note = text('p', parts.length > 1 ? 'Places open to play. Going to one reloads the game there.' : 'Only Moti Jheel is open for now.', 'muted');
+    const note = text('p', parts.length > 1 ? t('places.many') : t('places.one'), 'muted');
     if (this.d.area === 'moti_jheel') this.body.append(this.startAt());
     this.body.append(search, list, note);
   }
@@ -415,7 +431,7 @@ export class Menu {
   /** Moti Jheel: where the game starts (stage 1 from the Shivaji Putla gate, or straight into the mela). Choosing one restarts there. */
   private startAt(): HTMLElement {
     const box = el('div', 'start-at');
-    box.append(text('h3', 'Start at'));
+    box.append(text('h3', t('places.startAt')));
     const now = new URLSearchParams(location.search).get('spawn') ?? startChoice();
     const list = el('div', 'place-list');
     for (const s of STARTS) {
@@ -424,9 +440,9 @@ export class Menu {
       b.setAttribute('aria-pressed', String(here));
       b.innerHTML = `<span><span class="place-name"></span><br><span class="place-meta"></span></span><span class="place-meta"></span>`;
       const [name, note, state] = b.querySelectorAll('span.place-name, span.place-meta') as NodeListOf<HTMLElement>;
-      name.textContent = s.title;
-      note.textContent = s.note;
-      state.textContent = here ? 'Chosen' : 'Start here';
+      name.textContent = tk(`start.${s.id}.title`) || s.title;
+      note.textContent = tk(`start.${s.id}.note`) || s.note;
+      state.textContent = here ? t('places.chosen') : t('places.startHere');
       b.addEventListener('click', () => {
         setStartChoice(s.id);
         const u = new URL(location.href);
@@ -435,7 +451,7 @@ export class Menu {
       });
       list.append(b);
     }
-    box.append(list, text('p', 'Choosing one restarts the game there; it is remembered for next time.', 'muted'));
+    box.append(list, text('p', t('places.startNote'), 'muted'));
     return box;
   }
 
@@ -444,22 +460,23 @@ export class Menu {
   private renderControls(): void {
     const c = this.d.controls;
     const table = el('table', 'ctl-table');
-    table.innerHTML = '<thead><tr><th>Action</th><th>Key</th><th>Alternative</th><th>Default</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th></th><th></th><th></th><th></th></tr></thead>';
+    table.querySelectorAll('th').forEach((th, i) => (th.textContent = t((['ctl.action', 'ctl.key', 'ctl.alt', 'ctl.default'] as const)[i])));
     const tb = el('tbody');
     table.append(tb);
-    const note = text('p', 'Click a key, then press the new one. Esc cancels, Backspace clears.', 'muted');
+    const note = text('p', t('ctl.note'), 'muted');
     let stop: (() => void) | null = null;
     const draw = () => {
       tb.replaceChildren();
       for (const a of ACTIONS) {
         const tr = el('tr');
-        tr.append(text('td', a.label));
+        tr.append(text('td', actName(a.id)));
         for (const slot of [0, 1] as const) {
           const td = el('td');
           const b = el('button', 'key-btn');
           b.textContent = label(c.get(a.id)[slot]);
           if (!c.isDefault(a.id, slot)) b.classList.add('changed');
-          b.setAttribute('aria-label', `${a.label}, ${slot ? 'alternative' : 'main'} key: ${b.textContent}. Click to change`);
+          b.setAttribute('aria-label', t('ctl.aria', { name: actName(a.id), slot: slot ? t('ctl.altSlot') : t('ctl.main'), key: b.textContent ?? '' }));
           b.addEventListener('click', () => listen(a.id, slot, b));
           td.append(b);
           tr.append(td);
@@ -471,8 +488,8 @@ export class Menu {
     const listen = (a: Action, slot: 0 | 1, b: HTMLButtonElement) => {
       stop?.();
       b.classList.add('listening');
-      b.textContent = 'Press a key…';
-      note.textContent = 'Press the new key (Esc cancels, Backspace clears).';
+      b.textContent = t('ctl.press');
+      note.textContent = t('ctl.pressNote');
       let active = true;
       const done = (msg: string) => {
         active = false;
@@ -484,13 +501,13 @@ export class Menu {
       };
       const assign = (code: string) => {
         const from = c.set(a, slot, code);
-        const name = ACTIONS.find((x) => x.id === a)!.label;
-        done(code ? `${name}: ${label(code)}${from ? ` (taken from "${ACTIONS.find((x) => x.id === from)!.label}")` : ''}` : `${name}: cleared`);
+        const name = actName(a);
+        done(code ? t('ctl.set', { name, key: label(code) }) + (from ? t('ctl.taken', { from: actName(from) }) : '') : t('ctl.cleared', { name }));
       };
       const onKey = (e: KeyboardEvent) => {
         e.preventDefault();
         e.stopImmediatePropagation();       // the game and the menu must not react while a key is being chosen
-        if (e.code === 'Escape') return done('Cancelled.');
+        if (e.code === 'Escape') return done(t('ctl.cancelled'));
         if (e.code === 'Backspace' || e.code === 'Delete') return assign('');
         if (['MetaLeft', 'MetaRight', 'ContextMenu'].includes(e.code)) return;
         assign(e.code);
@@ -506,17 +523,17 @@ export class Menu {
       stop = () => done('');
     };
     const reset = el('button', 'link-btn');
-    reset.textContent = 'Reset to defaults';
+    reset.textContent = t('ctl.reset');
     reset.addEventListener('click', () => {
       stop?.();
       c.reset();
-      note.textContent = 'Controls reset to the defaults.';
+      note.textContent = t('ctl.resetDone');
       draw();
     });
     const mouse = rows([
-      ['Look around', 'Move the mouse (click the game first)'],
-      ['Release the mouse / close a panel', 'Esc'],
-      ['Touch screens', 'Left half: move · right half: look · buttons: run, jump, punch'],
+      [t('ctl.look'), t('ctl.lookHow')],
+      [t('ctl.release'), 'Esc'],
+      [t('ctl.touch'), t('ctl.touchHow')],
     ]);
     draw();
     const foot = el('p', 'muted');
@@ -533,23 +550,23 @@ export class Menu {
       t.append(text('div', value, 'stat-v'), text('div', label, 'stat-l'));
       grid.append(t);
     };
-    tile('Distance walked', km(s.walked));
-    tile('Distance run', km(s.ran));
-    tile('Area explored', `${(s.explored * 100).toFixed(1)}%`);
-    tile('Time played', dur(s.played));
-    tile('This session', dur(s.session));
-    tile('Jumps', s.jumps.toLocaleString());
-    tile('Top speed', `${(s.topSpeed * 3.6).toFixed(1)} km/h`);
-    tile('Sessions', String(s.sessions));
+    tile(t('stats.walked'), km(s.walked));
+    tile(t('stats.ran'), km(s.ran));
+    tile(t('stats.explored'), `${(s.explored * 100).toFixed(1)}%`);
+    tile(t('stats.played'), dur(s.played));
+    tile(t('stats.session'), dur(s.session));
+    tile(t('stats.jumps'), fmtNum(s.jumps));
+    tile(t('stats.top'), `${(s.topSpeed * 3.6).toFixed(1)} km/h`);
+    tile(t('stats.sessions'), fmtNum(s.sessions));
     const reset = el('button', 'link-btn');
-    reset.textContent = 'Reset statistics';
+    reset.textContent = t('stats.reset');
     reset.addEventListener('click', () => {
-      if (confirm('Reset all statistics?')) {
+      if (confirm(t('stats.confirm'))) {
         this.d.stats.reset();
         this.show('stats');
       }
     });
-    const note = text('p', 'Saved in this browser only.', 'muted');
+    const note = text('p', t('stats.note'), 'muted');
     note.append(' ', reset);
     this.body.append(grid, note);
   }
@@ -575,21 +592,8 @@ function rows(list: [string, string][]): HTMLElement {
   return dl;
 }
 
-function loadProfile(): { name: string } {
-  try {
-    return { name: 'Player', ...JSON.parse(localStorage.getItem(PROFILE_KEY) ?? '{}') };
-  } catch {
-    return { name: 'Player' };
-  }
-}
-
-function saveProfile(p: { name: string }): void {
-  try {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
-  } catch {
-    /* storage unavailable */
-  }
-}
+const actName = (a: Action) => t(`act.${a}` as Parameters<typeof t>[0]);
+const lang = () => (document.documentElement.lang === 'hi' ? 'hi-IN' : 'en-IN');
 
 function km(m: number): string {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)} km`;
@@ -597,7 +601,8 @@ function km(m: number): string {
 
 function dur(s: number): string {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-  return h ? `${h} h ${m} min` : m ? `${m} min` : `${Math.floor(s)} s`;
+  const hi = document.documentElement.lang === 'hi';
+  return h ? (hi ? `${h} घंटे ${m} मिनट` : `${h} h ${m} min`) : m ? (hi ? `${m} मिनट` : `${m} min`) : (hi ? `${Math.floor(s)} सेकंड` : `${Math.floor(s)} s`);
 }
 
 function niceLength(m: number): number {
@@ -608,6 +613,8 @@ function niceLength(m: number): number {
 const svg = (d: string) =>
   `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICONS: Record<Item, string> = {
+  stages: svg('<path d="M4 21V4M4 4h12l-2 4 2 4H4"/>'),
+  settings: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   profile: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>'),
   map: svg('<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/>'),
   stats: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),

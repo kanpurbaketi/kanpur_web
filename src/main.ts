@@ -27,9 +27,13 @@ import { Driving } from './player/drive';
 import { Mela } from './world/mela';
 import { Vendors } from './world/vendors';
 import { HOME, loadManifest, playable } from './game/parts';
-import { clipRoadsToMela, TEAR } from './world/melaSite';
+import { clipRoadsToMela, inMela, TEAR } from './world/melaSite';
 import { CORRIDOR, corridorWalks, NAGAR_NIGAM, prepareRoute, SHIVAJI_START, Stage1Route } from './world/stage1Route';
 import { startChoice } from './game/start';
+import { account } from './game/account';
+import { stage as stageOf, type Stage } from './game/stages';
+import { goHome, loadingFailed, loadingScreen, showHome, toast, UserChip } from './ui/shell';
+import { onLang, t, tk } from './i18n';
 
 /*
  Debug URL params:
@@ -44,10 +48,15 @@ import { startChoice } from './game/start';
    ?fov=20                camera field of view in degrees (small = zoomed in, for character close-ups)
    ?ao=0 / ?ao=1          force ambient occlusion off / on (default: on for mouse devices, off for touch)
  window.__ready is set once the first frame has rendered (for screenshot scripts).
+
+ Stages: without ?stage=N the home screen shows (no world). ?stage=N needs a signed-in player with that stage unlocked,
+ then the loading page (5 s, with the ad) covers the world while it loads. In development, ?debug skips all that
+ (the test scripts), so the world loads straight away with no player.
 */
+interface Play { stage: Stage; run: number | null }
 const params = new URLSearchParams(location.search);
 
-async function main() {
+async function main(play: Play | null) {
   const status = document.getElementById('status')!;
   // which part of Kanpur: ?area=<id>, if the admin has opened it and its data is built; otherwise home (Moti Jheel)
   const manifest = await loadManifest();
@@ -148,6 +157,7 @@ async function main() {
   const hintEl = document.getElementById('hint')!;
   hintEl.textContent = controls.hint();
   controls.onChange(() => (hintEl.textContent = controls.hint()));
+  onLang(() => (hintEl.textContent = controls.hint()));
   const ramu = new Ramu(camera, world, renderer.domElement, controls);
   scene.add(ramu.root);
   if (params.has('debug')) (window as unknown as { __ramu: Ramu }).__ramu = ramu;   // for test scripts
@@ -166,7 +176,7 @@ async function main() {
   const stats = new Stats(city.roadPoints);
   let paused = false;
   const menu = new Menu({
-    map, hud, stats, controls, area: AREA, parts: playable(manifest), allParts: manifest.parts,
+    map, hud, stats, controls, area: AREA, parts: playable(manifest), allParts: manifest.parts, stage: play?.stage.n,
     player: () => ({ x: ramu.position.x, z: ramu.position.z, yaw: ramu.yaw }),
     onPause: (p) => {
       paused = p;
@@ -196,6 +206,28 @@ async function main() {
   if (spawnMode === 'mela' || spawnMode === 'inside' || spawnMode === 'shivaji') best = spawn;
   ramu.position.set(best[0], 0, best[1]);
   const spawnAt: [number, number] = [best[0], best[1]];
+  // the play of this stage: time played (not paused), sent every minute and on leaving; reaching the mela ends stage 1
+  const run = { played: 0, beat: 60, done: false };
+  const runStats = () => {
+    const d = stats.data;
+    return { walked: d.walked, ran: d.ran, jumps: d.jumps, topSpeed: d.topSpeed, explored: d.explored };
+  };
+  const chip = new UserChip();
+  document.body.append(chip.root);
+  if (play) {
+    chip.setStage(play.stage, { played: () => run.played, done: () => run.done });
+    if (play.run !== null) addEventListener('pagehide', () => account.runBeacon(play.run!, run.played, runStats()));
+  }
+  const trackRun = (dt: number) => {
+    if (!play) return;
+    run.played += dt;
+    if (play.run !== null && (run.beat -= dt) <= 0) { run.beat = 60; account.runBeat(play.run, run.played, runStats()); }
+    if (!run.done && play.stage.n === 1 && spawnMode === 'shivaji' && inMela(ramu.position.x, ramu.position.z)) {
+      run.done = true;                               // stage 1's goal: from the gate into the mela
+      if (play.run !== null) account.runBeat(play.run, run.played, runStats(), true);
+      toast(t('stage.complete', { n: 1, goal: tk('stage.1.goal') }), 6);
+    }
+  };
   // life bar: vehicles hurt; a knockout wakes Ramu back at the spawn point
   const health = new Health(() => { ramu.position.set(spawnAt[0], 0, spawnAt[1]); ramu.releaseKeys(); });
   if (params.has('debug')) (window as unknown as { __health: Health }).__health = health;
@@ -276,6 +308,7 @@ async function main() {
   status.style.display = 'none';
   document.getElementById('hint')!.style.display = fixed ? 'none' : '';
   menu.visible = !fixed;
+  chip.root.style.display = fixed ? 'none' : '';
 
   // Post: MSAA render -> ground-truth AO (skips leaf cards and wires) -> tone map / sRGB output.
   let composer: EffectComposer | null = null;
@@ -356,7 +389,7 @@ void main() {
         [p.x, p.z] = world.resolve(p.x, p.z, 0.33, p.y);   // ... nor be pushed by them into a wall
       }
     }
-    if (!fixed && !paused) stats.update(dt, ramu.position.x, ramu.position.z, ramu.speed, ramu.jumps);
+    if (!fixed && !paused) { stats.update(dt, ramu.position.x, ramu.position.z, ramu.speed, ramu.jumps); trackRun(dt); }
     const focus = fixed ? camera.position : ramu.position;
     sun.target.position.set(focus.x, 0, focus.z);
     if (!paused) {
@@ -450,7 +483,24 @@ void main() {
   return m;
 }
 
-main().catch((e) => {
-  document.getElementById('status')!.textContent = 'Failed to load: ' + e;
+async function boot(): Promise<void> {
+  if (import.meta.env.DEV && params.has('debug')) return main(null);      // test scripts: straight into the world
+  const me = await account.load();
+  const n = Number(params.get('stage'));
+  const st = n ? stageOf(n) : undefined;
+  if (!st) return showHome();
+  if (!me) return goHome('stage.loginFirst');
+  if (!me.unlocked.includes(st.n)) return goHome('stage.lockedMsg', st.n);
+  if (!st.built) return goHome('stage.notReady', st.n);
+  const runId = await account.runStart(st.n).catch(() => null);           // not recorded if this fails; the game still runs
+  const shown = loadingScreen(st, tk(`place.${st.area ?? 'moti_jheel'}`), () => (window as unknown as { __ready?: boolean }).__ready === true);
+  await main({ stage: st, run: runId });
+  await shown;
+}
+
+boot().catch((e) => {
+  const s = document.getElementById('status');
+  if (s) s.textContent = t('load.failed', { e: String(e) });
+  loadingFailed(e);
   console.error(e);
 });

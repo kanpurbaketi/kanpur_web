@@ -5,16 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && tsc -p api/tsconfig.json && vite build",
     "preview": "vite preview",
     "map": "python3 tools/osm/convert.py --area moti_jheel",
     "parts": ".venv/bin/python tools/osm/make_parts.py --reuse-counts",
     "part": ".venv/bin/python tools/osm/build_part.py"
   },
   "dependencies": {
+    "postgres": "3.4.7",
     "three": "0.186.1"
   },
   "devDependencies": {
+    "@types/node": "22.18.0",
     "@types/three": "0.186.0",
     "playwright": "1.64.1",
     "typescript": "6.0.3",

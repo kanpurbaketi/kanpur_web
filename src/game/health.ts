@@ -1,3 +1,4 @@
+import { onLang, t } from '../i18n';
 /*
  Ramu's life bar (top-left, under the menu button). hurt(n) lowers it with a short red flash and a hit cooldown;
  it refills slowly after a few quiet seconds; at zero Ramu is knocked out and wakes at the spawn point with a full bar.
@@ -16,7 +17,8 @@ export class Health {
   constructor(private onKnockedOut: () => void) {
     const root = document.createElement('div');
     root.id = 'life';
-    root.innerHTML = '<span class="life-name">RAMU</span><div class="life-track"><div class="life-fill"></div></div><span class="life-num"></span>';
+    root.innerHTML = '<span class="life-name"></span><div class="life-track"><div class="life-fill"></div></div><span class="life-num"></span>';
+    const name = root.querySelector('.life-name') as HTMLElement;
     document.body.append(root);
     this.fill = root.querySelector('.life-fill') as HTMLElement;
     this.num = root.querySelector('.life-num') as HTMLElement;
@@ -24,7 +26,9 @@ export class Health {
     this.flash.id = 'hurt-flash';
     this.banner = document.createElement('div');
     this.banner.id = 'ko-banner';
-    this.banner.textContent = 'Ramu is knocked out';
+    const words = () => { name.textContent = t('life.name'); this.banner.textContent = t('life.ko'); };
+    words();
+    onLang(words);
     document.body.append(this.flash, this.banner);
     this.draw();
   }

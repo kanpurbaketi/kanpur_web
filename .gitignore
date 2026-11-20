@@ -14,3 +14,4 @@ tools/triposr/TripoSR/
 tools/triposr/out/
 tools/triposr/weights/
 tools/triposr/refs/cand/
+.pgdata/

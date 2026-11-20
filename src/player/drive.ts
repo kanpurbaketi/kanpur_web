@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import * as THREE from 'three';
 import { Ramu } from './ramu';
 import { Traffic, Vehicle } from '../world/props';
@@ -145,7 +146,7 @@ export class Driving {
       k.seen = true;
       if (this.peds.where(k.owner)) {
         this.peds.comeFor(k.owner, OWNER_GRUDGE);
-        this.say('"Oye! Meri gaadi!" The owner saw you');
+        this.say(t('drive.owner'));
       }
     }
     if (k.t >= k.need) {
@@ -227,18 +228,18 @@ export class Driving {
   private showTip(): void {
     let text = '';
     if (this.car) {
-      const dead = this.car.damage >= 100 ? ' (engine dead)' : '';
-      text = Math.abs(this.car.v) < 0.5 && this.w >= 1 && !this.leaving ? `${this.key()} — get off${dead}` : '';
+      const dead = this.car.damage >= 100 ? t('drive.dead') : '';
+      text = Math.abs(this.car.v) < 0.5 && this.w >= 1 && !this.leaving ? t('drive.getOff', { key: this.key() }) + dead : '';
     }
     else if (this.pick) {
       const k = this.pick, f = k.t / k.need, bar = 20;
-      text = `Picking the lock  ${'█'.repeat(Math.round(f * bar))}${'░'.repeat(bar - Math.round(f * bar))}  ${Math.ceil(k.need - k.t)} s — keep still (${this.key()}: give up)`;
+      text = t('drive.picking', { bar: '█'.repeat(Math.round(f * bar)) + '░'.repeat(bar - Math.round(f * bar)), s: Math.ceil(k.need - k.t), key: this.key() });
     }
     else {
       const p = this.ramu.position;
       const c = !this.ramu.knockedOut && p.y < 0.6 ? this.traffic.nearest(p.x, p.z, REACH) : null;
       const need = c?.locked ? this.pickTime(c) : 0;
-      if (c) text = need ? `${this.key()} — pick the lock (${need} s)` : `${this.key()} — ${this.traffic.seatOf(c).pose === 'ride' ? 'get on' : 'get in'}`;
+      if (c) text = need ? t('drive.pick', { key: this.key(), s: need }) : t(this.traffic.seatOf(c).pose === 'ride' ? 'drive.getOn' : 'drive.getIn', { key: this.key() });
     }
     if (this.shoutT > 0) text = text ? `${this.shout}\n${text}` : this.shout;
     if (text === this.tipText) return;
@@ -247,6 +248,6 @@ export class Driving {
       this.tip.textContent = text;
       this.tip.style.display = text ? 'block' : 'none';
     }
-    if (this.btn) this.btn.textContent = this.car ? 'GET OFF' : this.pick ? 'STOP' : 'GET IN';
+    if (this.btn) this.btn.textContent = t(this.car ? 'drive.btnOff' : this.pick ? 'drive.btnStop' : 'drive.btnIn');
   }
 }

@@ -64,6 +64,41 @@
     #login .go:hover { background: #c0561a; }
     #login-err { color: #b3261e; min-height: 1.4em; font-size: 14px; }
     [hidden] { display: none !important; }
+    /* players */
+    main { max-width: 860px; }
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tabs button { padding: 8px 14px; border-radius: 8px; border: 1px solid #d8cfc1; background: #fff; color: #2a241e; }
+    .tabs button[aria-selected="true"] { background: #2a241e; border-color: #2a241e; color: #fff; }
+    .user-list { border: 1px solid #e4dccf; border-radius: 10px; background: #fff; overflow: hidden; }
+    .user-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; width: 100%; padding: 10px 14px; border: 0; border-top: 1px solid #efe8da;
+      background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+    .user-row:first-child { border-top: 0; }
+    .user-row:hover, .user-row[aria-current="true"] { background: #fff6e8; }
+    .user-row .meta { color: #7a6e62; font-size: 12px; }
+    .user-row b { font-weight: 650; }
+    .detail { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e4dccf; }
+    .detail h3 { margin: 0 0 2px; font-size: 18px; }
+    .detail h4 { margin: 18px 0 8px; font-size: 14px; }
+    .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 10px 0 0; font-size: 14px; }
+    .kv dt { color: #7a6e62; }
+    .kv dd { margin: 0; }
+    .stage-boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+    .stage-box { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e0d7c8; border-radius: 8px; background: #fff; font-size: 14px; }
+    .stage-box input { width: 18px; height: 18px; accent-color: #d9621a; }
+    .stage-box.fixed { background: #f0e9dd; color: #7a6e62; }
+    .stage-box small { color: #8a7e70; font-size: 11px; }
+    table.perf { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.perf th { text-align: left; font-weight: 600; color: #7a6e62; font-size: 12px; padding: 0 8px 6px 0; }
+    table.perf td { padding: 6px 8px 6px 0; border-top: 1px solid #efe8da; font-variant-numeric: tabular-nums; }
+    .ok { color: #2e7d32; font-weight: 600; }
+    .row-btns { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+    .btn { padding: 8px 14px; border-radius: 8px; border: 0; background: #d9621a; color: #fff; font-weight: 600; }
+    .btn:hover { background: #c0561a; }
+    .btn.ghost { background: #fff; color: #2a241e; border: 1px solid #d8cfc1; }
+    .switch { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+    .switch input { width: 44px; height: 24px; accent-color: #d9621a; }
+    .warn { margin: 10px 0 0; padding: 9px 12px; border-radius: 8px; background: #fff1dc; color: #7a3a05; font-size: 13px; }
+    .table-wrap { overflow-x: auto; }
   </style>
 </head>
 <body>
@@ -78,7 +113,7 @@
   <section id="login" hidden>
     <div class="card">
       <h2>Sign in</h2>
-      <p>The admin settings are for the game's owner.</p>
+      <p>The admin portal is for the game's owner (ADMIN_USER and ADMIN_PASSWORD on the server).</p>
       <form id="login-form" autocomplete="on">
         <label>Username <input id="user" name="username" autocomplete="username" required autofocus /></label>
         <label>Password <input id="pass" name="password" type="password" autocomplete="current-password" required /></label>
@@ -89,13 +124,39 @@
   </section>
 
   <main id="app" hidden>
-    <section class="card" id="card-world">
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button type="button" role="tab" data-tab="players" aria-selected="true">Players</button>
+      <button type="button" role="tab" data-tab="ads" aria-selected="false">Ads</button>
+      <button type="button" role="tab" data-tab="game" aria-selected="false">Game settings</button>
+    </nav>
+
+    <section class="card" id="card-players" data-tab="players">
+      <h2>Players</h2>
+      <p>Find a player by username or email, see how they play, and unlock stages for them.</p>
+      <form class="part-tools" id="user-search">
+        <input type="search" id="user-q" placeholder="Username or email" aria-label="Search players by username or email" />
+        <button type="submit">Search</button>
+      </form>
+      <div class="user-list" id="user-list" role="list"></div>
+      <p class="note" id="user-count"></p>
+      <div class="detail" id="user-detail" hidden></div>
+    </section>
+
+    <section class="card" id="card-ads" data-tab="ads" hidden>
+      <h2>Ads</h2>
+      <p>An ad on the 5-second loading page before every stage, for every player.</p>
+      <label class="switch"><input type="checkbox" id="ads-on" /> Show ads on the loading page</label>
+      <p class="warn" id="ads-warn" hidden></p>
+      <div class="foot"><span class="status" id="ads-status" role="status"></span></div>
+    </section>
+
+    <section class="card" id="card-world" data-tab="game" hidden>
       <h2>World</h2>
       <p>The streets around the player.</p>
       <div id="world"></div>
       <div class="presets" id="presets" role="group" aria-label="Crowd presets"></div>
     </section>
-    <section class="card" id="card-ramu">
+    <section class="card" id="card-ramu" data-tab="game" hidden>
       <h2>Ramu</h2>
       <p>The playable character: looks and how fast he moves.</p>
       <div id="ramu"></div>
@@ -104,7 +165,7 @@
         <button class="link" id="reset-all" type="button">Reset everything to default</button>
       </div>
     </section>
-    <section class="card" id="card-parts">
+    <section class="card" id="card-parts" data-tab="game" hidden>
       <h2>Parts of Kanpur</h2>
       <p>The city is divided into parts, each the size of Moti Jheel. Open a part so players can travel to it (menu → Places).
         A part can only be opened once its map data is built.</p>
@@ -120,7 +181,7 @@
       </div>
       <p class="note" id="part-count"></p>
     </section>
-    <p class="note">Changes save automatically and apply straight away to a game open in this browser.
+    <p class="note" data-tab="game" hidden>Changes save automatically and apply straight away to a game open in this browser.
       Phones and tablets show half the crowd. Settings are stored in this browser only.</p>
   </main>
   <script type="module" src="/src/admin/main.ts"></script>

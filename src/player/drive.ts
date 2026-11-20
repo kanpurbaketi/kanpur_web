@@ -11,7 +11,7 @@ const REACH = 2.4;
 /** seconds to get on, and off */
 const MOUNT = 0.75, DISMOUNT = 0.55;
 /** seconds to pick a parked vehicle's lock: a car, a two-wheeler with an engine; a cycle has none worth the name */
-const PICK_CAR = 15, PICK_BIKE = 5;
+const PICK_CAR = 7, PICK_BIKE = 3;
 /** how far Ramu can shift while picking before he has let go of it, m */
 /** seconds he has to step over to the lock before keeping still counts */
 const PICK_SETTLE = 0.5;

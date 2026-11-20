@@ -437,8 +437,19 @@ export class Traffic {
     }
   }
 
+  /** how many vehicles are moving within `r` of (x, z), each counted by how near (1 at the point, 0 at r): for the street's sound */
+  nearMoving(x: number, z: number, r: number): number {
+    let n = 0;
+    for (const c of this.cars) {
+      if (c.fresh || c.player || Math.abs(c.v) < 1) continue;
+      const d = Math.hypot(c.x - x, c.z - z);
+      if (d < r) n += 1 - d / r;
+    }
+    return n;
+  }
+
   /** where the vehicles are (for tests) */
-  positions(): { kind: string; x: number; z: number; heading: number }[] {
+  positions():{ kind: string; x: number; z: number; heading: number }[] {
     return this.cars.filter((c) => !c.fresh).map((c) => ({ kind: this.kinds[c.kind].name, x: c.x, z: c.z, heading: c.heading }));
   }
 

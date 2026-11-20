@@ -126,6 +126,16 @@ export class Pedestrians {
     return this.active;
   }
 
+  /** how many people are within `r` of (x, z) (for the street's sound) */
+  near(x: number, z: number, r: number): number {
+    let n = 0;
+    for (let i = 0; i < this.active; i++) {
+      const p = this.peds[i];
+      if (!p.fresh && Math.abs(p.x - x) < r && Math.abs(p.z - z) < r && Math.hypot(p.x - x, p.z - z) < r) n++;
+    }
+    return n;
+  }
+
   /** Change the crowd size (up to the number made by populate). Takes effect on the next update. */
   setCount(n: number): void {
     this.want = Math.max(0, Math.round(n) || 0);

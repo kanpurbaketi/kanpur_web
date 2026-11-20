@@ -23,6 +23,9 @@ export interface Wheel { name: string; hub: THREE.Vector3; r: number; w: number;
 interface Loaded { parts: PBRPart[]; wheels: Wheel[] }
 const cache = new Map<string, Promise<Loaded>>();
 
+/** wheels drawn with another wheel's mesh: the Pulsar's rear (its tyre came out thin and cut off below the hub) is its front's */
+const SAME_WHEEL: Record<string, Record<string, string>> = { pulsar: { wheel_r: 'wheel_f' } };
+
 /** Every mesh of the model with its transform baked into the geometry, and its (shared) material; the wheels in place. */
 export function loadPBR(name: string): Promise<PBRPart[]> {
   return load(name).then((l) => l.parts);
@@ -58,11 +61,18 @@ function load(name: string): Promise<Loaded> {
         }
         wheels.push(wheel);
       });
+      // a wheel the model got badly (cut short where it was split from the body) takes another's, about its own hub
+      const same = SAME_WHEEL[name] ?? {};
+      for (const [to, from] of Object.entries(same)) {
+        const a = wheels.find((w) => w.name === to), b = wheels.find((w) => w.name === from);
+        if (a && b) a.parts = b.parts.map((q) => ({ ...q, geo: q.geo.clone(), wheel: to }));
+      }
       gltf.scene.traverse((o) => {
         const m = o as THREE.Mesh;
         if (!m.isMesh) return;
         let wheel: string | undefined;
         for (let q: THREE.Object3D | null = m; q; q = q.parent) if (q.name.startsWith('wheel_')) wheel = q.name;
+        if (wheel && same[wheel]) return;
         const mat = m.material as THREE.MeshStandardMaterial;
         const lamp = LAMP[mat.name];
         if (lamp) {
@@ -76,7 +86,7 @@ function load(name: string): Promise<Loaded> {
         out.push({ geo: m.geometry.clone().applyMatrix4(m.matrixWorld), mat, wheel });
       });
       // the modelled wheels, in place, for whatever shows the vehicle standing still
-      for (const w of wheels) if (w.made) for (const q of w.parts) out.push({ geo: q.geo.clone().translate(w.hub.x, w.hub.y, w.hub.z), mat: q.mat, wheel: w.name });
+      for (const w of wheels) if (w.made || same[w.name]) for (const q of w.parts) out.push({ geo: q.geo.clone().translate(w.hub.x, w.hub.y, w.hub.z), mat: q.mat, wheel: w.name });
       return { parts: out, wheels };
     });
     cache.set(name, p);

@@ -37,7 +37,7 @@ export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queu
     void playSfx('stomach');
     ramu.gesture('stomach');
     await d.wait(1.6);
-    const close = d.front(ramu, { dist: 1.0, side: 0.28, up: 0.02, drop: -0.07, fov: 35 });
+    const close = d.front(ramu, { dist: 1.45, side: 0.38, up: 0, drop: 0.2, fov: 35 });
     d.shot(close, 0.7, d.pushIn(close, 0.03));
     await d.wait(0.5);
     await d.say('ramu', ramu.face, 'hungry');
@@ -132,7 +132,7 @@ async function ticket(d: Director, ramu: Ramu, q: GateQueue): Promise<void> {
     d.shot({ pos: v3(fx + 2.8, 1.7, fz + 1.6), look: v3((fx + gp.x) / 2, 1.35, (fz + gp.z) / 2), fov: 42 }, 0);
     await d.wait(1.2);
     // (from a little above: his eyes are under the cap's brim)
-    const g = d.front(guard, { dist: 1.0, side: 0.5, up: 0.16, drop: -0.02, fov: 36 });
+    const g = d.front(guard, { dist: 1.85, side: 0.7, up: 0.1, drop: 0.3, fov: 36 });
     d.shot(g, 0, d.pushIn(g, 0.02));
     await d.wait(0.3);
     await d.say('guard', guard.face, 'ticket');
@@ -162,11 +162,11 @@ async function ticket(d: Director, ramu: Ramu, q: GateQueue): Promise<void> {
     });
     await d.wait(0.3);
     guard.faceTowards(aside[0], aside[1]);
-    const g2 = d.front(guard, { dist: 1.2, side: 0.45, up: 0.16, drop: -0.02, fov: 38 });
+    const g2 = d.front(guard, { dist: 1.9, side: 0.65, up: 0.1, drop: 0.3, fov: 37 });
     d.shot(g2, 0);
     await d.say('guard', guard.face, 'aside');
     if (ramu.face) ramu.face.angry = 1.2;
-    const r2 = d.front(ramu, { dist: 1.1, side: 0.35, up: 0.02, drop: -0.05, fov: 36 });
+    const r2 = d.front(ramu, { dist: 1.5, side: 0.45, up: 0, drop: 0.2, fov: 36 });
     d.shot(r2, 0);
     await d.wait(1.4);
   });
@@ -201,13 +201,13 @@ async function samosa(d: Director, ramu: Ramu, k: Keeper): Promise<void> {
     ramu.standAt(k.front.x, k.front.y);
     ramu.faceTowards(kp.x, kp.z);
     k.faceTowards(k.front.x, k.front.y);
-    const ask = d.front(ramu, { dist: 1.05, side: -0.3, up: 0.02, drop: -0.07, fov: 35 });
+    const ask = d.front(ramu, { dist: 1.45, side: -0.42, up: 0, drop: 0.2, fov: 35 });
     d.shot(ask, 0, d.pushIn(ask, 0.03));
     await d.wait(0.5);
     await d.say('ramu', ramu.face, 'samosa');
     await d.wait(0.2);
-    // the keeper: no
-    const no = d.front(k, { dist: 1.15, side: 0.3, up: 0.02, drop: -0.06, fov: 35 });
+    // the keeper: no (from beside the cart, three-quarters on: from in front of him its boards and goods stand in the way)
+    const no = d.front(k, { dist: 0.7, side: 1.7, up: 0, drop: 0.14, fov: 36 });
     d.shot(no, 0, d.pushIn(no, 0.03));
     await d.wait(0.35);
     k.gesture('head_no', 'samosa-no');

@@ -33,27 +33,58 @@ export function prepareFace(mesh: THREE.Mesh): void {
 
 /** The material's shader darkens the parted lips (by the mouth's opening, the first shape key). Once per material. */
 const patched = new WeakSet<THREE.Material>();      // (not userData: a clone copies that, but not the shader hook)
-export function faceMaterial(mat: THREE.Material): void {
+const f = (n: number) => n.toFixed(5);
+export function faceMaterial(mat: THREE.Material, m: Marks): void {
   if (patched.has(mat)) return;
   patched.add(mat);
+  // the painted eyes (in the mesh's own space, so the mask rides with the lids as they blink): ellipses round each
+  const eyes = m.eyes.map(([x, y]) => `max( e, 1.0 - smoothstep( 0.7, 1.0, length( vec2( ( p.x - ${f(x)} ) / ${f(m.ehw * 0.9)}, ( p.y - ${f(y)} ) / ${f(m.ehw * 0.45)} ) ) ) )`);
+  const eyeMask = `float eyeMask( vec3 p ) {
+  if ( p.z < ${f(m.mouth[2] - 0.05)} ) return 0.0;
+  float e = 0.0;
+  ${eyes.map((s) => `e = ${s};`).join('\n  ')}
+  return e;
+}`;
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     prev.call(mat, sh, r);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float faceDark;\nvarying float vFaceDark;')
+      .replace('#include <common>', '#include <common>\nattribute float faceDark;\nvarying float vFaceDark;\nvarying float vOpen;\nvarying vec3 vRest;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
+  vRest = position;
+  vFaceDark = faceDark;
 #if defined( USE_MORPHTARGETS ) && !defined( USE_INSTANCING_MORPH )
-  vFaceDark = faceDark * morphTargetInfluences[ 0 ];
+  vOpen = morphTargetInfluences[ 0 ];
 #else
-  vFaceDark = 0.0;
+  vOpen = 0.0;
 #endif`);
+    // the inside of the open mouth: near black (a solid band where the lips part, not a smudge), and matt
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vFaceDark;')
-      .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.rgb *= 1.0 - 0.88 * clamp(vFaceDark, 0.0, 1.0);')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance *= 1.0 - 0.88 * clamp(vFaceDark, 0.0, 1.0);');
+      .replace('#include <common>', `#include <common>
+varying float vFaceDark;
+varying float vOpen;
+varying vec3 vRest;
+float mouthDark() { return smoothstep( 0.04, 0.3, vFaceDark ) * smoothstep( 0.02, 0.18, vOpen ); }
+${eyeMask}`)
+      // the eyes: the painted texture is soft and greyed; more contrast (dark iris and pupil, clearer white), a little colour, and wet
+      .replace('#include <map_fragment>', `#include <map_fragment>
+  float faceE = eyeMask( vRest );
+  if ( faceE > 0.0 ) {
+    vec3 g = pow( max( diffuseColor.rgb, 0.0 ), vec3( 1.0 / 2.2 ) );
+    float l = dot( g, vec3( 0.299, 0.587, 0.114 ) );
+    vec3 c = mix( vec3( l ), g, 0.85 );
+    c = clamp( ( c - 0.45 ) * 1.5 + 0.5, 0.0, 1.0 );
+    c *= mix( 1.0, 0.75, smoothstep( 0.45, 0.2, l ) );
+    diffuseColor.rgb = mix( diffuseColor.rgb, pow( c, vec3( 2.2 ) ), faceE );
+  }
+  float faceD = mouthDark();
+  diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.025, 0.01, 0.01 ), faceD );`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix( roughnessFactor, 0.22, faceE );\n  roughnessFactor = mix( roughnessFactor, 1.0, faceD );')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance *= 1.0 - faceD;');
   };
   const key = mat.customProgramCacheKey.bind(mat);
-  mat.customProgramCacheKey = () => key() + '|face';
+  const marks = m.eyes.flat().map(f).join(',');
+  mat.customProgramCacheKey = () => key() + '|face' + marks;
   mat.needsUpdate = true;
 }
 
@@ -91,7 +122,8 @@ export class Face {
       this.iAngry = d.angry ?? -1;
       m.morphTargetInfluences.fill(0);       // at rest: the files carry their keys' weights as 1 (the glTF's default weights)
       prepareFace(m);
-      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) faceMaterial(mat);
+      const marks = m.userData.face as Marks | undefined;
+      if (marks) for (const mat of Array.isArray(m.material) ? m.material : [m.material]) faceMaterial(mat, marks);
     });
   }
 

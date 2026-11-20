@@ -108,33 +108,39 @@ def build(name):
     for e in [x for x in bpy.context.scene.objects if x != o]:
         bpy.data.objects.remove(e)
     me = o.data
-    # the axle: the bounding box's thinnest side; turn it to x
-    vs = [v.co.copy() for v in me.vertices]
-    mn = Vector([min(v[i] for v in vs) for i in range(3)])
-    mx = Vector([max(v[i] for v in vs) for i in range(3)])
-    size = mx - mn
-    ax = min(range(3), key=lambda i: size[i])
-    # the hub: the middle of the round (the two other sides' box), and of the tyre across
-    others = [i for i in range(3) if i != ax]
+    # the hub and the axle, fitted to the tyre (the files' wheels are not quite square to their axes, and a box round
+    # them is not round: so turned about a box's middle they wobble): the tyre is the ring of vertices furthest out;
+    # its middle is the hub, the way it is thinnest (the least spread, PCA) is the axle
+    import numpy as np
+    P = np.array([v.co[:] for v in me.vertices])
+    mn, mx = P.min(0), P.max(0)
     centre = (mn + mx) / 2
-    rad = max(size[others[0]], size[others[1]]) / 2
-    # the tyre across: the vertices out at the rim
-    outer = [v[ax] for v in vs if math.hypot(v[others[0]] - centre[others[0]], v[others[1]] - centre[others[1]]) > rad * 0.9]
-    t0, t1 = min(outer), max(outer)
-    centre[ax] = (t0 + t1) / 2
-    tw = (t1 - t0) / rad
-    # which way the wheel's face looks: the side with more of it beyond the tyre's middle, inside the rim
-    inner = [v[ax] - centre[ax] for v in vs if math.hypot(v[others[0]] - centre[others[0]], v[others[1]] - centre[others[1]]) < rad * 0.55]
-    face = 1 if sum(inner) / max(1, len(inner)) > 0 else -1
+    axle = np.eye(3)[int(np.argmin(mx - mn))]
+    for _ in range(6):
+        dv = P - centre
+        along = dv @ axle
+        rad_v = np.linalg.norm(dv - np.outer(along, axle), axis=1)
+        ring = P[rad_v > np.percentile(rad_v, 100) * 0.88]
+        centre = ring.mean(0)
+        w_, v_ = np.linalg.eigh(np.cov((ring - centre).T))
+        axle = v_[:, 0]
+    dv = P - centre
+    along = dv @ axle
+    rad_v = np.linalg.norm(dv - np.outer(along, axle), axis=1)
+    rad = float(np.percentile(rad_v, 99.5))
+    ring_along = along[rad_v > rad * 0.9]
+    t0, t1 = np.percentile(ring_along, 2), np.percentile(ring_along, 98)
+    centre = centre + axle * (t0 + t1) / 2
+    tw = float(t1 - t0) / rad
+    # which way the wheel's face looks: the side more of the middle (inside the rim) stands out to
+    inner = (P - centre)[rad_v < rad * 0.55] @ axle
+    face = 1 if inner.mean() > 0 else -1
     if flip:
         face = -face
-    # to x along the axle, centred, radius 1; the outer face toward +x
-    rot = {0: Matrix.Identity(4), 1: Matrix.Rotation(-math.pi / 2, 4, 'Z'), 2: Matrix.Rotation(math.pi / 2, 4, 'Y')}[ax]
-    m = rot @ Matrix.Scale(1 / rad, 4) @ Matrix.Translation(-centre)
-    me.transform(m)
-    probe = (rot @ Vector((1 if ax == 0 else 0, 1 if ax == 1 else 0, 1 if ax == 2 else 0)))
-    if probe.x * face < 0:
-        me.transform(Matrix.Rotation(math.pi, 4, 'Z'))
+    n = Vector((axle * face).tolist())
+    rot = n.rotation_difference(Vector((1, 0, 0))).to_matrix().to_4x4()
+    me.transform(rot @ Matrix.Scale(1 / rad, 4) @ Matrix.Translation(-Vector(centre.tolist())))
+    ax = int(np.argmax(np.abs(axle)))
     me.update()
     o.name = 'near'
     mat = material(f'wheel_{name}', d, tex)

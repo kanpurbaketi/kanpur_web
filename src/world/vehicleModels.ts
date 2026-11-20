@@ -25,12 +25,12 @@ const cache = new Map<string, Promise<Loaded>>();
 
 /**
  * The wheels every vehicle is drawn with: a car's (the cars, autos, the bus and truck, the e-rickshaw) and a motorbike's
- * (tools/blender/build_wheels.py), and the cycle's own spoked one (its front, for the cycle-rickshaw's lumpy ones); null
- * keeps the model's own. The model's wheel meshes are dropped and these put at its hubs, scaled to each wheel's radius
+ * (tools/blender/build_wheels.py), and the cycle's own spoked one (its front: for the cycle's two and the cycle-rickshaw's
+ * three, its tyre all rubber: the model paints only stretches of it black); null keeps the model's own. The model's wheel meshes are dropped and these put at its hubs, scaled to each wheel's radius
  * and width.
  */
 type WheelKind = 'car' | 'bike' | 'cycle';
-const WHEEL_KIND: Record<string, WheelKind | null> = { pulsar: 'bike', cycle: null, rickshaw: 'cycle' };
+const WHEEL_KIND: Record<string, WheelKind | null> = { pulsar: 'bike', cycle: 'cycle', rickshaw: 'cycle' };
 interface Template { near: PBRPart[]; far: PBRPart[]; tw: number }
 const templates = new Map<string, Promise<Template>>();
 function template(kind: WheelKind): Promise<Template> {
@@ -68,10 +68,39 @@ function cycleWheel(): Promise<Template> {
     const to = new THREE.Matrix4().makeScale(1 / r, 1 / r, 1 / r).multiply(node.matrixWorld.clone().invert());
     node.traverse((c) => {
       const m = c as THREE.Mesh;
-      if (m.isMesh) t.near.push({ geo: m.geometry.clone().applyMatrix4(to.clone().multiply(m.matrixWorld)), mat: m.material as THREE.MeshStandardMaterial });
+      if (!m.isMesh) return;
+      // its own spokes and hub; its rim and tyre (one coarse ring, painted black only in stretches) made anew
+      const [, rest] = splitTyre(m.geometry.clone().applyMatrix4(to.clone().multiply(m.matrixWorld)), 0.835);
+      t.near.push({ geo: rest, mat: m.material as THREE.MeshStandardMaterial });
     });
+    // across, in these units (radius 1): the tyre about 5 cm on a 0.355 m wheel
+    const ring = (major: number, minor: number, flat: number, seg: number) =>
+      new THREE.TorusGeometry(major, minor, 8, seg).rotateY(Math.PI / 2).scale(flat, 1, 1);
+    t.near.push({ geo: ring(0.93, 0.07, 1, 48), mat: TYRE }, { geo: ring(0.85, 0.022, 1.6, 48), mat: RIM });
+    t.tw = 0.14;
     return t;
   });
+}
+
+/** a wheel's geometry (radius 1, axle along x) in two: the triangles out beyond `from` (the tyre), and the rest */
+function splitTyre(g: THREE.BufferGeometry, from: number): [THREE.BufferGeometry, THREE.BufferGeometry] {
+  const src = g.index ? g.toNonIndexed() : g;
+  const pos = src.getAttribute('position');
+  const out: number[][] = [[], []];
+  for (let t = 0; t < pos.count; t += 3) {
+    let y = 0, z = 0;
+    for (let k = 0; k < 3; k++) { y += pos.getY(t + k); z += pos.getZ(t + k); }
+    out[Math.hypot(y / 3, z / 3) > from ? 0 : 1].push(t);
+  }
+  return out.map((tris) => {
+    const geo = new THREE.BufferGeometry();
+    for (const [name, a] of Object.entries(src.attributes)) {
+      const at = a as THREE.BufferAttribute, n = at.itemSize, arr = new (at.array.constructor as Float32ArrayConstructor)(tris.length * 3 * n);
+      tris.forEach((t, i) => { for (let k = 0; k < 3 * n; k++) arr[i * 3 * n + k] = at.array[t * n + k]; });
+      geo.setAttribute(name, new THREE.BufferAttribute(arr, n, at.normalized));
+    }
+    return geo;
+  }) as [THREE.BufferGeometry, THREE.BufferGeometry];
 }
 
 /** a template's parts for one wheel: radius r, width w (m), its face outward (a right wheel turned round) */

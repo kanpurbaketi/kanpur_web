@@ -27,12 +27,13 @@ import { Driving } from './player/drive';
 import { Mela } from './world/mela';
 import { Vendors } from './world/vendors';
 import { HOME, loadManifest, playable } from './game/parts';
-import { clipRoadsToMela, inMela, TEAR } from './world/melaSite';
+import { clipRoadsToMela, TEAR } from './world/melaSite';
 import { CORRIDOR, corridorWalks, NAGAR_NIGAM, prepareRoute, SHIVAJI_START, Stage1Route } from './world/stage1Route';
 import { startChoice } from './game/start';
 import { account } from './game/account';
 import { stage as stageOf, type Stage } from './game/stages';
-import { goHome, loadingFailed, loadingScreen, showHome, toast, UserChip } from './ui/shell';
+import { goFree, introCard, loadingFailed, loadingScreen, toast, UserChip } from './ui/shell';
+import { Objectives, STEPS } from './game/objectives';
 import { onLang, t, tk } from './i18n';
 
 /*
@@ -49,14 +50,15 @@ import { onLang, t, tk } from './i18n';
    ?ao=0 / ?ao=1          force ambient occlusion off / on (default: on for mouse devices, off for touch)
  window.__ready is set once the first frame has rendered (for screenshot scripts).
 
- Stages: without ?stage=N the home screen shows (no world). ?stage=N needs a signed-in player with that stage unlocked,
- then the loading page (5 s, with the ad) covers the world while it loads. In development, ?debug skips all that
- (the test scripts), so the world loads straight away with no player.
+ The game opens with Ramu at Chhatrapati Shivaji chowk (the Shivaji Putla gate), free to go where he likes: no stage,
+ no login. Choosing a stage (menu → Stages, or ⓘ) needs a signed-in player with that stage unlocked; the page reloads
+ with ?stage=N, the loading page (5 s, with the ad) covers the world while it loads, and the stage's introduction
+ and then its instructions (src/game/objectives.ts) begin. In development, ?debug skips the loading page (test scripts).
 */
 interface Play { stage: Stage; run: number | null }
 const params = new URLSearchParams(location.search);
 
-async function main(play: Play | null) {
+async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> {
   const status = document.getElementById('status')!;
   // which part of Kanpur: ?area=<id>, if the admin has opened it and its data is built; otherwise home (Moti Jheel)
   const manifest = await loadManifest();
@@ -194,7 +196,8 @@ async function main(play: Play | null) {
     const [lat, lon] = params.get('spawn')!.split(',').map(Number);
     spawn = project(map, lat, lon);
   }
-  const spawnMode = params.get('spawn') ?? (map.area === 'moti_jheel' ? startChoice() : null);
+  // a stage starts where it starts (stage 1: the chowk); roaming free, where menu → Places says (the chowk unless changed)
+  const spawnMode = play ? 'shivaji' : params.get('spawn') ?? (map.area === 'moti_jheel' ? startChoice() : null);
   if (spawnMode === 'shivaji') spawn = SHIVAJI_START;   // by the statue, the Shivaji Putla gate ahead (the real start of stage 1)
   if (spawnMode === 'mela') spawn = [TEAR.x - 3.5, TEAR.z]; // in the alley outside the torn place in the cloth wall
   if (spawnMode === 'inside') spawn = [TEAR.x + 2.2, TEAR.z]; // the game starts in the mela, just past the tear (beside the stage entry)
@@ -212,8 +215,15 @@ async function main(play: Play | null) {
     const d = stats.data;
     return { walked: d.walked, ran: d.ran, jumps: d.jumps, topSpeed: d.topSpeed, explored: d.explored };
   };
-  const chip = new UserChip();
+  const chip = new UserChip(() => menu.openStages());
   document.body.append(chip.root);
+  // the stage's instructions, one step at a time; the last step is its goal
+  const steps = play ? STEPS[play.stage.n] : undefined;
+  const objectives = play && steps ? new Objectives(play.stage.n, steps, () => {
+    run.done = true;
+    if (play.run !== null) account.runBeat(play.run, run.played, runStats(), true);
+    toast(t('stage.complete', { n: play.stage.n, goal: tk(`stage.${play.stage.n}.goal`) }), 6);
+  }) : null;
   if (play) {
     chip.setStage(play.stage, { played: () => run.played, done: () => run.done });
     if (play.run !== null) addEventListener('pagehide', () => account.runBeacon(play.run!, run.played, runStats()));
@@ -222,11 +232,7 @@ async function main(play: Play | null) {
     if (!play) return;
     run.played += dt;
     if (play.run !== null && (run.beat -= dt) <= 0) { run.beat = 60; account.runBeat(play.run, run.played, runStats()); }
-    if (!run.done && play.stage.n === 1 && spawnMode === 'shivaji' && inMela(ramu.position.x, ramu.position.z)) {
-      run.done = true;                               // stage 1's goal: from the gate into the mela
-      if (play.run !== null) account.runBeat(play.run, run.played, runStats(), true);
-      toast(t('stage.complete', { n: 1, goal: tk('stage.1.goal') }), 6);
-    }
+    objectives?.update(dt, ramu.position.x, ramu.position.z);
   };
   // life bar: vehicles hurt; a knockout wakes Ramu back at the spawn point
   const health = new Health(() => { ramu.position.set(spawnAt[0], 0, spawnAt[1]); ramu.releaseKeys(); });
@@ -433,6 +439,17 @@ void main() {
       acc = 0;
     }
   });
+
+  return {
+    /** once the loading page has gone: the stage's introduction (Ramu waits), then its instructions */
+    begin: async () => {
+      if (!play || !objectives || !steps) return;
+      paused = true;
+      await introCard(play.stage.n, steps.length);
+      paused = false;
+      objectives.start();
+    },
+  };
 }
 
 /** Inverted sphere: hazy blue zenith, warm dusty horizon, soft glow around the sun. Matches the fog colour at the horizon. */
@@ -484,18 +501,34 @@ void main() {
 }
 
 async function boot(): Promise<void> {
-  if (import.meta.env.DEV && params.has('debug')) return main(null);      // test scripts: straight into the world
+  if (import.meta.env.DEV && params.has('debug')) {                // test scripts: straight into the world (a stage too, unrecorded)
+    const st = stageOf(Number(params.get('stage')));
+    const game = await main(st ? { stage: st, run: null } : null);
+    await game.begin();
+    return;
+  }
   const me = await account.load();
+  const ready = () => (window as unknown as { __ready?: boolean }).__ready === true;
   const n = Number(params.get('stage'));
   const st = n ? stageOf(n) : undefined;
-  if (!st) return showHome();
-  if (!me) return goHome('stage.loginFirst');
-  if (!me.unlocked.includes(st.n)) return goHome('stage.lockedMsg', st.n);
-  if (!st.built) return goHome('stage.notReady', st.n);
-  const runId = await account.runStart(st.n).catch(() => null);           // not recorded if this fails; the game still runs
-  const shown = loadingScreen(st, tk(`place.${st.area ?? 'moti_jheel'}`), () => (window as unknown as { __ready?: boolean }).__ready === true);
-  await main({ stage: st, run: runId });
+  if (st) {
+    if (!me) return goFree('stage.loginFirst');
+    if (!me.unlocked.includes(st.n)) return goFree('stage.lockedMsg', st.n);
+    if (!st.built) return goFree('stage.notReady', st.n);
+    const runId = await account.runStart(st.n).catch(() => null);         // not recorded if this fails; the game still runs
+    const shown = loadingScreen({ stage: st, place: tk(`place.${st.area ?? 'moti_jheel'}`), minS: 5, ads: true }, ready);
+    const game = await main({ stage: st, run: runId });
+    await shown;
+    await game.begin();
+    return;
+  }
+  // roaming free: Ramu at the chowk, a message if a stage could not start, else a word on what to do
+  const shown = loadingScreen({ place: tk('place.moti_jheel'), minS: 0, ads: false }, ready);
+  await main(null);
   await shown;
+  const msg = params.get('msg');
+  if (msg) history.replaceState(null, '', location.pathname);
+  toast(msg?.startsWith('stage.') ? tk(msg, { n: params.get('n') ?? '' }) : t('free.welcome'), 7);
 }
 
 boot().catch((e) => {

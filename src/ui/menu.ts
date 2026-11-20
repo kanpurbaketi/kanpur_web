@@ -6,7 +6,7 @@ import { MapData, P2, centroid } from '../world/types';
 import { Hud, PX_PER_M } from './hud';
 import { account } from '../game/account';
 import { fmtNum, onLang, t, tk } from '../i18n';
-import { goHome, settingsView, stagesView } from './shell';
+import { goFree, settingsView, stagesView } from './shell';
 
 type Item = 'stages' | 'settings' | 'profile' | 'map' | 'places' | 'stats' | 'controls';
 const ITEMS: Item[] = ['stages', 'settings', 'profile', 'map', 'places', 'stats', 'controls'];
@@ -107,6 +107,9 @@ export class Menu {
     if (on) document.exitPointerLock?.();
   }
 
+  /** the Stages panel (from ⓘ while roaming free) */
+  openStages(): void { this.show('stages'); }
+
   private show(it: Item, again = false): void {
     this.toggleDrop(false);
     const wasOpen = this.open !== null || again;
@@ -117,7 +120,7 @@ export class Menu {
     this.overlay.classList.add('on');
     if (!wasOpen) this.d.onPause(true);
     if (it === 'stages') this.renderStages();
-    else if (it === 'settings') this.body.append(settingsView({ onLogout: () => goHome() }));
+    else if (it === 'settings') this.body.append(settingsView({ onLogout: () => goFree() }));
     else if (it === 'profile') this.renderProfile();
     else if (it === 'map') this.renderMap();
     else if (it === 'controls') this.renderControls();

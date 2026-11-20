@@ -3,9 +3,9 @@ import { STAGES, type Stage } from '../game/stages';
 import { fmtNum, lang, onLang, setLang, t, tk, type Lang } from '../i18n';
 
 /*
- Everything around the game itself: the home screen (no world loaded), signing up and logging in, the list of stages,
- the language, the loading page before a stage (at least 5 s, with an ad when the admin has ads on), and in the game the
- player's name at the top left with an ⓘ for the stage's details.
+ Everything around the game itself: signing up and logging in, the list of stages, the language, the loading page
+ (before a stage at least 5 s, with an ad when the admin has ads on), a stage's introduction, and the player's name at
+ the top left with an ⓘ for the stage's details (or, roaming free, a way to choose one).
 */
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, txt?: string): HTMLElementTagNameMap[K] => {
@@ -20,15 +20,15 @@ const errText = (e: unknown) => {
   return s === k ? t('err.server') : s;
 };
 
-/** go to a stage (the page reloads into it) or home */
+/** go to a stage (the page reloads into it) */
 export function goStage(n: number): void {
   const u = new URL(location.href);
   u.search = '';
   u.searchParams.set('stage', String(n));
   location.href = u.toString();
 }
-/** home, with a message to show there (an i18n key, and the stage it is about) */
-export function goHome(msg?: string, n?: number): void {
+/** back to roaming free (no stage), with a message to show (an i18n key, and the stage it is about) */
+export function goFree(msg?: string, n?: number): void {
   const u = new URL(location.href);
   u.search = '';
   if (msg) u.searchParams.set('msg', msg);
@@ -268,7 +268,10 @@ export function authDialog(start: Mode = 'login'): Promise<Me | null> {
 
 // ---------- the name at the top left, with ⓘ ----------
 
-/** "👤 username ⓘ": the signed-in player (or "User"); ⓘ shows the details of the stage being played */
+/**
+ * "👤 username ⓘ": the signed-in player (or "User": then the name opens the login). ⓘ shows the stage being played,
+ * or, roaming free, that no stage is selected and a button to choose one.
+ */
 export class UserChip {
   readonly root = el('div', 'sh-chip');
   private name = el('span', 'sh-chip-name');
@@ -278,12 +281,11 @@ export class UserChip {
   private live: { played: () => number; done: () => boolean } | null = null;
   private tick = 0;
 
-  constructor(cls = '') {
-    if (cls) this.root.classList.add(cls);
+  constructor(private onChoose: () => void) {
     const av = el('span', 'sh-chip-av');
     av.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6z"/></svg>';
     this.info.type = 'button';
-    this.info.hidden = true;
+    this.name.addEventListener('click', () => { if (!account.me) void authDialog('login'); });
     this.info.addEventListener('click', (e) => { e.stopPropagation(); this.toggle(); });
     this.pop.hidden = true;
     this.root.append(av, this.name, this.info, this.pop);
@@ -302,7 +304,8 @@ export class UserChip {
 
   private draw(): void {
     this.name.textContent = account.me?.username ?? t('user.guest');
-    this.info.hidden = !this.stage;
+    this.name.classList.toggle('guest', !account.me);
+    this.name.title = account.me ? '' : t('nav.login');
     this.info.setAttribute('aria-label', t('user.info'));
     this.info.title = t('user.info');
     if (!this.pop.hidden) this.fill();
@@ -317,7 +320,13 @@ export class UserChip {
 
   private fill(): void {
     const s = this.stage;
-    if (!s) return;
+    if (!s) {
+      const b = el('button', 'sh-btn', t('free.pick'));
+      b.type = 'button';
+      b.addEventListener('click', () => { this.toggle(false); this.onChoose(); });
+      this.pop.replaceChildren(el('h3', '', t('free.title')), el('p', '', t('free.desc')), b);
+      return;
+    }
     const played = this.live?.played() ?? 0, done = this.live?.done() ?? false;
     const m = Math.floor(played / 60), sec = Math.floor(played % 60);
     this.pop.replaceChildren(
@@ -337,50 +346,6 @@ function rows(list: [string, string][]): HTMLElement {
   const dl = el('dl', 'sh-rows');
   for (const [k, v] of list) dl.append(el('dt', '', k), el('dd', '', v));
   return dl;
-}
-
-// ---------- the home screen ----------
-
-/** the screen before a stage: the player, the stages, settings. No world is loaded behind it. */
-export function showHome(): void {
-  document.getElementById('status')?.remove();
-  const root = el('div', 'sh-home');
-  document.body.append(root);
-  const chip = new UserChip('home');
-  const q = new URLSearchParams(location.search), msg = q.get('msg');
-  let note = msg?.startsWith('stage.') || msg?.startsWith('err.') ? tk(msg, { n: q.get('n') ?? '' }) : '';
-  if (msg) history.replaceState(null, '', location.pathname);
-  const draw = () => {
-    root.replaceChildren();
-    const top = el('header', 'sh-top');
-    const right = el('div', 'sh-top-r');
-    const set = el('button', 'sh-btn ghost', `⚙ ${t('nav.settings')}`);
-    set.type = 'button';
-    set.addEventListener('click', () => panel(t('nav.settings'), (close) => settingsView({ onLogout: () => { close(); draw(); }, onLogin: () => { close(); draw(); } })));
-    right.append(set);
-    if (!account.me) {
-      const li = el('button', 'sh-btn ghost', t('nav.login'));
-      li.type = 'button';
-      li.addEventListener('click', async () => { if (await authDialog('login')) draw(); });
-      const su = el('button', 'sh-btn', t('nav.signup'));
-      su.type = 'button';
-      su.addEventListener('click', async () => { if (await authDialog('signup')) draw(); });
-      right.append(li, su);
-    }
-    top.append(chip.root, right);
-    const hero = el('div', 'sh-hero');
-    hero.append(el('h1', '', t('app.title')), el('p', '', t('app.tagline')));
-    const sec = el('section', 'sh-card sh-home-stages');
-    const banner = el('p', 'sh-note', note);
-    banner.setAttribute('role', 'status');
-    banner.hidden = !note;
-    sec.append(el('h2', '', t('nav.stages')), el('p', 'sh-muted', account.me ? t('stage.pick') : t('stage.loginFirst')), banner,
-      stagesView({ onMsg: (m) => { note = m; banner.textContent = m; banner.hidden = false; } }));
-    root.append(top, hero, sec);
-  };
-  draw();
-  onLang(draw);
-  account.onChange(draw);
 }
 
 /** a dialog with a title and one view (closes on ×, Esc or a click outside) */
@@ -410,25 +375,27 @@ export function panel(title: string, view: (close: () => void) => HTMLElement): 
 
 // ---------- the loading page ----------
 
-const MIN_S = 5;
-
-/** The loading page for a stage: shown for at least 5 s, and until `ready()` is true. An ad in the middle when on. */
-export async function loadingScreen(s: Stage, place: string, ready: () => boolean): Promise<void> {
+/**
+ * The loading page: covers the world while it loads. Before a stage it stays at least 5 s and carries the ad (when the
+ * admin has ads on); roaming free it goes as soon as the world is ready.
+ */
+export async function loadingScreen(o: { stage?: Stage; place: string; minS: number; ads: boolean }, ready: () => boolean): Promise<void> {
   const root = el('div', 'sh-loading');
   const title = el('div', 'sh-load-head');
-  title.append(el('div', 'sh-load-k', t('stage.n', { n: s.n })), el('h1', '', tk(`stage.${s.n}.title`)), el('p', '', tk(`stage.${s.n}.goal`)));
+  if (o.stage) title.append(el('div', 'sh-load-k', t('stage.n', { n: o.stage.n })), el('h1', '', tk(`stage.${o.stage.n}.title`)), el('p', '', tk(`stage.${o.stage.n}.goal`)));
+  else title.append(el('h1', '', t('app.title')), el('p', '', t('app.tagline')));
   const ad = el('div', 'sh-ad');
   ad.hidden = true;
   const bar = el('div', 'sh-load-bar');
   const fill = el('div');
   bar.append(fill);
-  const line = el('p', 'sh-load-line', t('load.loading', { place }));
+  const line = el('p', 'sh-load-line', t('load.loading', { place: o.place }));
   root.append(title, ad, bar, line);
   document.body.append(root);
   const st = document.getElementById('status');
   if (st) st.style.visibility = 'hidden';
 
-  void account.config().then((c) => {
+  if (o.ads) void account.config().then((c) => {
     if (c.ads.enabled) {
       ad.hidden = false;
       ad.append(el('span', 'sh-ad-k', t('load.ad')));
@@ -453,18 +420,46 @@ export async function loadingScreen(s: Stage, place: string, ready: () => boolea
   });
 
   const t0 = performance.now();
+  let fake = 0;                                        // no minimum: the bar creeps while the world loads
   await new Promise<void>((done) => {
     const step = () => {
       const s = (performance.now() - t0) / 1000;
-      fill.style.width = `${Math.min(100, (s / MIN_S) * 100)}%`;
-      if (s >= MIN_S) line.textContent = ready() ? t('load.ready') : t('load.loading', { place });
-      if (s >= MIN_S && ready()) return done();
+      fake += (1 - fake) * 0.01;
+      fill.style.width = `${o.minS ? Math.min(100, (s / o.minS) * 100) : fake * 100}%`;
+      if (s >= o.minS) line.textContent = ready() ? t('load.ready') : t('load.loading', { place: o.place });
+      if (s >= o.minS && ready()) return done();
       requestAnimationFrame(step);
     };
     step();
   });
   root.classList.add('out');
   setTimeout(() => root.remove(), 400);
+}
+
+// ---------- a stage's introduction ----------
+
+/** the stage, what to do, and Start: the instructions begin when it is closed */
+export function introCard(n: number, steps: number): Promise<void> {
+  return new Promise((resolve) => {
+    const ov = el('div', 'sh-overlay on');
+    const card = el('div', 'sh-card sh-intro');
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-modal', 'true');
+    const list = el('ol', 'sh-steps');
+    for (let i = 1; i <= steps; i++) list.append(el('li', '', tk(`stage.${n}.step${i}`)));
+    const go = el('button', 'sh-btn sh-go', t('stage.start'));
+    go.type = 'button';
+    const finish = () => { ov.remove(); removeEventListener('keydown', key, true); resolve(); };
+    const key = (e: KeyboardEvent) => { if (e.code === 'Enter' || e.code === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); finish(); } };
+    go.addEventListener('click', finish);
+    addEventListener('keydown', key, true);
+    card.append(el('div', 'sh-pop-k', t('stage.n', { n })), el('h2', '', tk(`stage.${n}.title`)), el('p', 'sh-muted', tk(`stage.${n}.desc`)),
+      el('h3', '', t('stage.steps')), list, go);
+    ov.append(card);
+    document.body.append(ov);
+    document.exitPointerLock?.();
+    go.focus();
+  });
 }
 
 export function loadingFailed(e: unknown): void {
@@ -485,14 +480,6 @@ export function toast(msg: string, s = 5): void {
 // ---------- styles ----------
 
 const css = `
-.sh-home { position: fixed; inset: 0; z-index: 40; overflow: auto; color: #f3eee6; font-family: system-ui, sans-serif;
-  background: radial-gradient(ellipse at 50% 120%, #7a3a12 0%, #2a1610 45%, #120c0a 100%); }
-.sh-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px; }
-.sh-top-r { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.sh-hero { text-align: center; padding: 4vh 16px 2vh; }
-.sh-hero h1 { margin: 0; font-size: clamp(44px, 9vw, 84px); letter-spacing: 1px; color: #f2a65a; text-shadow: 0 4px 24px rgba(242,153,42,.35); }
-.sh-hero p { margin: 6px 0 0; color: #d8c9b4; font-size: 16px; }
-.sh-home-stages { width: min(880px, calc(100% - 32px)); margin: 3vh auto 48px; }
 .sh-card { background: #f7f3ec; color: #2a241e; border-radius: 14px; padding: 20px; box-shadow: 0 16px 48px rgba(0,0,0,.4); box-sizing: border-box; }
 .sh-card h2 { margin: 0 0 4px; font-size: 19px; }
 .sh-card h3 { margin: 14px 0 8px; font-size: 15px; }
@@ -547,7 +534,11 @@ form .sh-links { margin-top: 0; }
 .sh-chip { position: fixed; left: 68px; top: 16px; z-index: 19; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 6px 0 8px;
   box-sizing: border-box; border-radius: 10px; background: rgba(0,0,0,.45); color: #fff; font: 600 14px system-ui, sans-serif;
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
-.sh-chip.home { position: relative; left: 0; top: 0; background: rgba(255,255,255,.1); }
+.sh-chip-name.guest { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.sh-intro h2 { margin: 2px 0 8px; font-size: 24px; }
+.sh-steps { margin: 0 0 18px; padding-left: 22px; display: grid; gap: 6px; font-size: 15px; }
+.sh-go { width: 100%; padding: 12px; font-size: 16px; }
+.sh-pop .sh-btn { margin-top: 2px; }
 .sh-chip-av { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #f2992a; color: #2a1a08; }
 .sh-chip-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sh-chip-i { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.75); background: none; color: #fff;
@@ -580,7 +571,7 @@ form .sh-links { margin-top: 0; }
   transition: opacity .35s, transform .35s; pointer-events: none; }
 .sh-toast.on { opacity: 1; transform: translate(-50%, 0); }
 [hidden] { display: none !important; }
-@media (max-width: 520px) { .sh-chip-name { max-width: 90px; } .sh-top { padding: 12px; } }
+@media (max-width: 520px) { .sh-chip-name { max-width: 90px; } }
 `;
 const style = document.createElement('style');
 style.textContent = css;

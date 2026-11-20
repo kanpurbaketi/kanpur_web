@@ -1,18 +1,27 @@
 # Accounts, stages, languages, ads
 
 ## What players see
-- **Home** (no `?stage`): the name at the top left ("User" when logged out), Settings, Log in / Sign up, and 10 stage cards.
-  - Stage 1 is open to everyone. The others are locked until the admin unlocks them for a player.
+- **The game opens in the world**, with Ramu at Chhatrapati Shivaji chowk (the Shivaji Putla gate). There is no stage and no login needed: the player goes where they like.
+  - A short loading page shows first, with no ad and no wait.
+  - A message says where they are and how to start a stage.
+- **The name at the top left:** "User" when logged out (clicking it opens the login), otherwise the username. Its ⓘ shows:
+  - while roaming free: "Exploring", with a *Choose a stage* button;
+  - in a stage: the stage's details, goal, status and time.
+- **Stages** (menu → Stages, or ⓘ): 10 cards.
+  - Stage 1 is open to everyone; the others are locked until the admin unlocks them for a player.
   - An unlocked stage that isn't built yet says "not ready yet".
-- **Playing needs a login.** Clicking a stage while logged out opens the login.
-- **Sign up:** username (unique, 3–20 letters, numbers, `_` or `.`), email, password, confirm password → *Send code* → the 6-digit code from the email → account made and signed in.
-- **Login:** username or email, plus password. *Forgot password?* sends a code to the account's email, then asks for a new password; this signs out every other session.
-- **Starting a stage** (`?stage=N`): a loading page for at least 5 s with the stage name and the ad (when on), while the world loads behind it.
-- **In the game:**
-  - The name sits at the top left, with an ⓘ that shows the stage's details, goal, status and time.
-  - The menu has **Stages** and **Settings** (language, account).
-- **Language:** English or Hindi (Settings). Only text changes; voices stay Hindi. The choice is kept in the browser and with the account.
-- **Stage 1's goal:** starting at the Shivaji Putla gate, walk into the mela. Reaching it records a completion.
+  - Choosing a stage asks for a login (sign up / login / forgot password).
+- **Starting a stage** reloads with `?stage=N`:
+  - The loading page shows the stage name and the ad (when on), for at least 5 s.
+  - Then the stage's **introduction** appears: what to do, and Start. Ramu waits until Start is pressed.
+  - Then the **instructions**: one step at a time in a box at the top, with the distance to the next place.
+- **Stage 1** always starts at the chowk:
+  1. through the Shivaji Putla gate
+  2. down the park road to the Nagar Nigam
+  3. right at the Nagar Nigam
+  4. in at the mela's gate, which records a completion
+- **Language:** English or Hindi (menu → Settings). Only text changes; voices stay Hindi. The choice is kept in the browser and with the account.
+- **If a stage can't start** (logged out, locked, not built), the game opens free with a message saying why.
 
 ## Admin (`admin.html`)
 - Sign in with `ADMIN_USER` / `ADMIN_PASSWORD` (server environment).
@@ -30,7 +39,7 @@
 - **Sessions:** signed http-only cookies (`AUTH_SECRET`). Passwords are scrypt-hashed. Email codes are stored hashed, last 10 minutes, allow 5 tries, and can be resent after 45 s.
 - **Email** goes through Brevo's API. If `EMAIL_TEST_CODE` is set (345678 for testing), every code is that and no email is sent.
 - **In development**, `npm run dev` serves `/api` from the same files (vite.config.ts) using `.env`. For a local database, run `sh scripts/devdb.sh`.
-- **Test scripts:** `?debug` in development skips the home screen and the login.
+- **Test scripts:** in development, `?debug` skips the loading page, and `?debug&stage=1` starts stage 1 without a login (not recorded).
 
 ## Deploying on Vercel
 1. Import the repo. The framework preset is Vite; the build command is `npm run build` and the output is `dist`.

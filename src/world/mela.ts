@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { gltfLoader } from './gltf';
 import { Actor, makeActors } from './actors';
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
@@ -261,7 +261,7 @@ function carousel(): Ride {
   /** per horse: what moves up and down, the bottom of its stroke (relative to where the model put it), its phase */
   const horses: { o: THREE.Object3D; low: number; k: number }[] = [];
   let dir = 1;
-  new GLTFLoader().loadAsync('models/carousel.glb').then((gltf) => {
+  gltfLoader().loadAsync('models/carousel.glb').then((gltf) => {
     const sc = gltf.scene;
     sc.updateMatrixWorld(true);
     const shadow = (m: THREE.Object3D) => m.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = o.receiveShadow = true; });
@@ -499,7 +499,7 @@ export class Mela {
    * turned to him.
    */
   private stageProps(stage: THREE.Group, sofas: { name: string; x: number }[], z: number, floor: number, mx: number, mz: number): void {
-    const loader = new GLTFLoader();
+    const loader = gltfLoader();
     loader.loadAsync('models/sofas.glb').then((gltf) => {
       gltf.scene.updateMatrixWorld(true);
       const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();

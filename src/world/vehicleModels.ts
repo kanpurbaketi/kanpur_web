@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { gltfLoader } from './gltf';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { NIGHT } from './night';
 
@@ -36,7 +36,7 @@ export function loadWheels(name: string): Promise<Wheel[]> {
 function load(name: string): Promise<Loaded> {
   let p = cache.get(name);
   if (!p) {
-    p = new GLTFLoader().loadAsync(`models/${name}.glb`).then((gltf) => {
+    p = gltfLoader().loadAsync(`models/${name}.glb`).then((gltf) => {
       gltf.scene.updateMatrixWorld(true);
       const out: PBRPart[] = [];
       const wheels: Wheel[] = [];

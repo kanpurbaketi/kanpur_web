@@ -1,6 +1,6 @@
 import { FOOTPATHS } from './footpaths';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { gltfLoader } from './gltf';
 import { walkAlong } from './city';
 import { hash2, MapData, P2 } from './types';
 import { beamMaterial, NIGHT } from './night';
@@ -23,7 +23,7 @@ const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'secondary_l
 interface Parts { body: THREE.BufferGeometry; glass?: THREE.BufferGeometry; pbr?: PBRPart[] }
 
 async function loadModel(name: string): Promise<Parts> {
-  const gltf = await new GLTFLoader().loadAsync(`models/${name}.glb`);
+  const gltf = await gltfLoader().loadAsync(`models/${name}.glb`);
   gltf.scene.updateMatrixWorld(true);
   const out: Partial<Parts> = {};
   gltf.scene.traverse((o) => {
@@ -286,7 +286,7 @@ export class Traffic {
       const near = parts[ki].pbr;
       if (!near) return null;
       try {
-        const g = await new GLTFLoader().loadAsync(`models/${k.name}_lod.glb`);
+        const g = await gltfLoader().loadAsync(`models/${k.name}_lod.glb`);
         g.scene.updateMatrixWorld(true);
         const geos = new Map<string, THREE.BufferGeometry>();
         g.scene.traverse((o) => {

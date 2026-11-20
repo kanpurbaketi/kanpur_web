@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { gltfLoader, lookUrl } from './gltf';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Face } from './face';
 import { NIGHT } from './night';
@@ -27,7 +27,7 @@ const RIGS: Record<RigName, { file: string; height: number; step?: number }> = {
   aunty: { file: 'models/aunty_rig.glb', height: 1.56, step: 0.55 },
   burqa: { file: 'models/aunty_rig.glb', height: 1.56, step: 0.55 },  // the aunty's body in a burqa
 };
-/** the looks of each kind: '' is the model as built, the rest are textures in models/looks/<name>.jpg */
+/** the looks of each kind: '' is the model as built, the rest are textures in models/looks/<name>.jpg (.webp when built) */
 const LOOKS: Record<RigName, string[]> = {
   uncle: ['', 'uncle_b', 'uncle_c', 'uncle_d', 'uncle_e', 'uncle_f', 'uncle_g', 'uncle_h'],
   security: [''],                  // the guard keeps his blue uniform
@@ -88,7 +88,7 @@ function lookMaterial(look: string, base: THREE.MeshStandardMaterial): Promise<T
   if (!look) return Promise.resolve(base);
   let p = lookCache.get(look);
   if (!p) {
-    p = new THREE.TextureLoader().loadAsync(`models/looks/${look}.jpg`).then((tex) => {
+    p = new THREE.TextureLoader().loadAsync(lookUrl(look)).then((tex) => {
       tex.flipY = false;                         // as glTF textures are
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 4;
@@ -105,7 +105,7 @@ function lookMaterial(look: string, base: THREE.MeshStandardMaterial): Promise<T
 function load(name: RigName): Promise<Source> {
   let p = cache.get(RIGS[name].file);
   if (!p) {
-    p = new GLTFLoader().loadAsync(RIGS[name].file).then((gltf) => {
+    p = gltfLoader().loadAsync(RIGS[name].file).then((gltf) => {
       gltf.scene.traverse((o) => {
         const m = o as THREE.SkinnedMesh;
         if (!m.isMesh) return;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { gltfLoader } from './gltf';
 import { lookCount, rigMaterial } from './actors';
 
 /*
@@ -36,7 +36,7 @@ const cache = new Map<FigureKind, Promise<Map<string, THREE.BufferGeometry>>>();
 function poses(kind: FigureKind): Promise<Map<string, THREE.BufferGeometry>> {
   let p = cache.get(kind);
   if (!p) {
-    p = new GLTFLoader().loadAsync(`models/figures/${FILES[kind]}.glb`).then((gltf) => {
+    p = gltfLoader().loadAsync(`models/figures/${FILES[kind]}.glb`).then((gltf) => {
       const out = new Map<string, THREE.BufferGeometry>();
       gltf.scene.traverse((o) => {
         const m = o as THREE.Mesh;

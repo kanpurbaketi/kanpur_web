@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { gltfLoader } from '../world/gltf';
 import { CollisionWorld } from './collide';
 import { Controls } from '../game/controls';
 import { NIGHT } from '../world/night';
@@ -503,7 +503,7 @@ export class Ramu {
    * with idle / walk / jog / run / jump clips. The file faces +Z, the game faces -Z, hence the half turn.
    */
   private buildBody(): void {
-    new GLTFLoader().loadAsync('models/ramu_rig.glb').then((gltf) => {
+    gltfLoader().loadAsync('models/ramu_rig.glb').then((gltf) => {
       gltf.scene.traverse((o) => {
         const m = o as THREE.SkinnedMesh;
         if (!m.isMesh) return;

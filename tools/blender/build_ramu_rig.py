@@ -115,7 +115,7 @@ for n in nt.nodes:
 mat.name = CHAR
 mat.blend_method = 'OPAQUE'        # the FBX comes in as alpha-hashed; the texture has no real transparency
 
-# ---- the face: a mouth that opens and eyes that close (two shape keys), for talking and blinking -------------
+# ---- the face: a mouth that opens, eyes that close, and a scowl (three shape keys), for talking, blinking, anger --
 # The faces are one painted skin with no jaw or lids, so both are made by moving the skin: the lower lip and chin drop,
 # the upper lid slides down over the painted eye. Where they are was read off a front view of each head (600 px across
 # 0.3 m, centred on the head: tools: a front ortho render, x = cx + (px - 300) / 2000, z = top - 0.13 - (py - 300) / 2000):
@@ -163,8 +163,9 @@ def build_face():
     mesh.shape_key_add(name='Basis', from_mix=False)
     mouth = mesh.shape_key_add(name='mouth_open', from_mix=False)
     blink = mesh.shape_key_add(name='blink', from_mix=False)
+    angry = mesh.shape_key_add(name='angry', from_mix=False)             # after the others: the game's shader reads key 0
     D = 0.008                                                            # the lower lip drops this much, wide open
-    moved = [0, 0]
+    moved = [0, 0, 0]
     for i, v in enumerate(me.vertices):
         c = v.co
         if not front(c):
@@ -188,7 +189,33 @@ def build_face():
                 continue
             z2 = eb + (c.z - eb) * 0.08 if c.z <= et else eb + (et - eb) * 0.08 + (c.z - et) * (lt - eb - (et - eb) * 0.08) / (lt - et)
             blink.data[i].co = c + Vector((0, -0.0015 * lat, (z2 - c.z) * lat)); moved[1] += 1
-    print(f'RIG face: mouth moves {moved[0]} vertices, blink {moved[1]}')
+        # angry: the brows down and drawn together (the inner ends most), the lids narrowed (a third of a blink, the lower
+        # lid up a little), the corners of the mouth pressed down
+        a = Vector((0, 0, 0))
+        for ex, ez in eyes:
+            inward = 1 if mx > ex else -1
+            u = (c.x - ex) / ehw * inward                                # across the eye: -1 outer corner .. +1 inner
+            lat = 1 - smooth(ehw * 1.5, ehw * 2.1, abs(c.x - ex)) if u < 1.5 else 1 - smooth(1.5, 2.3, u)
+            if lat <= 0:
+                continue
+            h = (c.z - ez) / ehw                                         # up from the eye's middle, in half-widths
+            brow = smooth(0.4, 1.3, h) * (1 - smooth(2.6, 3.8, h))       # the band of the brow, above the lid's crease
+            k = lat * brow * (0.35 + 0.65 * smooth(-1.0, 1.2, u))
+            a += Vector((0.0016 * inward * k, -0.0008 * k, -0.0042 * k))
+            eb, et, lt = ez - ehw * 0.55, ez + ehw * 0.42, ez + ehw * lm.get('lid', 0.9)
+            lat2 = 1 - smooth(ehw * 1.0, ehw * 1.55, abs(c.x - ex))
+            if lat2 > 0 and eb < c.z < lt:                              # a third of the blink
+                z2 = eb + (c.z - eb) * 0.08 if c.z <= et else eb + (et - eb) * 0.08 + (c.z - et) * (lt - eb - (et - eb) * 0.08) / (lt - et)
+                a.z += (z2 - c.z) * lat2 * 0.3
+            if lat2 > 0 and ez - ehw * 1.3 < c.z <= eb:                 # the lower lid up
+                a.z += 0.0011 * lat2 * smooth(ez - ehw * 1.3, eb, c.z)
+        corner = abs(c.x - mx) / mhw                                     # the mouth's corners at about 1
+        if 0.45 < corner < 1.7 and abs(c.z - mz) < 0.016:
+            k = math.exp(-((corner - 1.0) / 0.32) ** 2) * (1 - smooth(0.004, 0.016, abs(c.z - mz)))
+            a.z -= 0.0026 * k
+        if a.length > 1e-6:
+            angry.data[i].co = c + a; moved[2] += 1
+    print(f'RIG face: mouth moves {moved[0]} vertices, blink {moved[1]}, angry {moved[2]}')
     # where they are, in the glTF's frame (x, y up, z forward = -Blender y), for the game's shader
     mesh['face'] = {'mouth': [mx, mz, -(cy - 0.02)], 'mhw': mhw, 'eyes': [[ex, ez] for ex, ez in eyes], 'ehw': ehw}
 
@@ -206,8 +233,8 @@ if '--face-preview' in argv:          # renders of the head with the mouth and e
     cam.location = ((min(v.x for v in head) + max(v.x for v in head)) / 2, -3, top - 0.13); cam.rotation_euler = (1.5708, 0, 0)
     sc.camera = cam
     keys = mesh.data.shape_keys.key_blocks
-    for tag, m, b in (('rest', 0, 0), ('talk', 1, 0), ('blink', 0, 1)):
-        keys['mouth_open'].value = m; keys['blink'].value = b
+    for tag, m, b, g in (('rest', 0, 0, 0), ('talk', 1, 0, 0), ('blink', 0, 1, 0), ('angry', 0, 0, 1), ('angry_talk', 0.6, 0, 1)):
+        keys['mouth_open'].value = m; keys['blink'].value = b; keys['angry'].value = g
         sc.render.filepath = os.path.join(FP, f'{CHAR}_{tag}.png')
         bpy.ops.render.render(write_still=True)
     sys.exit(0)

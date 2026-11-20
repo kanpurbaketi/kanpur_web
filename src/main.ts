@@ -35,6 +35,7 @@ import { stage as stageOf, type Stage } from './game/stages';
 import { goFree, introCard, loadingFailed, loadingScreen, toast, UserChip } from './ui/shell';
 import { Director } from './game/story/director';
 import { stage1, STAGE1_STEPS } from './game/story/stage1';
+import { CartKeepers } from './world/cartKeepers';
 import { onLang, t, tk } from './i18n';
 
 /*
@@ -275,10 +276,18 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   const stalls = await makeStalls(map, occupied, solid, best);
   scene.add(stalls.mesh);
   for (const [x, z, r] of stalls.posts) world.addPost(x, z, r, 1.15);   // low enough to jump up on
+  if (route && play?.stage.n === 1) for (const c of route.stalls) c.live = true;   // the story's keepers stand at these (cartKeepers.ts)
   const vendors = new Vendors(map, occupied, [...solid, ...stalls.posts], NIGHT ? lightPool : null, desktop, route?.stalls ?? []);
   scene.add(vendors.group);
   for (const [x, z, r] of vendors.posts) world.addPost(x, z, r, 1.15);
   console.log('street life', vendors.stats);
+  // stage 1: the food carts' keepers, rigged, for the story to talk to
+  const keepers = route && play?.stage.n === 1 ? await CartKeepers.create(route.stalls) : null;
+  if (keepers) {
+    scene.add(keepers.group);
+    for (const [x, z, r] of keepers.posts) world.addPost(x, z, r, 1.8);
+    if (params.has('debug')) (window as unknown as { __keepers: CartKeepers }).__keepers = keepers;
+  }
   if (params.has('debug')) (window as unknown as { __vendors: Vendors }).__vendors = vendors;   // for test scripts
   console.log('props', { stalls: stalls.posts.length, traffic: !!traffic });
   ramu.yaw = spawnMode === 'shivaji' ? Math.PI                                    // facing south, through the gate
@@ -390,7 +399,8 @@ void main() {
       if (driving && health.knockedOut) driving.drop();
       if (driving && !paused) driving.update(dt);
       ramu.update(dt);
-      if (director && !paused) director.update(dt);     // the story: after Ramu, so a cutscene's camera has the last word
+      if (director && !paused) director.update(dt);
+      if (keepers && !paused) keepers.update(dt, ramu.position.x, ramu.position.z);     // the story: after Ramu, so a cutscene's camera has the last word
       if (!driving?.driving && !health.knockedOut) {
         // he cannot walk through people: the street crowd and the mela's
         const p = ramu.position;
@@ -448,11 +458,11 @@ void main() {
   return {
     /** once the loading page has gone: the stage's introduction (Ramu waits), then its instructions */
     begin: async () => {
-      if (!play || !director || !route) return;
+      if (!play || !director || !keepers) return;
       paused = true;
       await introCard(play.stage.n, STAGE1_STEPS);
       paused = false;
-      void stage1(director, ramu, route.stalls, {
+      void stage1(director, ramu, keepers, {
         step: (n) => { step = n; if (play.run !== null) account.runBeat(play.run, run.played, runStats()); },
         done: finish,
       });

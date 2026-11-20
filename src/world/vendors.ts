@@ -19,7 +19,8 @@ import { centroid, DRIVABLE, MapData, P2, hash2, pointInPoly } from './types';
 
 export type Kind = 'chai' | 'paan' | 'chaat' | 'juice' | 'fruit' | 'momos' | 'kulfi';
 /** a stall put at a given spot (stage 1's carts outside the mela): its kind, where (y: the ground), which way it faces */
-export interface VendorSpot { kind: Kind; x: number; y: number; z: number; rot: number }
+/** `live`: its keeper is a rigged person placed by the story (src/world/cartKeepers.ts), and nobody stands buying at it */
+export interface VendorSpot { kind: Kind; x: number; y: number; z: number; rot: number; live?: boolean }
 const KINDS: { kind: Kind; weight: number; r: number; label: string; sub: string; bg: string; fg: string }[] = [
   { kind: 'chai', weight: 28, r: 1.7, label: 'चाय', sub: 'TEA STALL', bg: '#1f6f43', fg: '#ffe9a8' },
   { kind: 'paan', weight: 22, r: 1.1, label: 'पान भंडार', sub: 'PAN • CIGARETTE', bg: '#b3261e', fg: '#fff1c9' },
@@ -29,6 +30,8 @@ const KINDS: { kind: Kind; weight: number; r: number; label: string; sub: string
   { kind: 'momos', weight: 8, r: 1.1, label: 'मोमोज़', sub: 'MOMOS • CHOWMEIN', bg: '#c62828', fg: '#ffe45c' },
   { kind: 'kulfi', weight: 8, r: 1.0, label: 'कुल्फी', sub: 'KULFI • ICE CREAM', bg: '#1c4f9c', fg: '#ffffff' },
 ];
+/** how far a cart of this kind reaches from its middle (its collision circle) */
+export const cartRadius = (kind: Kind): number => KINDS.find((k) => k.kind === kind)?.r ?? 1.2;
 const TOTAL_WEIGHT = KINDS.reduce((a, k) => a + k.weight, 0);
 
 const FOOD = new Set(['restaurant', 'cafe', 'fast_food', 'food_court', 'ice_cream', 'bakery', 'confectionery', 'sweets', 'bar', 'pub', 'biergarten']);
@@ -305,7 +308,7 @@ export class Vendors {
     };
     const info = (kind: Kind) => KINDS.find((k) => k.kind === kind)!;
 
-    const place = (kind: Kind, x: number, y: number, z: number, rot: number, seed: number): void => {
+    const place = (kind: Kind, x: number, y: number, z: number, rot: number, seed: number, live = false): void => {
       const I = info(kind);
       const g = new Geo();
       const M = new THREE.Matrix4().makeRotationY(rot).setPosition(x, y, z);
@@ -329,11 +332,11 @@ export class Vendors {
       this.stats.vendors++;
       // the one who sells, behind it (a paan wala sits inside his gumti, out of sight), and now and then somebody buying
       const n = Math.floor(hash2(x * 1.7, z * 2.3) * 9973);
-      if (kind !== 'paan') {
+      if (kind !== 'paan' && !live) {
         const [kx, kz] = W((hash2(x, z + 3) - 0.5) * 0.6, kind === 'chai' ? -0.45 : -0.85);
         people.push({ x: kx, y: Math.max(y, FOOTPATHS.at(kx, kz)), z: kz, ry: rot + Math.PI + (hash2(x + 5, z) - 0.5) * 0.4, pose: hash2(x, z + 9) < 0.6 ? 'stand' : 'talk', n });
       }
-      const buyers = hash2(x + 2, z - 7) < 0.55 ? (hash2(x - 4, z) < 0.35 ? 2 : 1) : 0;
+      const buyers = live ? 0 : hash2(x + 2, z - 7) < 0.55 ? (hash2(x - 4, z) < 0.35 ? 2 : 1) : 0;
       for (let b = 0; b < buyers; b++) {
         const [bx, bz] = W((b ? 0.55 : -0.35) + (hash2(x + b, z) - 0.5) * 0.4, kind === 'chai' ? 2.2 : kind === 'paan' ? 1.15 : 1.05);
         people.push({ x: bx, y: FOOTPATHS.at(bx, bz) || Math.max(0.02, y - 0.14), z: bz, ry: rot + (hash2(x, z + b) - 0.5) * 0.7, pose: ONLOOKER[Math.floor(hash2(x + b, z + 1) * ONLOOKER.length)], n: n + b + 1 });
@@ -348,7 +351,7 @@ export class Vendors {
     };
 
     // 0. the ones asked for, where they are asked for
-    for (const v of extra) place(v.kind, v.x, v.y, v.z, v.rot, hash2(v.x, v.z));
+    for (const v of extra) place(v.kind, v.x, v.y, v.z, v.rot, hash2(v.x, v.z), v.live);
 
     // 1. along the roads: a vendor here and there, more on busy roads
     const cap = desktop ? 220 : 110;

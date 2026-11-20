@@ -2,10 +2,10 @@ import * as THREE from 'three';
 
 /*
  Faces that talk and blink. The rigged people (and Ramu) carry two shape keys, built into their files by
- tools/blender/build_ramu_rig.py: `mouth_open` (the lower lip and chin drop, the corners stay shut) and `blink` (the upper
- lid slides down over the painted eye), and the landmarks they were made from (the mesh's extras: `face`).
+ tools/blender/build_ramu_rig.py: `mouth_open` (the lower lip and chin drop, the corners stay shut), `blink` (the upper
+ lid slides down over the painted eye) and `angry` (brows down and together, lids narrowed, the mouth's corners down), and the landmarks they were made from (the mesh's extras: `face`).
  A Face drives them, and only when switched on: `talking` (syllables, now open, now shut, with pauses), `laughing` (wide
- and quick), `blinking` (every few seconds). Off, the face rests and costs nothing.
+ and quick), `blinking` (every few seconds), `angry` (0..1: how much of a scowl, eased to). Off, the face rests and costs nothing.
  faceMaterial() darkens the parted lips in the shader (some faces have no dark line between the lips to stretch open).
 */
 
@@ -64,9 +64,13 @@ export class Face {
   laughing = false;
   /** blink every few seconds */
   blinking = false;
+  /** a scowl, 0..1 (eased to over a quarter second or so) */
+  angry = 0;
   private mesh: THREE.Mesh | null = null;
   private iMouth = -1;
   private iBlink = -1;
+  private iAngry = -1;
+  private scowl = 0;
   private open = 0;
   private target = 0;
   private next = 0;
@@ -84,6 +88,7 @@ export class Face {
       this.iMouth = d.mouth_open;
       if (this.iMouth !== 0) console.warn('face: the shader expects mouth_open as the first shape key');
       this.iBlink = d.blink ?? -1;
+      this.iAngry = d.angry ?? -1;
       prepareFace(m);
       for (const mat of Array.isArray(m.material) ? m.material : [m.material]) faceMaterial(mat);
     });
@@ -110,6 +115,11 @@ export class Face {
       if (this.target === 0 && this.open < 0.01) this.open = 0;
     }
     inf[this.iMouth] = this.open;
+    if (this.iAngry >= 0 && (this.scowl !== this.angry)) {
+      this.scowl += (this.angry - this.scowl) * Math.min(1, dt * 9);
+      if (Math.abs(this.angry - this.scowl) < 0.005) this.scowl = this.angry;
+      inf[this.iAngry] = this.scowl;
+    }
     // the eyes
     if (this.iBlink < 0) return;
     if (this.blinking) {

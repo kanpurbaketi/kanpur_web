@@ -143,6 +143,12 @@ export class Ramu {
     return true;
   }
 
+  /** put him standing at (x, z) (a cutscene places him), still */
+  standAt(x: number, z: number): void {
+    this.root.position.set(x, this.world.floorAt(x, z, 0.5), z);
+    this.vel.set(0, 0, 0);
+  }
+
   /** turn to face a point (the punch finds its man) */
   faceTowards(x: number, z: number): void {
     this.model.rotation.y = Math.atan2(-(x - this.root.position.x), -(z - this.root.position.z));

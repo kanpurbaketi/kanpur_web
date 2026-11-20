@@ -19,6 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 OUT = os.path.join(ROOT, 'public', 'models')
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 PREVIEW = argv[argv.index('--preview') + 1] if '--preview' in argv else None
+ONLY = set(argv[argv.index('--only') + 1].split(',')) if '--only' in argv else None   # preview just these clips
 # character -> (rigged FBX, output file, height in metres, texture size)
 CHARS = {
     'ramu': ('ramu_teen/ramu_rigged.fbx', 'ramu_rig.glb', 1.52, 2048),
@@ -376,6 +377,7 @@ arm.animation_data.action = bpy.data.actions['idle']
 # file name (lower case) contains ... -> clip name in the game. First match wins, so the particular come before the general
 # ("Fighting Idle" is not the idle, "Taking Punch" is not the punch, "Shove Reaction" is not a hit).
 CLIP_RULES = (
+    (('stomach',), 'stomach_hit'),
     (('crouch', 'walk'), 'crouch_walk'), (('crouched',), 'crouch_walk'), (('crouch',), 'crouch'), (('sneak',), 'crouch'),
     (('fighting idle',), 'fight_idle'), (('fight idle',), 'fight_idle'), (('boxing idle',), 'fight_idle'),
     (('shove',), 'shove'), (('stumble',), 'shove'),
@@ -386,6 +388,8 @@ CLIP_RULES = (
     (('taking punch',), 'hit'), (('hit to body',), 'hit2'), (('body hit',), 'hit2'), (('reaction',), 'hit'), (('hit',), 'hit'),
     (('kick',), 'kick'), (('punch',), 'punch'), (('jump',), 'jump'), (('run',), 'run'), (('walk',), 'walk'),
     (('looking around',), 'look_around'), (('arguing',), 'argue'), (('phone',), 'phone'),
+    (('pocket',), 'pockets'), (('shaking head',), 'head_no'), (('angry point',), 'angry_point'),
+    (('disappointed',), 'disappointed'), (('sitting', 'talking'), 'sitting_talking'), (('talking',), 'talk'), (('push',), 'push'),
     (('idle',), 'idle'),
 )
 
@@ -467,6 +471,128 @@ def import_mixamo_clips():
 bpy.context.view_layer.objects.active = arm
 bpy.ops.object.mode_set(mode='POSE')
 import_mixamo_clips()
+
+
+# ---- clips made here by reaching: a hand on the stomach, a one-hand push ------------------------------------
+# The body is posed as usual (base(t)); the right wrist is pulled by IK toward target(t) (armature space, metres) with a
+# weight, the elbow kept out and back by a pole; the result is read back as plain rotations and keyed like any clip.
+
+def smooth(a, b, x):
+    x = min(1.0, max(0.0, (x - a) / (b - a)))
+    return x * x * (3 - 2 * x)
+
+
+def body_front(z, half_w=0.06):
+    # y of the front of the body at height z (armature space; the front is -y)
+    inv = arm.matrix_world.inverted() @ mesh.matrix_world
+    ys = [p.y for p in (inv @ v.co for v in mesh.data.vertices) if abs(p.z - z) < 0.025 and abs(p.x) < half_w]
+    return min(ys) if ys else -0.12
+
+
+def reach_clip(name, frames, base, target, pole, hand=None):
+    sc = bpy.context.scene
+    arm.animation_data.action = None
+    tgt = bpy.data.objects.new(name + '_ik', None); sc.collection.objects.link(tgt)
+    pol = bpy.data.objects.new(name + '_pole', None); sc.collection.objects.link(pol)
+    pol.location = arm.matrix_world @ Vector(pole)
+    fore = P['mixamorig:RightForeArm']
+    c = fore.constraints.new('IK')
+    c.target, c.pole_target, c.chain_count, c.pole_angle = tgt, pol, 2, math.radians(POLE_ANGLE)
+    chain = [P['mixamorig:RightArm'], fore]
+    got = []
+    for f in range(frames + 1):
+        t = f / frames
+        pose_rest(); base(t)
+        pos, w = target(t)
+        tgt.location = arm.matrix_world @ Vector(pos)
+        c.influence = w
+        bpy.context.view_layer.update()
+        got.append([b.matrix.copy() for b in chain])
+    fore.constraints.remove(c)
+    bpy.data.objects.remove(tgt, do_unlink=True); bpy.data.objects.remove(pol, do_unlink=True)
+    act = bpy.data.actions.new(name)
+    act.use_fake_user = True
+    arm.animation_data.action = act
+    for f in range(frames + 1):
+        t = f / frames
+        pose_rest(); base(t)
+        bpy.context.view_layer.update()
+        for b, m in zip(chain, got[f]):
+            b.matrix = m
+            bpy.context.view_layer.update()
+        if hand: hand(t)
+        key_all(1 + f)
+    act.frame_range = (1, 1 + frames)
+    print(f'RIG clip {name}: {frames + 1} frames (made here)')
+
+
+POLE_ANGLE = float(argv[argv.index('--pole') + 1]) if '--pole' in argv else -90
+_arg = lambda k, d: float(argv[argv.index(k) + 1]) if k in argv else d
+HAND_TWIST, HAND_BEND, PUSH_BEND = _arg('--twist', 80), _arg('--bend', -40), _arg('--pbend', 60)
+SH = REST_M['RightArm'].translation.copy()          # the right shoulder (his right is -x)
+BELLY_Z = REST_M['Spine1'].translation.z - 0.02
+CHEST_Z = REST_M['Spine2'].translation.z
+
+
+def env_stomach(t): return smooth(0.0, 0.22, t) * (1 - smooth(0.8, 1.0, t))
+
+
+def stomach_base(t):
+    # idle, bending a little over the stomach while the hand is on it
+    on = env_stomach(t)
+    idle(0.0)
+    rot('Spine', SIDE, 5 * on); rot('Spine1', SIDE, 4 * on)
+    rot('Neck', SIDE, 4 * on); rot('Head', SIDE, 7 * on)
+
+
+def stomach_target(t):
+    on = env_stomach(t)
+    rub = smooth(0.2, 0.3, t) * (1 - smooth(0.72, 0.8, t))
+    a = (t - 0.25) * 3 * math.tau                   # three slow circles
+    y = body_front(BELLY_Z, 0.1) + 0.02
+    return (SH.x * 0.4 + 0.025 * rub * math.cos(a), y, BELLY_Z + 0.02 * rub * math.sin(a)), on
+
+
+def stomach_hand(t):
+    on = env_stomach(t)
+    rot_multi('RightHand', [(SIDE, HAND_TWIST * on), (UP, HAND_BEND * on)])    # turned palm-in, fingers across the belly
+    finger_curl(0.8 - 0.65 * on)
+
+
+def push_parts(t):
+    w = smooth(0.0, 0.18, t) * (1 - smooth(0.7, 1.0, t))
+    wind = smooth(0.0, 0.22, t) * (1 - smooth(0.24, 0.36, t))
+    shove = smooth(0.24, 0.36, t) * (1 - smooth(0.62, 0.95, t))
+    return w, wind, shove
+
+
+def push_base(t):
+    # a step of weight into it: the trunk turns toward the pushing arm and leans in
+    w, wind, shove = push_parts(t)
+    idle(0.0)
+    rot('Spine', SIDE, 6 * shove - 2 * wind)
+    rot('Spine1', UP, 10 * wind - 14 * shove)
+    rot('Spine2', UP, 6 * wind - 8 * shove)
+    rot('Head', UP, -6 * wind + 8 * shove)
+    hips_offset(0, -0.04 * shove, 0)
+
+
+def push_target(t):
+    w, wind, shove = push_parts(t)
+    front = body_front(CHEST_Z, 0.12)
+    back = Vector((SH.x * 0.95, front - 0.06, SH.z - 0.2))       # the hand drawn back by the chest
+    out = Vector((SH.x * 0.8, front - 0.62, SH.z - 0.42))        # the arm out, at a shorter man's chest (Ramu's)
+    return tuple(back.lerp(out, shove)), w
+
+
+def push_hand(t):
+    w, wind, shove = push_parts(t)
+    rot('RightHand', FWD, PUSH_BEND * shove)          # wrist back: the palm leads, fingers up
+    finger_curl(0.7 - 0.6 * w)
+
+
+reach_clip('stomach', 105, stomach_base, stomach_target, (SH.x - 0.45, 0.25, SH.z - 0.3), stomach_hand)
+reach_clip('push_one', 42, push_base, push_target, (SH.x - 0.5, 0.35, SH.z - 0.35), push_hand)
 bpy.context.view_layer.objects.active = arm
 bpy.ops.object.mode_set(mode='OBJECT')
 arm.animation_data.action = bpy.data.actions['idle']
@@ -488,8 +614,10 @@ def preview():
     sc.camera = cam
     for act in sorted(bpy.data.actions, key=lambda a: a.name):
         name = act.name
+        if ONLY and name not in ONLY:
+            continue
         lo, hi = int(act.frame_range[0]), int(act.frame_range[1])
-        n = 9 if name in ('hit', 'fall', 'punch', 'hit2', 'fall2', 'get_up', 'kick', 'shove', 'block') else 3
+        n = 9 if name in ('hit', 'fall', 'punch', 'hit2', 'fall2', 'get_up', 'kick', 'shove', 'block', 'stomach', 'push_one') else 3
         frames = sorted({lo + (hi - lo) * k // n for k in range(n + 1)})
         arm.animation_data.action = act
         for f in frames:

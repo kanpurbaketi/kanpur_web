@@ -23,14 +23,18 @@ import { CutCam, type Shot } from './cutcam';
 
 export type Who = 'ramu' | 'keeper' | 'guard';
 
+/** a value, or one worked out again every frame (a hint that changes as he gets closer, a search area that shrinks) */
+type Live<T> = T | (() => T);
+const live = <T,>(v: Live<T>): T => (typeof v === 'function' ? (v as () => T)() : v);
+
 export interface Waypoint {
   /** where it leads (for the distance shown) */
-  at: [number, number];
+  at: Live<[number, number]>;
   /** the hint shown on the way there */
-  hint: string;
+  hint: Live<string>;
   done: (x: number, z: number) => boolean;
   /** the maps show a search area this wide (m) round `at`, not the exact spot */
-  radius?: number;
+  radius?: Live<number>;
 }
 
 export interface Actorish {
@@ -53,7 +57,7 @@ export class Director {
   private tests: { test: () => boolean; done: () => void }[] = [];
   private voice: HTMLAudioElement | null = null;
   private v = new THREE.Vector3();
-  private now: { textKey: string; steps: Waypoint[]; i: number } | null = null;
+  private now: { n: number; textKey: string; steps: Waypoint[]; i: number } | null = null;
   private tweens: { t: number; secs: number; f: (k: number) => void; done: () => void }[] = [];
   /** an offer on the use key, while `when()` holds and no scene runs (`key`: its i18n line, with {key}) */
   prompt: { key: string; when: () => boolean; act: () => void } | null = null;
@@ -71,6 +75,13 @@ export class Director {
       w.t = Math.min(w.secs, w.t + dt);
       w.f(w.t / w.secs);
       if (w.t >= w.secs) { this.tweens.splice(this.tweens.indexOf(w), 1); w.done(); }
+    }
+    const m = this.now;
+    if (m) {
+      // a hint or place that changes on the way: the box follows (a new hint flashes it)
+      const s = m.steps[m.i], h = live(s.hint);
+      if (h !== this.box.hintNow) this.box.set(m.n, m.textKey, h, live(s.at));
+      else this.box.target = live(s.at);
     }
     this.box.update(dt, this.ramu.position.x, this.ramu.position.z);
     this.cam.update(dt);
@@ -168,11 +179,11 @@ export class Director {
   // ---- missions ----
 
   async mission(n: number, textKey: string, steps: Waypoint[]): Promise<void> {
-    this.now = { textKey, steps, i: 0 };
+    this.now = { n, textKey, steps, i: 0 };
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
       this.now.i = i;
-      this.box.set(n, textKey, s.hint, s.at);
+      this.box.set(n, textKey, live(s.hint), live(s.at));
       await this.until(() => s.done(this.ramu.position.x, this.ramu.position.z));
     }
     this.now = null;
@@ -184,10 +195,11 @@ export class Director {
     const m = this.now;
     if (!m || this.inScene) return null;
     const ahead = m.steps.slice(m.i), last = ahead[ahead.length - 1];
+    const [x, z] = live(last.at);
     return {
-      x: last.at[0], z: last.at[1], radius: last.radius,
-      title: tk(m.textKey), hint: tk(ahead[0].hint),
-      path: ahead.slice(0, -1).map((s) => s.at),
+      x, z, radius: last.radius === undefined ? undefined : live(last.radius),
+      title: tk(m.textKey), hint: tk(live(ahead[0].hint)),
+      path: ahead.slice(0, -1).map((s) => live(s.at)),
     };
   }
 
@@ -226,6 +238,7 @@ export class MissionBox {
   private n = 0;
   private textKey = '';
   private hintKey = '';
+  get hintNow(): string { return this.hintKey; }
   /** where the mission leads now (the maps show it), or null */
   target: [number, number] | null = null;
   private last = '';

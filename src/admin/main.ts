@@ -67,7 +67,7 @@ for (const tab of Array.from(document.querySelectorAll<HTMLButtonElement>('.tabs
 // ---- players -------------------------------------------------------------------------------------------
 
 interface Player { username: string; email: string; unlocked: number[]; created_at: string; last_login: string | null; played_s: number; plays: number }
-interface StageRow { stage: number; plays: number; played_s: number; last_played: string; first_completed: string | null; completions: number; best_s: number | null }
+interface StageRow { stage: number; plays: number; played_s: number; last_played: string; first_completed: string | null; completions: number; best_s: number | null; furthest: number }
 interface Detail {
   user: { username: string; email: string; lang: string; unlocked: number[]; created_at: string; last_login: string | null };
   stages: StageRow[];
@@ -76,6 +76,11 @@ interface Detail {
 }
 
 const BUILT = new Set([1]);           // stages that exist in the game (src/game/stages.ts)
+/** what a play's `step` (missions done, src/game/story/stage<n>.ts) means, per stage */
+const STEPS: Record<number, string[]> = {
+  1: ['Not past the start', 'Found the food carts (samosa refused)', 'Stood in the ticket line (pushed out)', 'In through the torn sheet (part 1 done)'],
+};
+const reached = (stage: number, step?: number) => STEPS[stage]?.[step ?? 0] ?? (step ? `Mission ${step}` : '—');
 const when = (d: string | null) => (d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 const dur = (s: number | null) => {
   if (s === null || s === undefined) return '—';
@@ -171,12 +176,12 @@ async function open(username: string): Promise<void> {
     if (!d.stages.length) box.append(mk('p', 'note', 'Has not played a stage yet.'));
     else {
       const t = mk('table', 'perf');
-      t.innerHTML = '<thead><tr><th>Stage</th><th>Plays</th><th>Time played</th><th>Completed</th><th>Best time to finish</th><th>Last played</th></tr></thead>';
+      t.innerHTML = '<thead><tr><th>Stage</th><th>Plays</th><th>Time played</th><th>Furthest</th><th>Completed</th><th>Best time to finish</th><th>Last played</th></tr></thead>';
       const tb = mk('tbody');
       for (const s of d.stages) {
         const tr = mk('tr');
         const done = mk('td', s.completions ? 'ok' : '', s.completions ? `✓ ${s.completions}× (first ${when(s.first_completed)})` : 'Not yet');
-        tr.append(mk('td', '', String(s.stage)), mk('td', '', String(s.plays)), mk('td', '', dur(s.played_s)), done, mk('td', '', dur(s.best_s)), mk('td', '', when(s.last_played)));
+        tr.append(mk('td', '', String(s.stage)), mk('td', '', String(s.plays)), mk('td', '', dur(s.played_s)), mk('td', '', reached(s.stage, s.furthest)), done, mk('td', '', dur(s.best_s)), mk('td', '', when(s.last_played)));
         tb.append(tr);
       }
       t.append(tb);
@@ -185,12 +190,12 @@ async function open(username: string): Promise<void> {
       box.append(w);
       box.append(mk('h4', '', 'Recent plays'));
       const r = mk('table', 'perf');
-      r.innerHTML = '<thead><tr><th>Started</th><th>Stage</th><th>Played</th><th>Finished</th><th>Walked</th><th>Ran</th><th>Top speed</th></tr></thead>';
+      r.innerHTML = '<thead><tr><th>Started</th><th>Stage</th><th>Played</th><th>Reached</th><th>Finished</th><th>Walked</th><th>Ran</th><th>Top speed</th></tr></thead>';
       const rb = mk('tbody');
       for (const x of d.runs) {
         const tr = mk('tr');
         const m = (v?: number) => (v ? (v < 1000 ? `${Math.round(v)} m` : `${(v / 1000).toFixed(2)} km`) : '—');
-        tr.append(mk('td', '', when(x.started_at)), mk('td', '', String(x.stage)), mk('td', '', dur(x.played_s)),
+        tr.append(mk('td', '', when(x.started_at)), mk('td', '', String(x.stage)), mk('td', '', dur(x.played_s)), mk('td', '', reached(x.stage, x.stats.step)),
           mk('td', x.completed_at ? 'ok' : '', x.completed_at ? '✓' : '—'), mk('td', '', m(x.stats.walked)), mk('td', '', m(x.stats.ran)),
           mk('td', '', x.stats.topSpeed ? `${(x.stats.topSpeed * 3.6).toFixed(1)} km/h` : '—'));
         rb.append(tr);

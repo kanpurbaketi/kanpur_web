@@ -225,10 +225,10 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   hud.onOpen = () => menu.openMap();                     // a click on the minimap: the big map, with the mission's way marked
   if (director && params.has('debug')) (window as unknown as { __director: Director }).__director = director;
   let step = 0;
-  const finish = () => {
+  const finish = (toastKey?: string) => {
     run.done = true;
     if (play?.run != null) account.runBeat(play.run, run.played, runStats(), true);
-    if (play) toast(t('stage.complete', { n: play.stage.n, goal: tk(`stage.${play.stage.n}.goal`) }), 6);
+    if (play) toast(toastKey ? tk(toastKey) : t('stage.complete', { n: play.stage.n, goal: tk(`stage.${play.stage.n}.goal`) }), 6);
   };
   if (play) {
     chip.setStage(play.stage, { played: () => run.played, done: () => run.done });

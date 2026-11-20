@@ -17,11 +17,13 @@ import { playSfx } from './sfx';
    beats 9-12 in line; a cut and he is at the front: "Ticket??" / "Haan laaye the, kahaan rakh diya..." (his pockets);
               the guard shoves him aside with one hand: "Arre bilkul guru, dhoondh lo aaram se, mil jaye toh aa jaana."
               Back at the gap later: "Ticket mila? Nahi? Toh side ho jao."
-   mission 3  another way in (for now: in at all, which can only be through the torn sheet, ends the stage)
+   mission 3  another way in: the maps show a search area round the torn sheet on the west wall, not the spot, and it
+              closes in after 90 s without getting nearer; the hint sharpens as he does (the cloth wall, its west side,
+              there). Through the sheet (the only way in now) ends part 1, recorded as the stage's progress.
  hooks.step(n) is called as each mission is done (recorded for the admin), hooks.done() at the end.
 */
 
-export interface StoryHooks { step(n: number): void; done(): void }
+export interface StoryHooks { step(n: number): void; done(toastKey?: string): void }
 
 const CART_R = 4.5;
 
@@ -73,10 +75,38 @@ export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queu
   hooks.step(2);
   void turnedBack(d, ramu, queue);
 
-  // ---- mission 3: another way in (for now: in at all) ----
-  await d.mission(3, 'm.s1.way', [{ at: [TEAR.x, TEAR.z], hint: 'm.s1.way.h1', radius: 40, done: inMela }]);
+  // ---- mission 3: another way in ----
+  const search = searchArea(ramu);
+  await d.mission(3, 'm.s1.way', [{ at: search.at, hint: search.hint, radius: search.radius, done: (x, z) => { search.tick(); return inMela(x, z); } }]);
   hooks.step(3);
-  hooks.done();
+  hooks.done('story.s1.part1');
+}
+
+/**
+ Where to look for the torn sheet: a circle round it (not centred on it: the map should not give the spot away) that
+ closes in each time 90 s go by without his getting 5 m nearer; and the hint, by how near he is.
+*/
+function searchArea(ramu: Ramu) {
+  const RADII = [40, 24, 13], OFF: [number, number] = [14, -15];
+  let level = 0, best = Infinity, since = 0, last = performance.now();
+  const dist = () => Math.hypot(ramu.position.x - TEAR.x, ramu.position.z - TEAR.z);
+  return {
+    radius: () => RADII[level],
+    at: (): [number, number] => {
+      if (dist() < 12) return [TEAR.x, TEAR.z];                    // found: no more hiding it
+      const k = RADII[level] / RADII[0];
+      return [TEAR.x + OFF[0] * k, TEAR.z + OFF[1] * k];
+    },
+    hint: () => { const m = dist(); return m < 12 ? 'm.s1.way.h3' : m < 60 ? 'm.s1.way.h2' : 'm.s1.way.h1'; },
+    /** every frame (game time: paused menus do not count) */
+    tick: () => {
+      const now = performance.now(), dt = Math.min(0.25, (now - last) / 1000);
+      last = now;
+      const m = dist();
+      if (m < best - 5) { best = m; since = 0; return; }
+      if ((since += dt) > 90 && level < RADII.length - 1) { level++; since = 0; }
+    },
+  };
 }
 
 const v3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);

@@ -79,6 +79,12 @@ export class Ramu {
   /** how far into the picking pose (eases in and out), and the last lock (for easing out) */
   private pickW = 0;
   private lastPick: { lock: THREE.Vector3; low: boolean; t: number } | null = null;
+  /** a cutscene has the camera: he does not move it (src/game/story/cutcam.ts does) */
+  cinematic = false;
+  /** a clip played once while he stands (a scene's gesture: the hand on the stomach, the pockets), and its time left */
+  private gestureName: string | null = null;
+  private gestureT = 0;
+  private headBone: THREE.Object3D | null = null;
   /** the get on / off key (or button) was pressed */
   onUse: (() => void) | null = null;
   /** the vehicle keys: headlights (pressed), horn (down and up) */
@@ -112,6 +118,29 @@ export class Ramu {
   /** the way he faces (radians, the same convention as a pedestrian's heading) */
   get facing(): number {
     return this.model.rotation.y;
+  }
+
+  /** play a clip once while he stands (a scene's gesture); its length in seconds (0: no such clip). Moving ends it. */
+  gesture(name: string, timeScale = 1): number {
+    const a = this.actions[name];
+    if (!a) return 0;
+    a.setLoop(THREE.LoopOnce, 1);
+    a.clampWhenFinished = true;
+    a.timeScale = timeScale;
+    if (this.current === a) this.current = null;     // replayed: start it over
+    this.gestureName = name;
+    this.gestureT = a.getClip().duration / timeScale;
+    return this.gestureT;
+  }
+
+  stopGesture(): void { this.gestureT = 0; }
+
+  /** where his head is (world), for close-ups; false until the body has loaded */
+  headPosition(out: THREE.Vector3): boolean {
+    if (!this.headBone) this.model.traverse((o) => { if (!this.headBone && /Head$/.test(o.name)) this.headBone = o; });
+    if (!this.headBone) return false;
+    this.headBone.getWorldPosition(out);
+    return true;
   }
 
   /** turn to face a point (the punch finds its man) */
@@ -222,7 +251,7 @@ export class Ramu {
         this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 3);
         this.camera.updateProjectionMatrix();
       }
-      this.updateCamera(this.chase.x, this.chase.y, this.chase.z, r.cam + Math.min(1.5, Math.abs(r.speed) * 0.06));
+      if (!this.cinematic) this.updateCamera(this.chase.x, this.chase.y, this.chase.z, r.cam + Math.min(1.5, Math.abs(r.speed) * 0.06));
       return;
     }
     if (this.chasing) {                      // off the vehicle: the view as it was
@@ -311,7 +340,7 @@ export class Ramu {
     if (this.pickW > 0 && this.lastPick && this.rider) this.rider.pick(this.model, this.lastPick.lock, this.lastPick.t, this.lastPick.low, this.pickW);
     this.updateBlob();
 
-    this.updateCamera(p.x, p.y + EYE, p.z, CAM_DIST);
+    if (!this.cinematic) this.updateCamera(p.x, p.y + EYE, p.z, CAM_DIST);
   }
 
   /** off the ground: up at the jump speed; the flight should take 2 v / g */
@@ -598,6 +627,7 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
     if (this.wasOut && !this.knockedOut && A.get_up) { this.wake = CLIP_SECS.get_up / 1.6; A.get_up.reset(); }
     this.wasOut = this.knockedOut;
     this.wake = Math.max(0, this.wake - dt);
+    if (hs >= 0.25 || this.knockedOut || this.reel > 0) this.gestureT = 0;      // walking off (or a blow) ends a gesture
     if (this.knockedOut) {
       const f = this.play(A.fall ? 'fall' : 'idle', 0.08);
       if (f) f.timeScale = 1.5;
@@ -618,6 +648,9 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
           : J_LAND[0] + t * 1.5;
       const j = this.play('jump', ph === 3 ? 0.04 : 0.1);
       if (j) { j.timeScale = 0; j.time = ct; }
+    } else if (this.gestureT > 0 && this.gestureName && hs < 0.25) {
+      this.gestureT -= dt;
+      this.play(this.gestureName, 0.25);
     } else if (this.lockPick && hs < 0.8) {
       set(this.lockPick.low && A.crouch ? 'crouch' : 'idle', 'idle', this.lockPick.low ? 1 : 0.6);
     } else if (crouching) {

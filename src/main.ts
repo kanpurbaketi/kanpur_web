@@ -33,7 +33,8 @@ import { startChoice } from './game/start';
 import { account } from './game/account';
 import { stage as stageOf, type Stage } from './game/stages';
 import { goFree, introCard, loadingFailed, loadingScreen, toast, UserChip } from './ui/shell';
-import { Objectives, STEPS } from './game/objectives';
+import { Director } from './game/story/director';
+import { stage1, STAGE1_STEPS } from './game/story/stage1';
 import { onLang, t, tk } from './i18n';
 
 /*
@@ -213,17 +214,19 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   const run = { played: 0, beat: 60, done: false };
   const runStats = () => {
     const d = stats.data;
-    return { walked: d.walked, ran: d.ran, jumps: d.jumps, topSpeed: d.topSpeed, explored: d.explored };
+    return { walked: d.walked, ran: d.ran, jumps: d.jumps, topSpeed: d.topSpeed, explored: d.explored, step };
   };
   const chip = new UserChip(() => menu.openStages());
   document.body.append(chip.root);
-  // the stage's instructions, one step at a time; the last step is its goal
-  const steps = play ? STEPS[play.stage.n] : undefined;
-  const objectives = play && steps ? new Objectives(play.stage.n, steps, () => {
+  // the stage's story (src/game/story/): its cutscenes, lines and missions
+  const director = play?.stage.n === 1 ? new Director(camera, ramu, 1) : null;
+  if (director && params.has('debug')) (window as unknown as { __director: Director }).__director = director;
+  let step = 0;
+  const finish = () => {
     run.done = true;
-    if (play.run !== null) account.runBeat(play.run, run.played, runStats(), true);
-    toast(t('stage.complete', { n: play.stage.n, goal: tk(`stage.${play.stage.n}.goal`) }), 6);
-  }) : null;
+    if (play?.run != null) account.runBeat(play.run, run.played, runStats(), true);
+    if (play) toast(t('stage.complete', { n: play.stage.n, goal: tk(`stage.${play.stage.n}.goal`) }), 6);
+  };
   if (play) {
     chip.setStage(play.stage, { played: () => run.played, done: () => run.done });
     if (play.run !== null) addEventListener('pagehide', () => account.runBeacon(play.run!, run.played, runStats()));
@@ -232,7 +235,6 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
     if (!play) return;
     run.played += dt;
     if (play.run !== null && (run.beat -= dt) <= 0) { run.beat = 60; account.runBeat(play.run, run.played, runStats()); }
-    objectives?.update(dt, ramu.position.x, ramu.position.z);
   };
   // life bar: vehicles hurt; a knockout wakes Ramu back at the spawn point
   const health = new Health(() => { ramu.position.set(spawnAt[0], 0, spawnAt[1]); ramu.releaseKeys(); });
@@ -383,10 +385,11 @@ void main() {
     ramu.knockedOut = health.knockedOut;
     if (!fixed) {
       health.update(dt);
-      ramu.enabled = !paused && !health.knockedOut;
+      ramu.enabled = !paused && !health.knockedOut && !director?.locked;
       if (driving && health.knockedOut) driving.drop();
       if (driving && !paused) driving.update(dt);
       ramu.update(dt);
+      if (director && !paused) director.update(dt);     // the story: after Ramu, so a cutscene's camera has the last word
       if (!driving?.driving && !health.knockedOut) {
         // he cannot walk through people: the street crowd and the mela's
         const p = ramu.position;
@@ -443,11 +446,14 @@ void main() {
   return {
     /** once the loading page has gone: the stage's introduction (Ramu waits), then its instructions */
     begin: async () => {
-      if (!play || !objectives || !steps) return;
+      if (!play || !director || !route) return;
       paused = true;
-      await introCard(play.stage.n, steps.length);
+      await introCard(play.stage.n, STAGE1_STEPS);
       paused = false;
-      objectives.start();
+      void stage1(director, ramu, route.stalls, {
+        step: (n) => { step = n; if (play.run !== null) account.runBeat(play.run, run.played, runStats()); },
+        done: finish,
+      });
     },
   };
 }

@@ -16,7 +16,7 @@ const num = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Nu
 function cleanStats(v: unknown): Record<string, number> {
   const out: Record<string, number> = {};
   if (!v || typeof v !== 'object') return out;
-  for (const k of ['walked', 'ran', 'jumps', 'topSpeed', 'explored']) out[k] = num((v as Record<string, unknown>)[k], 0, 1e7);
+  for (const k of ['walked', 'ran', 'jumps', 'topSpeed', 'explored', 'step']) out[k] = num((v as Record<string, unknown>)[k], 0, 1e7);
   return out;
 }
 

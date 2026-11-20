@@ -63,7 +63,7 @@ export default handle(async (req, res) => {
     const stages = await s`
       SELECT stage, count(*)::int AS plays, sum(played_s)::float AS played_s, max(last_seen) AS last_played,
              min(completed_at) AS first_completed, count(completed_at)::int AS completions,
-             min(played_s) FILTER (WHERE completed_at IS NOT NULL)::float AS best_s,
+             min(COALESCE(NULLIF((stats->>'finishS')::float, 0), played_s)) FILTER (WHERE completed_at IS NOT NULL)::float AS best_s,
              coalesce(max((stats->>'step')::int), 0)::int AS furthest
       FROM runs WHERE user_id = ${u.id} GROUP BY stage ORDER BY stage`;
     const runs = await s`SELECT stage, started_at, played_s::float, completed_at, stats FROM runs

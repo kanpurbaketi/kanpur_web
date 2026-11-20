@@ -9,6 +9,7 @@ import { STAGES, publicUser, requireUser, sessionUser } from './_lib/users.js';
    run-start  { stage }                a play of a stage begins (refused if it is locked) -> { run }
    run-beat   { run, played, stats }   how long it has been played, and the play statistics so far
    run-done   { run }                  the stage's goal was reached
+   runs       {}                       the player's plays, newest first (their scorecards) -> { runs }
 */
 
 const num = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : 0);
@@ -16,7 +17,11 @@ const num = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Nu
 function cleanStats(v: unknown): Record<string, number> {
   const out: Record<string, number> = {};
   if (!v || typeof v !== 'object') return out;
-  for (const k of ['walked', 'ran', 'jumps', 'topSpeed', 'explored', 'step']) out[k] = num((v as Record<string, unknown>)[k], 0, 1e7);
+  // the play's statistics, and its scorecard (src/game/stats.ts SCORE_KEYS)
+  for (const k of ['walked', 'ran', 'jumps', 'topSpeed', 'explored', 'step',
+    'finishS', 'runOver', 'beaten', 'thrown', 'punches', 'taken', 'crashes', 'lamps', 'damageRs', 'knockouts']) {
+    out[k] = num((v as Record<string, unknown>)[k], 0, k === 'damageRs' ? 1e10 : 1e7);
+  }
   return out;
 }
 
@@ -57,6 +62,12 @@ export default handle(async (req, res) => {
                       WHERE id = ${run} AND user_id = ${u.id} RETURNING id`;
     if (!r.length) throw new HttpError(404, 'run');
     return send(res, 200, { ok: true });
+  }
+
+  if (action === 'runs') {
+    const runs = await s`SELECT id, stage, started_at, played_s::float, completed_at, stats FROM runs
+                         WHERE user_id = ${u.id} ORDER BY started_at DESC LIMIT 30`;
+    return send(res, 200, { runs });
   }
 
   throw new HttpError(400, 'action');

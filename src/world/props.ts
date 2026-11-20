@@ -269,6 +269,9 @@ export class Traffic {
   resolve: ((x: number, z: number, r: number) => [number, number]) | null = null;
   /** whether the straight way between two points crosses a wall (getting off: not onto the far side of one) */
   crosses: ((x0: number, z0: number, x1: number, z1: number) => boolean) | null = null;
+  /** damage done by a vehicle Ramu drives (to it, or to one of the traffic's it hit): its kind, the points (0..100) of
+   damage, whether a headlamp broke, whether it was a crash (a hard knock, not a scrape) */
+  onDamage: ((kind: string, points: number, lamp: boolean, crash: boolean) => void) | null = null;
   private pools: THREE.InstancedMesh | null = null;
   /** the small lamps: tail, brake, reversing and indicators (glowing quads, only the lit ones drawn) */
   private lamps: THREE.InstancedMesh;
@@ -449,7 +452,7 @@ export class Traffic {
   }
 
   /** A moving vehicle at (x, z) (a walker of radius r), if any: its velocity, so it can knock the walker over. */
-  hit(x: number, z: number, r: number): { vx: number; vz: number; speed: number } | null {
+  hit(x: number, z: number, r: number): { vx: number; vz: number; speed: number; player: boolean } | null {
     for (const c of this.cars) {
       if (c.fresh || c.v < 0.4) continue;
       const k = this.kinds[c.kind];
@@ -457,7 +460,7 @@ export class Traffic {
       const dx = x - c.x, dz = z - c.z;
       if (Math.abs(dx) > 7 || Math.abs(dz) > 7) continue;
       const along = dx * fxv + dz * fzv, side = dx * fzv - dz * fxv;
-      if (Math.abs(along) < k.halfL + r && Math.abs(side) < k.halfW + r) return { vx: fxv * c.v, vz: fzv * c.v, speed: c.v };
+      if (Math.abs(along) < k.halfL + r && Math.abs(side) < k.halfW + r) return { vx: fxv * c.v, vz: fzv * c.v, speed: c.v, player: c.player };
     }
     return null;
   }
@@ -656,6 +659,7 @@ export class Traffic {
    */
   private knocked(c: Vehicle, hard: number, wx: number, wz: number, nx: number, nz: number): void {
     const k = this.kinds[c.kind];
+    const was = c.damage, lamps = c.broken;
     c.damage = Math.min(100, c.damage + hard * 2.2);
     const inv = M2.copy(this.bodyMatrix(c, M2)).invert();
     const p = V3.set(wx, 0.6, wz).applyMatrix4(inv);
@@ -666,6 +670,7 @@ export class Traffic {
       at.forEach((a, i) => { const d = Math.abs(a[0] - p.x); if (d < bd) { bd = d; best = i; } });
       if (best >= 0 && bd < 0.6) c.broken |= 1 << best;
     }
+    this.onDamage?.(k.name, c.damage - was, c.broken !== lamps, hard > 3);
     if (!c.own) return;
     // the dent: vertices near the point pushed in, the most at the middle, never more than a hand's depth in all
     const R = Math.min(0.85, 0.3 + hard * 0.035), depth = Math.min(0.14, 0.012 * hard + 0.01);
@@ -957,7 +962,14 @@ export class Traffic {
             const fx = Math.sin(o.heading), fz = Math.cos(o.heading);
             o.sim.vx += (jx * fx + jz * fz) / mo;
             o.sim.vy += (jx * fz - jz * fx) / mo;
-          } else if (Math.hypot(jx, jz) / mo > 0.3) o.v = 0;     // the traffic's own: stops
+          } else if (Math.hypot(jx, jz) / mo > 0.3) {          // the traffic's own: stops, and is dented too
+            o.v = 0;
+            const hard = Math.hypot(jx, jz) / mo, was = o.damage;
+            o.damage = Math.min(100, o.damage + hard * 2.2);
+            const crash = this.clock - o.hitT > 0.35 && hard > 1.5;
+            if (crash) o.hitT = this.clock;
+            this.onDamage?.(this.kinds[o.kind].name, o.damage - was, false, crash);
+          }
         },
       }, dt);
     c.x = b.x; c.z = b.z; c.heading = b.heading;

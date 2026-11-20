@@ -116,6 +116,15 @@
     .stat-v { font: 650 22px system-ui, sans-serif; font-variant-numeric: tabular-nums; color: #2a241e; }
     .stat-l { margin-top: 2px; font-size: 12px; color: #7a6e62; }
     .muted { margin: 14px 0 0; font-size: 12px; color: #7a6e62; }
+    .score-h { margin: 22px 0 10px; font: 650 15px system-ui, sans-serif; }
+    .menu-body > .score-h:first-child { margin-top: 0; }
+    .score-rows { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: #fff; border: 1px solid #ebe3d6; font-size: 13px; }
+    .score-best { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+    .runs-table td { font-variant-numeric: tabular-nums; }
+    .runs-table tbody tr:not(.run-more) { cursor: pointer; }
+    .runs-table tbody tr:not(.run-more):hover td { background: #fff6e8; }
+    .runs-table tbody tr:focus-visible { outline: 2px solid #f2992a; outline-offset: -2px; }
+    .run-more > td { padding: 8px 0 14px; border-top: 0; }
     .link-btn { border: 0; background: none; padding: 0; color: #b5480a; font: inherit; text-decoration: underline; cursor: pointer; }
     @media (prefers-reduced-motion: reduce) { .menu-drop { transition: none; } }
     @media (pointer: coarse) {

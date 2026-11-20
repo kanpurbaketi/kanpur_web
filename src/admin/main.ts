@@ -190,13 +190,16 @@ async function open(username: string): Promise<void> {
       box.append(w);
       box.append(mk('h4', '', 'Recent plays'));
       const r = mk('table', 'perf');
-      r.innerHTML = '<thead><tr><th>Started</th><th>Stage</th><th>Played</th><th>Reached</th><th>Finished</th><th>Walked</th><th>Ran</th><th>Top speed</th></tr></thead>';
+      r.innerHTML = '<thead><tr><th>Started</th><th>Stage</th><th>Played</th><th>Reached</th><th>Finished</th><th>Injured</th><th>Damage</th><th>Vehicles taken</th><th>Walked</th><th>Ran</th><th>Top speed</th></tr></thead>';
       const rb = mk('tbody');
       for (const x of d.runs) {
         const tr = mk('tr');
         const m = (v?: number) => (v ? (v < 1000 ? `${Math.round(v)} m` : `${(v / 1000).toFixed(2)} km`) : '—');
-        tr.append(mk('td', '', when(x.started_at)), mk('td', '', String(x.stage)), mk('td', '', dur(x.played_s)), mk('td', '', reached(x.stage, x.stats.step)),
-          mk('td', x.completed_at ? 'ok' : '', x.completed_at ? '✓' : '—'), mk('td', '', m(x.stats.walked)), mk('td', '', m(x.stats.ran)),
+        // the play's scorecard (src/game/stats.ts): people hurt all ways, and what the damage would cost to mend
+        const hurt = (x.stats.runOver ?? 0) + (x.stats.beaten ?? 0) + (x.stats.thrown ?? 0);
+        tr.append(mk('td', '', when(x.started_at)), mk('td', '', String(x.stage)), mk('td', '', dur(x.stats.finishS || x.played_s)), mk('td', '', reached(x.stage, x.stats.step)),
+          mk('td', x.completed_at ? 'ok' : '', x.completed_at ? '✓' : '—'), mk('td', '', String(hurt)),
+          mk('td', '', `₹${Math.round(x.stats.damageRs ?? 0).toLocaleString('en-IN')}`), mk('td', '', String(x.stats.taken ?? 0)), mk('td', '', m(x.stats.walked)), mk('td', '', m(x.stats.ran)),
           mk('td', '', x.stats.topSpeed ? `${(x.stats.topSpeed * 3.6).toFixed(1)} km/h` : '—'));
         rb.append(tr);
       }

@@ -9,7 +9,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { CollisionWorld } from './player/collide';
 import { Ramu } from './player/ramu';
 import { CROWD_MAX, loadSettings, onSettingsChange } from './game/settings';
-import { Stats } from './game/stats';
+import { Stats, repairRs } from './game/stats';
 import { Hud } from './ui/hud';
 import { Health } from './game/health';
 import { Menu } from './ui/menu';
@@ -184,6 +184,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   const menu = new Menu({
     map, hud, stats, controls, area: AREA, parts: playable(manifest), allParts: manifest.parts, stage: play?.stage.n,
     player: () => ({ x: ramu.position.x, z: ramu.position.z, yaw: ramu.yaw }),
+    play: () => (play ? { played: run.played, done: run.done, finishS: run.finishS } : null),     // this play of the stage, for its scorecard
     onPause: (p) => {
       paused = p;
       ramu.enabled = !p;
@@ -214,10 +215,10 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   ramu.position.set(best[0], 0, best[1]);
   const spawnAt: [number, number] = [best[0], best[1]];
   // the play of this stage: time played (not paused), sent every minute and on leaving; reaching the mela ends stage 1
-  const run = { played: 0, beat: 60, done: false };
+  const run = { played: 0, beat: 60, done: false, finishS: 0 };
   const runStats = () => {
     const d = stats.data;
-    return { walked: d.walked, ran: d.ran, jumps: d.jumps, topSpeed: d.topSpeed, explored: d.explored, step };
+    return { walked: d.walked, ran: d.ran, jumps: d.jumps, topSpeed: d.topSpeed, explored: d.explored, step, ...d.run, finishS: run.finishS };
   };
   const chip = new UserChip(() => menu.openStages());
   document.body.append(chip.root);
@@ -228,6 +229,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   if (director && params.has('debug')) (window as unknown as { __director: Director }).__director = director;
   let step = 0;
   const finish = (toastKey?: string) => {
+    if (!run.done) run.finishS = run.played;             // the time to finish (play goes on after it)
     run.done = true;
     if (play?.run != null) account.runBeat(play.run, run.played, runStats(), true);
     if (play) toast(toastKey ? tk(toastKey) : t('stage.complete', { n: play.stage.n, goal: tk(`stage.${play.stage.n}.goal`) }), 6);
@@ -242,7 +244,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
     if (play.run !== null && (run.beat -= dt) <= 0) { run.beat = 60; account.runBeat(play.run, run.played, runStats()); }
   };
   // life bar: vehicles hurt; a knockout wakes Ramu back at the spawn point
-  const health = new Health(() => { ramu.position.set(spawnAt[0], 0, spawnAt[1]); ramu.releaseKeys(); });
+  const health = new Health(() => { ramu.position.set(spawnAt[0], 0, spawnAt[1]); ramu.releaseKeys(); stats.count('knockouts'); });
   if (params.has('debug')) (window as unknown as { __health: Health }).__health = health;
   // goons (dark-clothed men in the crowd) run at Ramu and punch / kick; his own punch staggers them
   const mugged = (d: number) => { const was = health.value; health.hurt(d); if (health.value < was) ramu.flinch(); };
@@ -271,6 +273,12 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
     if (route) traffic.pin(route.parking);      // stage 1: parked along the kerbs, locked (Ramu can pick a lock)
     peds.vehicleAt = (x, z, r) => traffic.hit(x, z, r);
     peds.vehiclePush = (x, z, r) => traffic.pushOut(x, z, r);
+    // the scorecard: what his driving breaks
+    traffic.onDamage = (kind, points, lamp, crash) => {
+      stats.count('damageRs', repairRs(kind, points, lamp));
+      if (lamp) stats.count('lamps');
+      if (crash) stats.count('crashes');
+    };
   }
   if (traffic && params.has('debug')) (window as unknown as { __traffic: Traffic }).__traffic = traffic;
   if (params.has('debug')) (window as unknown as { __camera: THREE.Camera }).__camera = camera;   // test scripts aim it at things
@@ -297,7 +305,8 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   const ambience = new CityAmbience(NIGHT);
   if (params.has('debug')) (window as unknown as { __ambience: CityAmbience }).__ambience = ambience;
   // somebody run over: a shout, as loud as it is near the camera, from its side
-  peds.onRunOver = (x, z) => {
+  peds.onRunOver = (x, z, _speed, byPlayer) => {
+    if (byPlayer) stats.count('runOver');
     const dx = x - camera.position.x, dz = z - camera.position.z, d = Math.hypot(dx, dz) || 1;
     camera.getWorldDirection(lookDir);
     ambience.shout(d, (-lookDir.z * dx + lookDir.x * dz) / d);
@@ -338,6 +347,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   // E: Ramu takes the nearest vehicle (and throws off whoever is on it), drives it, gets off
   if (traffic) { traffic.resolve = (x, z, r) => world.resolve(x, z, r, 0); traffic.crosses = (x0, z0, x1, z1) => world.crosses(x0, z0, x1, z1); }
   const driving = traffic && !fixed ? new Driving(scene, traffic, ramu, peds, () => label(controls.get('use')[0] || controls.get('use')[1])) : null;
+  if (driving) driving.onTake = (thrown) => { stats.count('taken'); stats.count('thrown', thrown); };
   if (driving && params.has('debug')) (window as unknown as { __driving: Driving }).__driving = driving;
   // the street's walkers step round the story's people, and keep out of a cutscene (from between the camera and the faces)
   if (director) {
@@ -432,7 +442,9 @@ void main() {
     if (punchLand >= 0 && (punchLand -= dt) < 0) {
       punchLand = -1;
       const t = ramu.isPunching ? punchTarget() : null;
-      if (t) t.crowd.hit(ramu.position.x, ramu.position.z, t.fx, t.fz);
+      const r = t ? t.crowd.hit(ramu.position.x, ramu.position.z, t.fx, t.fz) : null;
+      if (r === 'hit' || r === 'out') stats.count('punches');
+      if (r === 'out') stats.count('beaten');
     }
     ramu.knockedOut = health.knockedOut;
     if (!fixed) {

@@ -1,10 +1,10 @@
-import { Stats } from '../game/stats';
+import { injured, Score, Stats } from '../game/stats';
 import { setStartChoice, startChoice, STARTS } from '../game/start';
 import type { Part } from '../game/parts';
 import { ACTIONS, Action, Controls, DEFAULTS, label } from '../game/controls';
 import { MapData, P2, centroid } from '../world/types';
 import { Hud, PX_PER_M } from './hud';
-import { account } from '../game/account';
+import { account, type Run } from '../game/account';
 import { fmtNum, onLang, t, tk } from '../i18n';
 import { goFree, settingsView, stagesView } from './shell';
 
@@ -27,6 +27,8 @@ export interface MenuDeps {
   /** the stage being played (none in development with ?debug) */
   stage?: number;
   player: () => { x: number; z: number; yaw: number };
+  /** this play of the stage (null roaming free): seconds played, and when it was finished (0: not yet) */
+  play: () => { played: number; done: boolean; finishS: number } | null;
   /** called when a panel opens / closes, so the game can pause */
   onPause: (paused: boolean) => void;
 }
@@ -632,6 +634,25 @@ export class Menu {
   // ---------- Statistics ----------
   private renderStats(): void {
     const s = this.d.stats.data;
+    // this play's scorecard (a stage being played)
+    const play = this.d.play();
+    if (play && this.d.stage) {
+      this.body.append(text('h3', t('score.thisPlay', { n: this.d.stage }), 'score-h'),
+        scorecard(play.done ? play.finishS : play.played, play.done, s.run));
+    }
+    // every play of a stage, from the server
+    this.body.append(text('h3', t('score.plays'), 'score-h'));
+    const plays = el('div');
+    this.body.append(plays);
+    if (!account.me) plays.append(text('p', t('score.signIn'), 'muted'));
+    else {
+      plays.append(text('p', t('score.loading'), 'muted'));
+      void account.runs().then((runs) => {
+        if (this.open === 'stats') plays.replaceChildren(...playsView(runs));
+      });
+    }
+    // all time, in this browser
+    this.body.append(text('h3', t('score.allTime'), 'score-h'));
     const grid = el('div', 'stat-grid');
     const tile = (label: string, value: string) => {
       const t = el('div', 'stat');
@@ -646,6 +667,10 @@ export class Menu {
     tile(t('stats.jumps'), fmtNum(s.jumps));
     tile(t('stats.top'), `${(s.topSpeed * 3.6).toFixed(1)} km/h`);
     tile(t('stats.sessions'), fmtNum(s.sessions));
+    tile(t('score.injured'), fmtNum(injured(s.score)));
+    tile(t('score.damage'), rupees(s.score.damageRs));
+    tile(t('score.taken'), fmtNum(s.score.taken));
+    tile(t('score.knockouts'), fmtNum(s.score.knockouts));
     const reset = el('button', 'link-btn');
     reset.textContent = t('stats.reset');
     reset.addEventListener('click', () => {
@@ -658,6 +683,66 @@ export class Menu {
     note.append(' ', reset);
     this.body.append(grid, note);
   }
+}
+
+/** a play's scorecard: the time, the people hurt and the property broken up top, then how */
+function scorecard(secs: number, done: boolean, sc: Partial<Score>): HTMLElement {
+  const box = el('div', 'scorecard');
+  const big = el('div', 'stat-grid');
+  for (const [label, value] of [
+    [t(done ? 'score.finished' : 'score.time'), clock(secs)],
+    [t('score.injured'), fmtNum(injured(sc))],
+    [t('score.damage'), rupees(sc.damageRs ?? 0)],
+  ] as const) {
+    const tl = el('div', 'stat');
+    tl.append(text('div', value, 'stat-v'), text('div', label, 'stat-l'));
+    big.append(tl);
+  }
+  const n = (k: keyof Score) => fmtNum(sc[k] ?? 0);
+  const how = rows([
+    [t('score.runOver'), n('runOver')], [t('score.beaten'), n('beaten')], [t('score.thrown'), n('thrown')],
+    [t('score.taken'), n('taken')], [t('score.crashes'), n('crashes')], [t('score.lamps'), n('lamps')],
+    [t('score.punches'), n('punches')], [t('score.knockouts'), n('knockouts')],
+  ]);
+  how.classList.add('score-rows');
+  box.append(big, how);
+  return box;
+}
+
+/** the player's plays: the best finish of each stage, then a row per play (a click opens its scorecard) */
+function playsView(runs: Run[]): HTMLElement[] {
+  if (!runs.length) return [text('p', t('score.none'), 'muted')];
+  const out: HTMLElement[] = [];
+  const took = (r: Run) => r.stats.finishS || r.played_s;
+  const best = new Map<number, number>();
+  for (const r of runs) if (r.completed_at) best.set(r.stage, Math.min(best.get(r.stage) ?? Infinity, took(r)));
+  for (const [n, s] of [...best].sort((a, b) => a[0] - b[0])) out.push(text('p', t('score.best', { n, t: clock(s) }), 'score-best'));
+  const table = el('table', 'ctl-table runs-table');
+  const head = el('tr');
+  for (const k of ['score.when', 'score.stage', 'score.timeCol', 'score.done', 'score.injured', 'score.damage'] as const) head.append(text('th', t(k)));
+  table.append(el('thead'), el('tbody'));
+  table.tHead!.append(head);
+  for (const r of runs) {
+    const tr = el('tr');
+    const when = new Date(r.started_at).toLocaleString(lang(), { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    tr.append(text('td', when), text('td', String(r.stage)), text('td', clock(took(r))), text('td', r.completed_at ? '✓' : '—'),
+      text('td', fmtNum(injured(r.stats))), text('td', rupees(r.stats.damageRs ?? 0)));
+    tr.tabIndex = 0;
+    tr.setAttribute('aria-expanded', 'false');
+    // the play's whole scorecard under its row, on a click
+    const more = el('tr', 'run-more');
+    const cell = el('td');
+    cell.colSpan = 6;
+    cell.append(scorecard(took(r), !!r.completed_at, r.stats));
+    more.append(cell);
+    more.hidden = true;
+    const toggle = () => { more.hidden = !more.hidden; tr.setAttribute('aria-expanded', String(!more.hidden)); };
+    tr.addEventListener('click', toggle);
+    tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    table.tBodies[0].append(tr, more);
+  }
+  out.push(table);
+  return out;
 }
 
 // ---------- helpers ----------
@@ -685,6 +770,18 @@ const lang = () => (document.documentElement.lang === 'hi' ? 'hi-IN' : 'en-IN');
 
 function km(m: number): string {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)} km`;
+}
+
+/** m:ss (h:mm:ss past an hour) */
+function clock(s: number): string {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+  const two = (n: number) => String(n).padStart(2, '0');
+  return h ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
+}
+
+/** rupees, grouped the Indian way (₹2,30,000) */
+function rupees(n: number): string {
+  return `₹${Math.round(n).toLocaleString('en-IN')}`;
 }
 
 function dur(s: number): string {

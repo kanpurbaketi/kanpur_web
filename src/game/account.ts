@@ -6,6 +6,8 @@ import { lang, setLang, type Lang } from '../i18n';
 */
 
 export interface Me { username: string; email: string; lang: Lang; unlocked: number[] }
+/** a play of a stage, as the server keeps it (api/me.ts runs) */
+export interface Run { id: number; stage: number; started_at: string; played_s: number; completed_at: string | null; stats: Record<string, number> }
 export interface Config { ads: { enabled: boolean; client: string; slot: string } }
 
 export class ApiError extends Error {
@@ -76,6 +78,11 @@ export const account = {
   },
   runBeat(run: number, played: number, stats: object, done = false): void {
     void call('me', { action: done ? 'run-done' : 'run-beat', run, played, stats }).catch(() => {});
+  },
+  /** the player's plays, newest first, with their scorecards (none if not signed in or offline) */
+  async runs(): Promise<Run[]> {
+    if (!me) return [];
+    try { return (await call<{ runs: Run[] }>('me', { action: 'runs' })).runs; } catch { return []; }
   },
   /** on leaving the page: a last beat that survives the unload */
   runBeacon(run: number, played: number, stats: object): void {

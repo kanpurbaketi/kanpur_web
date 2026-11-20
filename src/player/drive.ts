@@ -55,6 +55,8 @@ export class Driving {
   private shoutT = 0;
   /** the story's own use of the key (stand in line): its line in the tip instead, on foot (main.ts) */
   storyTip: (() => string | null) | null = null;
+  /** he took a vehicle: how many were thrown off it (the scorecard) */
+  onTake: ((thrown: number) => void) | null = null;
 
   constructor(scene: THREE.Scene, private traffic: Traffic, private ramu: Ramu, private peds: Pedestrians, private key: () => string) {
     ramu.onUse = () => this.use();
@@ -111,7 +113,9 @@ export class Driving {
   /** the lock is open (or there was none): on it, whoever was on it thrown off */
   private take(c: Vehicle): void {
     const p = this.ramu.position;
-    for (const t of this.traffic.board(c)) this.peds.throwOut(t.x, t.z, t.vx, t.vz, t.driver);
+    const thrown = this.traffic.board(c);
+    for (const t of thrown) this.peds.throwOut(t.x, t.z, t.vx, t.vz, t.driver);
+    this.onTake?.(thrown.length);
     this.car = c;
     this.lights = !c.dark;
     this.w = 0;

@@ -107,9 +107,9 @@ export class Pedestrians {
   /** other people and keep-clear places the walkers step round ([x, z, r]: the story's keepers and line, a cutscene's ground) */
   obstacles: (() => [number, number, number][]) | null = null;
   /** a moving vehicle at a point, if one is there: its velocity (so a car can knock people over) */
-  vehicleAt: ((x: number, z: number, r: number) => { vx: number; vz: number; speed: number } | null) | null = null;
-  /** somebody knocked down by a vehicle, where, how fast it was going */
-  onRunOver: ((x: number, z: number, speed: number) => void) | null = null;
+  vehicleAt: ((x: number, z: number, r: number) => { vx: number; vz: number; speed: number; player: boolean } | null) | null = null;
+  /** somebody knocked down by a vehicle, where, how fast it was going, and whether Ramu was driving it */
+  onRunOver: ((x: number, z: number, speed: number, byPlayer: boolean) => void) | null = null;
   private rigged: number[] = [];     // indices of everybody (test scripts read it)
   private want = 0;
   private dt = 0;
@@ -321,7 +321,7 @@ export class Pedestrians {
       }
       if (this.vehicleAt && !p.fresh) {
         const v = this.vehicleAt(p.x, p.z, 0.4);
-        if (v && v.speed > 1.2) { this.knockDown(p, v.vx * 0.9, v.vz * 0.9, 3.6); this.onRunOver?.(p.x, p.z, v.speed); continue; }
+        if (v && v.speed > 1.2) { this.knockDown(p, v.vx * 0.9, v.vz * 0.9, 3.6); this.onRunOver?.(p.x, p.z, v.speed, v.player); continue; }
       }
       if (p.flinch > 0 || p.block > 0) {      // reeling from a punch, or holding a block against one
         p.flinch -= dt;
@@ -556,12 +556,13 @@ export class Pedestrians {
 
   /**
    * A punch from (x, z) facing (fx, fz) lands on the nearest person in reach. They turn on the puncher and reel from it,
-   * then hit back; the last punch they can take lays them out. Returns true if it landed on somebody.
+   * then hit back; the last punch they can take lays them out. Returns what came of it: blocked, a hit, laid out (`out`),
+   * or null (nobody in reach).
    */
-  hit(x: number, z: number, fx: number, fz: number): boolean {
+  hit(x: number, z: number, fx: number, fz: number): 'block' | 'hit' | 'out' | null {
     const t = this.inReach(x, z, fx, fz);
     this.lastHit = null;
-    if (!t) return false;
+    if (!t) return null;
     const p = t.p, dx = (p.x - x) / t.d, dz = (p.z - z) / t.d;
     this.lastHit = { x: p.x, z: p.z };
     const behind = Math.sin(p.heading) * dx + Math.cos(p.heading) * dz < -0.3;   // the puncher is at their back
@@ -573,7 +574,7 @@ export class Pedestrians {
       p.kvx = dx * 1.1; p.kvz = dz * 1.1;
       p.angry = ANGRY;
       p.cool = Math.min(p.cool, 0.3);
-      return true;
+      return 'block';
     }
     p.hits++;
     p.atkKind = 0; p.atkE = 0; p.wait = 0; p.hold = 0; p.ox = 0; p.oz = 0; p.panic = 0; p.block = 0;
@@ -584,14 +585,14 @@ export class Pedestrians {
       p.downT = 0;
       p.flinch = 0; p.angry = 0; p.grudge = 0; p.mode = 0; p.guard = 0;
       p.kvx = 0; p.kvz = 0;                    // the fall carries the body back by itself
-      return true;
+      return 'out';
     }
     p.flinch = FLINCH;
     p.kvx = dx * 2.2; p.kvz = dz * 2.2;      // knocked back half a step
     p.angry = ANGRY;
     p.mode = 1;
     p.cool = 0.15 + Math.random() * 0.35;    // and the answer comes quickly
-    return true;
+    return 'hit';
   }
 
   /** Goon behaviour: true while the goon is busy with the player (running at, hitting, or staggered). */

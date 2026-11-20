@@ -4,8 +4,8 @@
 
    tyres      each axle's slip angle (the way it points vs. the way it moves) gives a sideways force, rising with the
               angle and levelling off at the grip limit (μ × the load on the axle)
-   grip       shared between driving / braking and cornering (friction circle): spin the drive wheels, or lock the rear
-              with the hand brake, and the rear lets go (slides, drifts)
+   grip       shared between driving / braking and cornering (friction circle): spin the drive wheels and the
+              rear lets go (slides); the jump key is a hard stop on every wheel, at the grip limit
    load       moves to the front under braking (the nose dips, the front bites), to the rear under power
    engine     power-limited drive force, up to what the tyres can take; drag and rolling resistance give the top speed;
               an automatic gearbox (for the engine note)
@@ -92,7 +92,7 @@ export interface Input {
   throttle: number;
   /** -1..1, to the left */
   steer: number;
-  /** the hand brake */
+  /** the hard brake (the jump key) */
   handbrake: boolean;
   /** stand still (a parked vehicle): the foot brake on */
   hold?: boolean;
@@ -162,9 +162,10 @@ function integrate(b: Body, s: Spec, g: Geometry, input: Input, world: Surroundi
   else if (throttle < 0 && b.vx > 0.4) { brake = -throttle; throttle = 0; }          // back while rolling forward: brake
   else if (throttle > 0 && b.vx < -0.4) { brake = throttle; throttle = 0; }          // forward while rolling back: brake
   else if (throttle < 0) throttle = b.vx < -Math.min(6, s.vtop * 0.3) ? 0 : throttle * 0.35;   // reverse: gently, and not fast
-  const handbrake = input.handbrake && !s.bike;
-  if (input.handbrake && s.bike) { brake = Math.max(brake, 1); throttle = 0; }        // a bike's hand brake is just its brakes
-  b.locked = handbrake && Math.abs(b.vx) > 0.5;
+  // the jump key: a hard stop, every wheel braked as hard as its tyres hold (no lock-up, so it still steers)
+  const hard = input.handbrake;
+  if (hard) { brake = Math.max(brake, 2.5); throttle = 0; }
+  b.locked = false;
   // drive force: what the power gives at this speed, no more than the driven tyres hold
   const driven = s.drive === 'front' ? Nf : s.drive === 'rear' ? Nr : Nf + Nr;
   const cd = Math.max(0, (s.power - CRR * m * G * s.vtop) / s.vtop ** 3);
@@ -178,8 +179,8 @@ function integrate(b: Body, s: Spec, g: Geometry, input: Input, world: Surroundi
   Fxr -= dir * Fbrake * 0.35;
   if (b.locked) Fxr = -dir * mu * Nr * 0.6;                                           // the rear tyres skid
   // each axle's tyres hold only so much along
-  Fxf = clampMag(Fxf, mu * Nf);
-  Fxr = clampMag(Fxr, mu * Nr);
+  Fxf = clampMag(Fxf, mu * Nf * (hard ? 0.97 : 1));
+  Fxr = clampMag(Fxr, mu * Nr * (hard ? 0.97 : 1));
 
   // ---- across: slip angles -> sideways forces, within what is left of the grip (friction circle)
   const vxs = Math.max(Math.abs(b.vx), 0.5);
@@ -195,6 +196,7 @@ function integrate(b: Body, s: Spec, g: Geometry, input: Input, world: Surroundi
   b.slipR = Math.min(1, Math.max(b.locked ? 0.8 : 0, Math.abs(Cr * ar) / Math.max(1, capR) - 0.6));
   b.slipF = Math.max(0, b.slipF);
   b.slipR = Math.max(0, b.slipR);
+  if (hard && Math.abs(b.vx) > 4) { const sq = Math.min(0.75, 0.35 + Math.abs(b.vx) / 30); b.slipF = Math.max(b.slipF, sq); b.slipR = Math.max(b.slipR, sq); }   // the tyres squeal as it stops
 
   // ---- motion
   const cs = Math.cos(b.steer), sn = Math.sin(b.steer);

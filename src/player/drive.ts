@@ -24,7 +24,7 @@ interface Picking { car: Vehicle; t: number; need: number; x: number; z: number;
 /**
  * Ramu takes vehicles. The get-on key on foot: onto the nearest vehicle within reach; whoever was on it is thrown off
  * (one of the street crowd lands where they fall, gets up and runs). On it, the movement keys drive it (forward / back:
- * throttle, brake and reverse; left / right: steer; jump: hand brake) and the camera follows; the key again: off, beside
+ * throttle, brake and reverse; left / right: steer; jump: hard brake) and the camera follows; the key again: off, beside
  * the seat, and the vehicle rolls to a stop and stays there.
  */
 export class Driving {

@@ -293,9 +293,15 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   }
   // ... and the line for tickets at the mela's gate, roped off, a guard at the gap
   const queue = keepers ? await GateQueue.create() : null;
-  // the city behind it all: traffic far and near, horns, people talking, a building site by day, crickets at night
+  // the street's sounds: people talking (as many as are near), a shout when somebody is run over, crickets at night
   const ambience = new CityAmbience(NIGHT);
   if (params.has('debug')) (window as unknown as { __ambience: CityAmbience }).__ambience = ambience;
+  // somebody run over: a shout, as loud as it is near the camera, from its side
+  peds.onRunOver = (x, z) => {
+    const dx = x - camera.position.x, dz = z - camera.position.z, d = Math.hypot(dx, dz) || 1;
+    camera.getWorldDirection(lookDir);
+    ambience.shout(d, (-lookDir.z * dx + lookDir.x * dz) / d);
+  };
   if (queue) {
     scene.add(queue.group);
     for (const [ring, h] of queue.walls) world.addWall(ring, h, false);
@@ -463,7 +469,7 @@ void main() {
       peds.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, prey[0], prey[1], ramu.position.y);
       mela?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, prey[0], prey[1], ramu.position.y);
       traffic?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
-      ambience.update(dt, peds.near(focus.x, focus.z, 30) + (mela?.crowd.near(focus.x, focus.z, 30) ?? 0) + (queue ? 6 * +(Math.hypot(focus.x - queue.gap[0], focus.z - queue.gap[1]) < 30) : 0), traffic?.nearMoving(focus.x, focus.z, 70) ?? 0);
+      ambience.update(dt, peds.near(focus.x, focus.z, 30) + (mela?.crowd.near(focus.x, focus.z, 30) ?? 0) + (queue ? 6 * +(Math.hypot(focus.x - queue.gap[0], focus.z - queue.gap[1]) < 30) : 0));
       if (traffic && !fixed && !driving?.driving) {
         const bx = ramu.position.x, bz = ramu.position.z;
         // hit by a moving vehicle: hurt (more the faster it goes) and thrown clear
@@ -471,6 +477,7 @@ void main() {
         if (h && h.speed > 1.2) {
           health.hurt(Math.min(45, Math.round(8 + h.speed * 3.5)));
           ramu.knock(h.vx * 0.85, h.vz * 0.85, 3.2);
+          ambience.shout(0);
         }
         [ramu.position.x, ramu.position.z] = traffic.pushOut(bx, bz, 0.35);
       }

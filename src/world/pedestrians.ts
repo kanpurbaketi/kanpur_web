@@ -108,6 +108,8 @@ export class Pedestrians {
   obstacles: (() => [number, number, number][]) | null = null;
   /** a moving vehicle at a point, if one is there: its velocity (so a car can knock people over) */
   vehicleAt: ((x: number, z: number, r: number) => { vx: number; vz: number; speed: number } | null) | null = null;
+  /** somebody knocked down by a vehicle, where, how fast it was going */
+  onRunOver: ((x: number, z: number, speed: number) => void) | null = null;
   private rigged: number[] = [];     // indices of everybody (test scripts read it)
   private want = 0;
   private dt = 0;
@@ -319,7 +321,7 @@ export class Pedestrians {
       }
       if (this.vehicleAt && !p.fresh) {
         const v = this.vehicleAt(p.x, p.z, 0.4);
-        if (v && v.speed > 1.2) { this.knockDown(p, v.vx * 0.9, v.vz * 0.9, 3.6); continue; }
+        if (v && v.speed > 1.2) { this.knockDown(p, v.vx * 0.9, v.vz * 0.9, 3.6); this.onRunOver?.(p.x, p.z, v.speed); continue; }
       }
       if (p.flinch > 0 || p.block > 0) {      // reeling from a punch, or holding a block against one
         p.flinch -= dt;

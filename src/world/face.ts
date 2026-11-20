@@ -6,10 +6,35 @@ import * as THREE from 'three';
  lid slides down over the painted eye) and `angry` (brows down and together, lids narrowed, the mouth's corners down), and the landmarks they were made from (the mesh's extras: `face`).
  A Face drives them, and only when switched on: `talking` (syllables, now open, now shut, with pauses), `laughing` (wide
  and quick), `blinking` (every few seconds), `angry` (0..1: how much of a scowl, eased to). Off, the face rests and costs nothing.
- faceMaterial() darkens the parted lips in the shader (some faces have no dark line between the lips to stretch open).
+ faceMaterial() darkens the parted lips in the shader (some faces have no dark line between the lips to stretch open),
+ and sharpens the face: the body's texture is the source's cut down (its eyes, nose and lips soft), so the front of the
+ face also has a texture of its own at the source's full detail, its features drawn clearer (models/faces/<name>.jpg,
+ on a second UV map), and the shader draws the face with that, coloured to the body's texture (a look's darker skin
+ carries over). Where a look painted over the face (a beard, no moustache) the body's texture is kept.
 */
 
-interface Marks { mouth: [number, number, number]; mhw: number; eyes: [number, number][]; ehw: number }
+interface Marks {
+  mouth: [number, number, number]; mhw: number; eyes: [number, number][]; ehw: number;
+  /** the face's own texture (under models/), and how many mip levels finer it is than the body's there */
+  tex?: string; bias?: number;
+}
+
+const faceTextures = new Map<string, THREE.Texture>();
+/** the texture of a face, loaded once; `ready` set when it is there (the shader leaves it alone until then) */
+function faceTexture(url: string, ready: { value: number }): THREE.Texture {
+  let t = faceTextures.get(url);
+  if (!t) {
+    t = new THREE.TextureLoader().load(url, () => { t!.userData.ok = true; for (const r of t!.userData.waiting as { value: number }[]) r.value = 1; });
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.flipY = false;                           // glTF's UVs
+    t.anisotropy = 8;
+    t.userData.waiting = [];
+    faceTextures.set(url, t);
+  }
+  if (t.userData.ok) ready.value = 1;
+  else (t.userData.waiting as { value: number }[]).push(ready);
+  return t;
+}
 
 const smooth = (a: number, b: number, x: number) => (x <= a ? 0 : x >= b ? 1 : ((x - a) / (b - a)) ** 2 * (3 - 2 * ((x - a) / (b - a))));
 
@@ -20,6 +45,9 @@ const smooth = (a: number, b: number, x: number) => (x <= a ? 0 : x >= b ? 1 : (
 export function prepareFace(mesh: THREE.Mesh): void {
   const g = mesh.geometry, m = mesh.userData.face as Marks | undefined;
   if (!m || g.getAttribute('faceDark')) return;
+  // the face's UVs (TEXCOORD_1), under a name of their own (three's own uv1 is declared only when a map uses it)
+  const uv1 = g.getAttribute('uv1');
+  if (uv1) g.setAttribute('faceUv', uv1);
   const pos = g.getAttribute('position'), out = new Float32Array(pos.count);
   const [mx, my, front] = m.mouth;
   for (let i = 0; i < pos.count; i++) {
@@ -45,14 +73,18 @@ export function faceMaterial(mat: THREE.Material, m: Marks): void {
   ${eyes.map((s) => `e = ${s};`).join('\n  ')}
   return e;
 }`;
+  const sharp = !!m.tex;
+  const ready = { value: 0 };
+  const faceMap = sharp ? faceTexture(`models/${m.tex}`, ready) : null;
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     prev.call(mat, sh, r);
+    if (sharp) Object.assign(sh.uniforms, { faceMap: { value: faceMap }, faceOn: ready });
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float faceDark;\nvarying float vFaceDark;\nvarying float vOpen;\nvarying vec3 vRest;')
+      .replace('#include <common>', `#include <common>\nattribute float faceDark;\nvarying float vFaceDark;\nvarying float vOpen;\nvarying vec3 vRest;${sharp ? '\nattribute vec2 faceUv;\nvarying vec2 vFaceUv;' : ''}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
   vRest = position;
-  vFaceDark = faceDark;
+  vFaceDark = faceDark;${sharp ? '\n  vFaceUv = faceUv;' : ''}
 #if defined( USE_MORPHTARGETS ) && !defined( USE_INSTANCING_MORPH )
   vOpen = morphTargetInfluences[ 0 ];
 #else
@@ -66,8 +98,32 @@ varying float vOpen;
 varying vec3 vRest;
 float mouthDark() { return smoothstep( 0.04, 0.3, vFaceDark ) * smoothstep( 0.02, 0.18, vOpen ); }
 ${eyeMask}`)
+      .replace('#include <map_pars_fragment>', `#include <map_pars_fragment>${sharp ? `
+uniform sampler2D faceMap;
+uniform float faceOn;
+varying vec2 vFaceUv;
+// the face from its own texture, coloured to the body's: the two compared blurred well past the features, so a look's
+// skin tone carries over; and where a look repainted the face (a beard, a shave), its colour is not what the face
+// texture blurs to at the body's detail: the body's kept there
+const float FACE_BIAS = ${f(m.bias ?? 2)};
+float lodOf( vec2 uv, sampler2D t ) {
+  vec2 tc = uv * vec2( textureSize( t, 0 ) );
+  return log2( max( max( length( dFdx( tc ) ), length( dFdy( tc ) ) ), 1e-6 ) );
+}
+vec3 faceDetail( vec3 base ) {
+  if ( faceOn < 0.5 || vFaceUv.x < -0.5 ) return base;
+  vec3 hi = texture( faceMap, vFaceUv ).rgb;
+  vec3 lo = textureLod( faceMap, vFaceUv, max( lodOf( vFaceUv, faceMap ), FACE_BIAS ) ).rgb;
+  float same = 1.0 - smoothstep( 0.05, 0.14, length( sqrt( max( lo, 0.0 ) ) - sqrt( max( base, 0.0 ) ) ) );
+  vec3 tint = vec3( 1.0 );
+#ifdef USE_MAP
+  float L = max( lodOf( vMapUv, map ), 0.0 ) + 1.5;
+  tint = clamp( textureLod( map, vMapUv, L ).rgb / max( textureLod( faceMap, vFaceUv, L + FACE_BIAS ).rgb, vec3( 0.003 ) ), 0.5, 2.0 );
+#endif
+  return mix( base, hi * tint, same );
+}` : ''}`)
       // the eyes: the painted texture is soft and greyed; more contrast (dark iris and pupil, clearer white), a little colour, and wet
-      .replace('#include <map_fragment>', `#include <map_fragment>
+      .replace('#include <map_fragment>', `#include <map_fragment>${sharp ? '\n  diffuseColor.rgb = faceDetail( diffuseColor.rgb );' : ''}
   float faceE = eyeMask( vRest );
   if ( faceE > 0.0 ) {
     vec3 g = pow( max( diffuseColor.rgb, 0.0 ), vec3( 1.0 / 2.2 ) );
@@ -84,7 +140,7 @@ ${eyeMask}`)
   };
   const key = mat.customProgramCacheKey.bind(mat);
   const marks = m.eyes.flat().map(f).join(',');
-  mat.customProgramCacheKey = () => key() + '|face' + marks;
+  mat.customProgramCacheKey = () => key() + '|face' + marks + (m.tex ?? '');
   mat.needsUpdate = true;
 }
 

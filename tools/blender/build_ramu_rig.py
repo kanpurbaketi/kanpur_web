@@ -74,18 +74,26 @@ img = bpy.data.images[0]
 img.colorspace_settings.name = 'Non-Color'          # edit the stored (sRGB-encoded) values as they are
 import numpy as np
 W0, H0 = img.size
-px = np.array(img.pixels[:], dtype=np.float32).reshape(H0, W0, 4)
+FULL = np.array(img.pixels[:], dtype=np.float32).reshape(H0, W0, 4)     # the source at its own size (the face's, below)
+
+
+def toned(px, report=False):
+    """the colour edit, on (n, 4) pixels: everything a little lighter, skin as it is"""
+    r, g, b = px[:, 0], px[:, 1], px[:, 2]
+    # skin: warm orange-brown (green about 0.55-0.8 of red, blue clearly lower); the khaki satchel is yellower, the shirt bluer
+    skin = np.clip((r - b - 0.05) / 0.12, 0, 1) * np.clip((0.82 - g / np.maximum(r, 1e-3)) / 0.08, 0, 1) * (r > g) * (g > b)
+    rgb = px[:, :3].copy()
+    lifted = np.power(rgb, BODY_LIFT)
+    fair = np.power(rgb, SKIN_LIFT)
+    px[:, :3] = np.clip(lifted * (1 - skin[:, None]) + fair * skin[:, None], 0, 1)
+    w = skin > 0.5
+    if report:
+        print('RIG skin pixels', int(w.sum()), 'mean before', rgb[w].mean(axis=0).round(3), 'after', px[w, :3].mean(axis=0).round(3))
+    return px
+
+
 f = max(1, W0 // TEX)                                # box-filter down to TEX x TEX
-px = px.reshape(H0 // f, f, W0 // f, f, 4).mean(axis=(1, 3)).reshape(-1, 4)
-r, g, b = px[:, 0], px[:, 1], px[:, 2]
-# skin: warm orange-brown (green about 0.55-0.8 of red, blue clearly lower); the khaki satchel is yellower, the shirt bluer
-skin = np.clip((r - b - 0.05) / 0.12, 0, 1) * np.clip((0.82 - g / np.maximum(r, 1e-3)) / 0.08, 0, 1) * (r > g) * (g > b)
-rgb = px[:, :3].copy()
-lifted = np.power(rgb, BODY_LIFT)
-fair = np.power(rgb, SKIN_LIFT)
-px[:, :3] = np.clip(lifted * (1 - skin[:, None]) + fair * skin[:, None], 0, 1)
-w = skin > 0.5
-print('RIG skin pixels', int(w.sum()), 'mean before', rgb[w].mean(axis=0).round(3), 'after', px[w, :3].mean(axis=0).round(3))
+px = toned(FULL.reshape(H0 // f, f, W0 // f, f, 4).mean(axis=(1, 3)).reshape(-1, 4), True)
 # write the edited pixels to a file and load that: the exporter re-reads images from their files
 import tempfile
 edited = bpy.data.images.new('ramu_tex_edit', TEX, TEX, alpha=False)
@@ -220,7 +228,137 @@ def build_face():
     mesh['face'] = {'mouth': [mx, mz, -(cy - 0.02)], 'mhw': mhw, 'eyes': [[ex, ez] for ex, ez in eyes], 'ehw': ehw}
 
 
+FACE_TEX = 1024        # px, the face texture (public/models/faces/<char>.jpg)
+
+
+def build_face_texture():
+    """
+    The face sharp: the body's texture is the source's cut down 4 times (Ramu's twice), which leaves the eyes, nose and
+    lips soft. The front of the face gets a texture of its own at the source's full detail: a second UV map (`face`,
+    TEXCOORD_1: a flat projection from the front, -1 everywhere else) and public/models/faces/<char>.jpg, baked from the
+    source through the body's own UVs, its features drawn clearer. The game draws the face with it (src/world/face.ts),
+    coloured to the body's texture, and keeps the body's texture where a look painted over the face (a beard, no
+    moustache).
+    """
+    if not mesh.get('face'):
+        return
+    m = mesh['face'].to_dict()
+    me = mesh.data
+    eyes = [tuple(e) for e in m['eyes']]
+    ehw, mz, yfront = m['ehw'], m['mouth'][1], -m['mouth'][2]
+    xc = sum(e[0] for e in eyes) / len(eyes)
+    ez = sum(e[1] for e in eyes) / len(eyes)
+    half = max(abs(eyes[1][0] - eyes[0][0]) / 2 + ehw * 3.4, (ez + 0.075 - (mz - 0.08)) / 2)
+    zc = (ez + 0.075 + mz - 0.08) / 2
+    x0, z0, S = xc - half, zc - half, 2 * half                   # the square the face is projected onto
+    N = FACE_TEX
+    me.calc_loop_triangles()
+    src = me.uv_layers['src'] if 'src' in me.uv_layers else me.uv_layers[0]
+    src.name = 'src'
+    face_uv = me.uv_layers.new(name='face')
+    for l in face_uv.data:
+        l.uv = (-1.0, -1.0)
+    me.uv_layers.active = src
+    src.active_render = True
+    col = np.zeros((N, N, 3), np.float32)
+    depth = np.full((N, N), 1e9, np.float32)
+    done = np.zeros((N, N), bool)
+    uv_area = world_area = 0.0
+    used = 0
+    for t in me.loop_triangles:
+        cs = [me.vertices[i].co for i in t.vertices]
+        c = (cs[0] + cs[1] + cs[2]) / 3
+        if not (x0 < c.x < x0 + S and z0 < c.z < z0 + S) or any(p.y > yfront for p in cs) or t.normal.y > -0.35:
+            continue                                              # outside, behind, or not facing forward (no detail)
+        used += 1
+        for li in t.loops:
+            co = me.vertices[me.loops[li].vertex_index].co
+            face_uv.data[li].uv = ((co.x - x0) / S, (co.z - z0) / S)
+        P = np.array([((p.x - x0) / S * N, (p.z - z0) / S * N) for p in cs])
+        U = np.array([src.data[li].uv[:] for li in t.loops])
+        D = np.array([p.y for p in cs])
+        uv_area += abs(np.cross(U[1] - U[0], U[2] - U[0])) / 2
+        world_area += t.area
+        lo = np.maximum(np.floor(P.min(0)).astype(int), 0); hi = np.minimum(np.ceil(P.max(0)).astype(int), N - 1)
+        if (hi < lo).any():
+            continue
+        xs, ys = np.meshgrid(np.arange(lo[0], hi[0] + 1) + 0.5, np.arange(lo[1], hi[1] + 1) + 0.5)
+        d = (P[1, 1] - P[2, 1]) * (P[0, 0] - P[2, 0]) + (P[2, 0] - P[1, 0]) * (P[0, 1] - P[2, 1])
+        if abs(d) < 1e-9:
+            continue
+        a = ((P[1, 1] - P[2, 1]) * (xs - P[2, 0]) + (P[2, 0] - P[1, 0]) * (ys - P[2, 1])) / d
+        b = ((P[2, 1] - P[0, 1]) * (xs - P[2, 0]) + (P[0, 0] - P[2, 0]) * (ys - P[2, 1])) / d
+        g = 1 - a - b
+        inside = (a >= -1e-4) & (b >= -1e-4) & (g >= -1e-4)
+        if not inside.any():
+            continue
+        dep = a * D[0] + b * D[1] + g * D[2]
+        iy, ix = (ys[inside] - 0.5).astype(int), (xs[inside] - 0.5).astype(int)
+        nearer = dep[inside] < depth[iy, ix]                      # the front-most surface (the nose over its underside)
+        iy, ix = iy[nearer], ix[nearer]
+        aa, bb, gg = a[inside][nearer], b[inside][nearer], g[inside][nearer]
+        u = aa * U[0, 0] + bb * U[1, 0] + gg * U[2, 0]
+        v = aa * U[0, 1] + bb * U[1, 1] + gg * U[2, 1]
+        # bilinear from the source
+        fx, fy = np.clip(u * W0 - 0.5, 0, W0 - 1.001), np.clip(v * H0 - 0.5, 0, H0 - 1.001)
+        jx, jy = fx.astype(int), fy.astype(int)
+        tx, ty = (fx - jx)[:, None], (fy - jy)[:, None]
+        s = (FULL[jy, jx, :3] * (1 - tx) * (1 - ty) + FULL[jy, jx + 1, :3] * tx * (1 - ty)
+             + FULL[jy + 1, jx, :3] * (1 - tx) * ty + FULL[jy + 1, jx + 1, :3] * tx * ty)
+        col[iy, ix] = s
+        depth[iy, ix] = dep[inside][nearer]
+        done[iy, ix] = True
+    # the colour edit the body's texture had, spread past the edges (so the game's blurred lookups and mipmaps do not
+    # pull in black)
+    col = toned(np.concatenate([col.reshape(-1, 3), np.ones((N * N, 1), np.float32)], 1))[:, :3].reshape(N, N, 3)
+
+    def blur(x, r=2, n=3):
+        for _ in range(n):
+            for ax in (0, 1):
+                c = np.cumsum(np.pad(x, [(r + 1, r) if i == ax else (0, 0) for i in range(x.ndim)], mode='edge'), axis=ax)
+                x = (np.take(c, range(2 * r + 1, c.shape[ax]), axis=ax) - np.take(c, range(0, c.shape[ax] - 2 * r - 1), axis=ax)) / (2 * r + 1)
+        return x
+    filled = done.copy()
+    for _ in range(40):
+        if filled.all():
+            break
+        acc = np.zeros_like(col); cnt = np.zeros((N, N, 1), np.float32)
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            acc += np.roll(col * filled[..., None], (dy, dx), (0, 1)); cnt += np.roll(filled, (dy, dx), (0, 1))[..., None]
+        grow = ~filled & (cnt[..., 0] > 0)
+        col[grow] = acc[grow] / cnt[grow]
+        filled |= grow
+    col[~filled] = col[filled].mean(0)
+    # the features drawn clearer: local contrast at the scale of the eyes, lids, nostrils and the line of the lips
+    # (the source is soft there), and the finest detail sharper; both fading out toward the edge of what was baked, so
+    # it meets the body's texture without a seam
+    enh = col + 0.55 * (col - blur(col, 4, 3)) + 0.7 * (col - blur(col, 1, 2))
+    inner = done.astype(np.float32)
+    for _ in range(3):
+        inner = blur(inner, 4, 1)
+    feather = np.clip((inner - 0.5) * 2.2, 0, 1)[..., None]       # 0 at the edge .. 1 some 10 px in
+    col = np.clip(col + feather * (enh - col), 0, 1)
+    os.makedirs(os.path.join(OUT, 'faces'), exist_ok=True)
+    path = os.path.join(OUT, 'faces', CHAR + '.jpg')
+    out = bpy.data.images.new(CHAR + '_face', N, N, alpha=False)
+    out.colorspace_settings.name = 'Non-Color'                    # the values are sRGB already, as stored
+    out.pixels.foreach_set(np.concatenate([col, np.ones((N, N, 1), np.float32)], 2).ravel())
+    out.filepath_raw = path
+    out.file_format = 'JPEG'
+    bpy.context.scene.render.image_settings.quality = 92
+    out.save()
+    bpy.data.images.remove(out)
+    # how much finer it is than the body's texture there: the game blurs it by this many mip levels to compare
+    body = math.sqrt(uv_area * TEX * TEX / max(world_area, 1e-9))
+    bias = math.log2(N / S / body)
+    m['tex'] = 'faces/' + CHAR + '.jpg'
+    m['bias'] = round(bias, 2)
+    mesh['face'] = m
+    print(f'RIG face texture: {used} triangles, {S:.3f} m square at {N} px, {N / S / body:.1f}x the body\'s detail, {path}')
+
+
 build_face()
+build_face_texture()
 if '--face-preview' in argv:          # renders of the head with the mouth and eyes shut and open, then stop (no export)
     FP = argv[argv.index('--face-preview') + 1]
     sc = bpy.context.scene

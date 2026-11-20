@@ -66,6 +66,44 @@ BARS = {
 }
 
 
+# models whose wheels are cut by pieces (the mesh's connected parts) rather than face by face: a piece mostly inside
+# the wheel goes with it whole (all of the tyre, not 280 degrees of it with the rest left standing on the frame), and a
+# piece from the axle out past the hub that does not go round (a fork blade, a stay) stays with the frame
+WHOLE = {'cycle', 'rickshaw'}
+
+
+def whole_pieces(bm, inside, hub, r, w):
+    ids = {f.index for f in inside}
+    seen, out = set(), []
+    for f0 in bm.faces:
+        if f0.index in seen:
+            continue
+        piece, stack = [], [f0]
+        seen.add(f0.index)
+        while stack:
+            f = stack.pop()
+            piece.append(f)
+            for e in f.edges:
+                for g in e.link_faces:
+                    if g.index not in seen:
+                        seen.add(g.index)
+                        stack.append(g)
+        n_in = sum(1 for f in piece if f.index in ids)
+        if n_in == 0:
+            continue
+        vs = {v for f in piece for v in f.verts}
+        rs = [math.hypot(v.co.y - hub.y, v.co.z - hub.z) for v in vs]
+        xs = [abs(v.co.x - hub.x) for v in vs]
+        angles = {int((math.atan2(v.co.z - hub.z, v.co.y - hub.y) + math.pi) / (2 * math.pi) * 36) for v in vs}
+        if n_in * 2 < len(piece) or max(rs) > r * 1.15 or max(xs) > w / 2 + 0.03:
+            out += [f for f in piece if f.index in ids]          # mostly outside: only its faces inside, as before
+            continue
+        if min(rs) < r * 0.09 and max(rs) > r * 0.4 and len(angles) * 10 < 120:
+            continue                                             # from the axle outward, not round: the frame's
+        out += piece
+    return out
+
+
 def B(x, y, z):
     """game frame -> Blender"""
     return Vector((x, -z, y))
@@ -105,6 +143,8 @@ def run(name):
         R2 = (r * CUT.get(name, 1.06)) ** 2
         if mode == 'cut':
             inside = [f for f in bm.faces if all(abs(v.co.x - hub.x) < w / 2 and (v.co.y - hub.y) ** 2 + (v.co.z - hub.z) ** 2 < R2 for v in f.verts)]
+            if name in WHOLE:
+                inside = whole_pieces(bm, inside, hub, r, w)
         else:       # the lump goes: every face centred in (a little more than) the wheel; the modelled wheel fills the place
             def gone(f):
                 c = f.calc_center_median()
@@ -148,6 +188,31 @@ def run(name):
         bm.faces.ensure_lookup_table()
         # Blender: x, y = -z, z = y
         inside = [f for f in bm.faces if all(abs(v.co.x) < hw and y0 < v.co.z < y1 and z0 < -v.co.y < z1 for v in f.verts)]
+        # the fork (and what it carries: a mudguard, a lamp): whole pieces of the mesh between the steering head and
+        # the front wheel, that turn with the bars (the game turns the front wheel about the bars' pivot too)
+        fw = next(((x, z, r) for label, x, z, r, w, steer, mode in WHEELS[name] if steer), None)
+        if fw:
+            ids = {f.index for f in inside}
+            fx, fz, fr = fw
+            seen = set(ids)
+            for f0 in bm.faces:
+                if f0.index in seen:
+                    continue
+                piece, stack = [], [f0]
+                seen.add(f0.index)
+                while stack:
+                    f = stack.pop()
+                    piece.append(f)
+                    for e in f.edges:
+                        for g in e.link_faces:
+                            if g.index not in seen:
+                                seen.add(g.index)
+                                stack.append(g)
+                # in front of the steering line (the pivot down to the hub), less a margin; not behind it (the engine)
+                zline = lambda y: piv[2] + (fz - piv[2]) * (piv[1] - y) / (piv[1] - fr)
+                if all(abs(v.co.x - fx) < 0.12 and zline(v.co.z) - 0.12 < -v.co.y < fz + fr * 1.15 and v.co.z < piv[1] + 0.02
+                       for f in piece for v in f.verts):
+                    inside += piece
         pv = B(*piv)
         wb = bm.copy()
         wb.faces.ensure_lookup_table()

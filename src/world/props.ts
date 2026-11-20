@@ -1051,11 +1051,18 @@ export class Traffic {
         if (col) p.setColorAt(i, col[c.slot]);
       });
       // the wheels: at their hubs, the front ones steered, all rolled by the distance gone
-      this.wheels[c.kind].forEach((w, wi) => {
+      const ws = this.wheels[c.kind], bars = ws.find((w) => w.r === 0);
+      ws.forEach((w, wi) => {
         const parts = dr.wheels[wi];
         if (!parts.length) return;
-        WM.copy(w.r > 0 ? M0 : M).multiply(WT.makeTranslation(w.hub.x, w.hub.y, w.hub.z));
-        if (w.steer && c.steer) WM.multiply(WT.makeRotationY(c.steer));
+        if (w.steer && c.steer && bars && w.r > 0) {
+          // a two-wheeler's front wheel turns with the bars and the fork, about their pivot
+          WM.copy(M).multiply(WT.makeTranslation(bars.hub.x, bars.hub.y, bars.hub.z)).multiply(WT.makeRotationY(c.steer))
+            .multiply(WT.makeTranslation(w.hub.x - bars.hub.x, w.hub.y - bars.hub.y, w.hub.z - bars.hub.z));
+        } else {
+          WM.copy(w.r > 0 ? M0 : M).multiply(WT.makeTranslation(w.hub.x, w.hub.y, w.hub.z));
+          if (w.steer && c.steer) WM.multiply(WT.makeRotationY(c.steer));
+        }
         if (w.r > 0) WM.multiply(WT.makeRotationX(c.dist / w.r));      // (a handlebar, r 0, only steers)
         for (const q of parts) {
           q.mesh.setMatrixAt(i, WM);

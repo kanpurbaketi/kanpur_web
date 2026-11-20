@@ -122,8 +122,10 @@ function load(name: string): Promise<Loaded> {
       if (tpl) for (const w of wheels) {
         if (w.r <= 0) continue;                                      // the handlebar
         const right = w.hub.x < -0.05;
-        w.parts = fitWheel(tpl.near, tpl, w.r, w.w, right, w.name);
-        if (w.made) w.far = fitWheel(tpl.far, tpl, w.r, w.w, right, w.name);
+        // a motorbike's tyres fat (the model's own were cut as thin as a cycle's): at least 0.55 of the radius across
+        const wide = kind === 'bike' ? Math.max(w.w, w.r * 0.55) : w.w;
+        w.parts = fitWheel(tpl.near, tpl, w.r, wide, right, w.name);
+        if (w.made) w.far = fitWheel(tpl.far, tpl, w.r, wide, right, w.name);
         w.made = true;
         swapped.add(w.name);
       }

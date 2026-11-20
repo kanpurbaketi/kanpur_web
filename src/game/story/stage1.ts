@@ -1,5 +1,7 @@
 import type { Ramu } from '../../player/ramu';
-import { GATE, inMela } from '../../world/melaSite';
+import * as THREE from 'three';
+import type { GateQueue } from '../../world/gateQueue';
+import { GATE, inMela, TEAR } from '../../world/melaSite';
 import { STATUE } from '../../world/stage1Site';
 import type { CartKeepers, Keeper } from '../../world/cartKeepers';
 import type { Director } from './director';
@@ -11,7 +13,11 @@ import { playSfx } from './sfx';
    mission 1  find something to eat: through the Shivaji Putla gate, down the park road, right at the Nagar Nigam, to the carts
    beats 3-4  at whichever cart he walks up to: "Bhaiya, ek samosa chaat lagao", the keeper turns him away ("Daud jao..."),
               Ramu scowls, throws up his hands and turns away; any keeper he goes back to after that: "Pehle udhaar chukao!"
-   mission 2  the mela's main gate (for now going in completes the stage; the queue and the guard come next)
+   mission 2  the mela's main gate: a line for tickets, roped off, a guard at the gap; at its end, E to stand in line
+   beats 9-12 in line; a cut and he is at the front: "Ticket??" / "Haan laaye the, kahaan rakh diya..." (his pockets);
+              the guard shoves him aside with one hand: "Arre bilkul guru, dhoondh lo aaram se, mil jaye toh aa jaana."
+              Back at the gap later: "Ticket mila? Nahi? Toh side ho jao."
+   mission 3  another way in (for now: in at all, which can only be through the torn sheet, ends the stage)
  hooks.step(n) is called as each mission is done (recorded for the admin), hooks.done() at the end.
 */
 
@@ -19,7 +25,7 @@ export interface StoryHooks { step(n: number): void; done(): void }
 
 const CART_R = 4.5;
 
-export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, hooks: StoryHooks): Promise<void> {
+export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queue: GateQueue, hooks: StoryHooks): Promise<void> {
   // ---- beat 1: hungry at the chowk ----
   await d.scene(async () => {
     await d.wait(0.3);
@@ -53,10 +59,105 @@ export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, hook
   hooks.step(1);
   void refusals(d, ramu, keepers);
 
-  // ---- mission 2: the mela's main gate (for now in at it ends the stage) ----
-  await d.mission(2, 'm.s1.gate', [{ at: [GATE.x, GATE.z], hint: 'm.s1.gate.h1', done: inMela }]);
+  // ---- mission 2: the mela's main gate, and the line ----
+  const back = () => { const [x, z] = queue.backSpot(); return Math.hypot(ramu.position.x - x, ramu.position.z - z); };
+  let joined = false;
+  d.prompt = { key: 'act.line', when: () => back() < 2.2, act: () => { joined = true; } };
+  const [bx, bz] = queue.backSpot();
+  await d.mission(2, 'm.s1.gate', [
+    { at: [bx, bz], hint: 'm.s1.gate.h1', done: () => back() < 2.2 || joined },
+    { at: [bx, bz], hint: 'm.s1.gate.h2', done: () => joined },
+  ]);
+  d.prompt = null;
+  await ticket(d, ramu, queue);
   hooks.step(2);
+  void turnedBack(d, ramu, queue);
+
+  // ---- mission 3: another way in (for now: in at all) ----
+  await d.mission(3, 'm.s1.way', [{ at: [TEAR.x, TEAR.z], hint: 'm.s1.way.h1', radius: 40, done: inMela }]);
+  hooks.step(3);
   hooks.done();
+}
+
+const v3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+
+/** beats 9-12: in line, at the front, no ticket, pushed aside */
+async function ticket(d: Director, ramu: Ramu, q: GateQueue): Promise<void> {
+  const guard = q.guard, rest = guard.facing;
+  let aside: [number, number] = [0, 0];
+  await d.scene(async () => {
+    // he steps in at the end of the line, facing the gate
+    const [bx, bz] = q.backSpot();
+    q.hold = true;
+    ramu.standAt(bx, bz);
+    ramu.faceTowards(bx, bz - 5);
+    d.shot({ pos: v3(bx + 3.4, 1.75, bz + 0.6), look: v3(bx - 0.2, 1.25, bz - 2.2), fov: 48 }, 0);
+    await d.wait(2.2);
+    // a cut: the line has moved on, he is at the front
+    const [fx, fz] = q.ramuFirst();
+    ramu.standAt(fx, fz);
+    ramu.faceTowards(guard.position.x, guard.position.z);
+    guard.faceTowards(fx, fz);
+    const gp = guard.position;
+    d.shot({ pos: v3(fx + 2.8, 1.7, fz + 1.6), look: v3((fx + gp.x) / 2, 1.35, (fz + gp.z) / 2), fov: 42 }, 0);
+    await d.wait(1.2);
+    // (from a little above: his eyes are under the cap's brim)
+    const g = d.front(guard, { dist: 1.0, side: 0.5, up: 0.16, drop: -0.02, fov: 36 });
+    d.shot(g, 0, d.pushIn(g, 0.02));
+    await d.wait(0.3);
+    await d.say('guard', guard.face, 'ticket');
+    // his pockets
+    // his pockets: from the side, wide enough for the search (the clip turns him about)
+    d.shot({ pos: v3(fx + 2.3, 1.45, fz + 0.5), look: v3(fx, 1.1, fz), fov: 40 }, 0);
+    const search = ramu.gesture('pockets');
+    await d.wait(0.3);
+    await d.say('ramu', ramu.face, 'pockets');
+    await d.wait(Math.max(0, Math.min(1.5, search - 3)));
+    // the shove: one hand, Ramu staggers out of the line
+    ramu.stopGesture();
+    const dx = fx - gp.x, dz = fz - gp.z, dl = Math.hypot(dx, dz) || 1;
+    aside = [fx + (dx / dl) * 2.1, fz + (dz / dl) * 2.1];
+    // from inside the gate, over the rope: the guard's arm, Ramu sent out of the line behind him
+    d.shot({ pos: v3(fx + 1.1, 1.75, GATE.z - 2.6), look: v3(fx + 0.4, 1.05, fz + 0.6), fov: 48 }, 0);
+    guard.gesture('push_one', 'shove', 1.6);
+    await d.wait(0.55);
+    ramu.gesture('shove');
+    const sx = fx, sz = fz;
+    await d.tween(0.75, (k) => {
+      const e = 1 - (1 - k) * (1 - k);
+      ramu.standAt(sx + (aside[0] - sx) * e, sz + (aside[1] - sz) * e);
+    });
+    await d.wait(0.3);
+    guard.faceTowards(aside[0], aside[1]);
+    const g2 = d.front(guard, { dist: 1.2, side: 0.45, up: 0.16, drop: -0.02, fov: 38 });
+    d.shot(g2, 0.5);
+    await d.say('guard', guard.face, 'aside');
+    if (ramu.face) ramu.face.angry = 1.2;
+    const r2 = d.front(ramu, { dist: 1.1, side: 0.35, up: 0.02, drop: -0.05, fov: 36 });
+    d.shot(r2, 0);
+    await d.wait(1.4);
+  });
+  // watched or skipped: Ramu out of the line, the line going on, the guard back to it
+  ramu.stopGesture();
+  ramu.standAt(aside[0], aside[1]);
+  q.release();
+  guard.idle();
+  guard.turn(rest);
+  ramu.faceTowards(ramu.position.x, ramu.position.z - 5);   // facing the gate he cannot go through, the camera behind him
+  ramu.yaw = ramu.facing;
+  void d.wait(2.5).then(() => { if (ramu.face) ramu.face.angry = 0; });
+}
+
+/** back at the gap without a ticket, the guard has a word in passing */
+async function turnedBack(d: Director, ramu: Ramu, q: GateQueue): Promise<void> {
+  const near = () => { const [x, z] = q.gap; return Math.hypot(ramu.position.x - x, ramu.position.z - z) < 1.9; };
+  for (;;) {
+    await d.until(() => !near());
+    await d.until(() => near() && !d.locked);
+    q.guard.faceTowards(ramu.position.x, ramu.position.z);
+    await d.say('guard', q.guard.face, 'again');
+    q.guard.turn(q.guard.towards(...q.slot(0)));
+  }
 }
 
 async function samosa(d: Director, ramu: Ramu, k: Keeper): Promise<void> {
@@ -135,4 +236,4 @@ async function refusals(d: Director, ramu: Ramu, keepers: CartKeepers): Promise<
 }
 
 /** how many missions the introduction lists */
-export const STAGE1_STEPS = 2;
+export const STAGE1_STEPS = 3;

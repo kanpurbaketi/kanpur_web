@@ -53,6 +53,8 @@ export class Driving {
   /** a line shown in the tip for a while (the owner shouting), and how long it stays */
   private shout = '';
   private shoutT = 0;
+  /** the story's own use of the key (stand in line): its line in the tip instead, on foot (main.ts) */
+  storyTip: (() => string | null) | null = null;
 
   constructor(scene: THREE.Scene, private traffic: Traffic, private ramu: Ramu, private peds: Pedestrians, private key: () => string) {
     ramu.onUse = () => this.use();
@@ -235,6 +237,7 @@ export class Driving {
       const k = this.pick, f = k.t / k.need, bar = 20;
       text = t('drive.picking', { bar: '█'.repeat(Math.round(f * bar)) + '░'.repeat(bar - Math.round(f * bar)), s: Math.ceil(k.need - k.t), key: this.key() });
     }
+    else if (this.storyTip?.()) text = this.storyTip()!;
     else {
       const p = this.ramu.position;
       const c = !this.ramu.knockedOut && p.y < 0.6 ? this.traffic.nearest(p.x, p.z, REACH) : null;

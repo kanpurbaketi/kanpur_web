@@ -36,6 +36,7 @@ import { goFree, introCard, loadingFailed, loadingScreen, toast, UserChip } from
 import { Director } from './game/story/director';
 import { stage1, STAGE1_STEPS } from './game/story/stage1';
 import { CartKeepers } from './world/cartKeepers';
+import { GateQueue } from './world/gateQueue';
 import { onLang, t, tk } from './i18n';
 
 /*
@@ -288,6 +289,14 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
     for (const [x, z, r] of keepers.posts) world.addPost(x, z, r, 1.8);
     if (params.has('debug')) (window as unknown as { __keepers: CartKeepers }).__keepers = keepers;
   }
+  // ... and the line for tickets at the mela's gate, roped off, a guard at the gap
+  const queue = keepers ? await GateQueue.create() : null;
+  if (queue) {
+    scene.add(queue.group);
+    for (const [ring, h] of queue.walls) world.addWall(ring, h, false);
+    for (const [x, z, r, h] of queue.posts) world.addPost(x, z, r, h);
+    if (params.has('debug')) (window as unknown as { __queue: GateQueue }).__queue = queue;
+  }
   if (params.has('debug')) (window as unknown as { __vendors: Vendors }).__vendors = vendors;   // for test scripts
   console.log('props', { stalls: stalls.posts.length, traffic: !!traffic });
   ramu.yaw = spawnMode === 'shivaji' ? Math.PI                                    // facing south, through the gate
@@ -319,6 +328,17 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   if (traffic) { traffic.resolve = (x, z, r) => world.resolve(x, z, r, 0); traffic.crosses = (x0, z0, x1, z1) => world.crosses(x0, z0, x1, z1); }
   const driving = traffic && !fixed ? new Driving(scene, traffic, ramu, peds, () => label(controls.get('use')[0] || controls.get('use')[1])) : null;
   if (driving && params.has('debug')) (window as unknown as { __driving: Driving }).__driving = driving;
+  // the story's offers on the use key (E — stand in line) come before the vehicles'
+  let storyTip: (() => string | null) | null = null;
+  if (director) {
+    const useKey = () => label(controls.get('use')[0] || controls.get('use')[1]);
+    const prev = ramu.onUse;
+    ramu.onUse = () => { if (!director.use()) prev?.(); };
+    storyTip = () => director.promptText(useKey());
+    if (driving) { driving.storyTip = storyTip; storyTip = null; }
+  }
+  const tipEl = document.getElementById('use-tip');
+  let tipShown = '';
 
   const debugEl = document.getElementById('debug')!;
   const showDebug = params.has('debug');
@@ -398,13 +418,19 @@ void main() {
       ramu.enabled = !paused && !health.knockedOut && !director?.locked;
       if (driving && health.knockedOut) driving.drop();
       if (driving && !paused) driving.update(dt);
+      if (storyTip && tipEl) {                            // no vehicles (?traffic=0): the story's tip on its own
+        const text = storyTip() ?? '';
+        if (text !== tipShown) { tipShown = text; tipEl.textContent = text; tipEl.style.display = text ? 'block' : 'none'; }
+      }
       ramu.update(dt);
       if (director && !paused) director.update(dt);
-      if (keepers && !paused) keepers.update(dt, ramu.position.x, ramu.position.z);     // the story: after Ramu, so a cutscene's camera has the last word
+      if (keepers && !paused) keepers.update(dt, ramu.position.x, ramu.position.z);
+      if (queue && !paused) queue.update(dt, ramu.position.x, ramu.position.z);     // the story: after Ramu, so a cutscene's camera has the last word
       if (!driving?.driving && !health.knockedOut) {
         // he cannot walk through people: the street crowd and the mela's
         const p = ramu.position;
         [p.x, p.z] = peds.pushOut(p.x, p.z, 0.33, p.y);
+        if (queue) [p.x, p.z] = queue.pushOut(p.x, p.z, 0.33);
         if (mela) [p.x, p.z] = mela.crowd.pushOut(p.x, p.z, 0.33, p.y);
         [p.x, p.z] = world.resolve(p.x, p.z, 0.33, p.y);   // ... nor be pushed by them into a wall
       }
@@ -462,7 +488,7 @@ void main() {
       paused = true;
       await introCard(play.stage.n, STAGE1_STEPS);
       paused = false;
-      void stage1(director, ramu, keepers, {
+      void stage1(director, ramu, keepers, queue!, {
         step: (n) => { step = n; if (play.run !== null) account.runBeat(play.run, run.played, runStats()); },
         done: finish,
       });

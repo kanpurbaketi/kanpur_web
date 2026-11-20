@@ -14,7 +14,9 @@ import { CutCam, type Shot } from './cutcam';
    until(test)       until the player does something (Skip does not touch these)
    mission(...)      the box at the top: the mission, the hint for the next place on the way, how far it is;
                      resolves when the last place is reached
-   shot / closeUp    the cutscene camera
+   tween(s, f)       f(0..1) every frame for s seconds (somebody pushed aside): straight to f(1) when skipped
+   prompt            an offer on the use key (E): its line in the tip while `when()` holds; act() on the key
+   shot / front      the cutscene camera
  Skip ends a scene at once: every wait in it resolves straight away, so whatever the scene does after its waits (where
  people end up, what is set) still happens. update(dt) runs every frame after Ramu's, while the game is not paused.
 */
@@ -52,6 +54,9 @@ export class Director {
   private voice: HTMLAudioElement | null = null;
   private v = new THREE.Vector3();
   private now: { textKey: string; steps: Waypoint[]; i: number } | null = null;
+  private tweens: { t: number; secs: number; f: (k: number) => void; done: () => void }[] = [];
+  /** an offer on the use key, while `when()` holds and no scene runs (`key`: its i18n line, with {key}) */
+  prompt: { key: string; when: () => boolean; act: () => void } | null = null;
 
   constructor(camera: THREE.PerspectiveCamera, private ramu: Actorish & { cinematic: boolean }, private stage: number) {
     this.cam = new CutCam(camera, ramu);
@@ -62,6 +67,11 @@ export class Director {
   update(dt: number): void {
     for (const w of [...this.timers]) if ((w.t -= dt) <= 0) { this.timers.splice(this.timers.indexOf(w), 1); w.done(); }
     for (const w of [...this.tests]) if (w.test()) { this.tests.splice(this.tests.indexOf(w), 1); w.done(); }
+    for (const w of [...this.tweens]) {
+      w.t = Math.min(w.secs, w.t + dt);
+      w.f(w.t / w.secs);
+      if (w.t >= w.secs) { this.tweens.splice(this.tweens.indexOf(w), 1); w.done(); }
+    }
     this.box.update(dt, this.ramu.position.x, this.ramu.position.z);
     this.cam.update(dt);
   }
@@ -69,6 +79,25 @@ export class Director {
   wait(s: number): Promise<void> {
     if (this.skipping || s <= 0) return Promise.resolve();
     return new Promise((done) => this.timers.push({ t: s, done }));
+  }
+
+  tween(secs: number, f: (k: number) => void): Promise<void> {
+    if (this.skipping || secs <= 0) { f(1); return Promise.resolve(); }
+    return new Promise((done) => this.tweens.push({ t: 0, secs, f, done }));
+  }
+
+  /** the prompt's line just now (null: none), `key` the use key's label */
+  promptText(key: string): string | null {
+    const p = this.prompt;
+    return p && !this.locked && p.when() ? tk(p.key, { key }) : null;
+  }
+
+  /** the use key pressed: true if the prompt took it */
+  use(): boolean {
+    const p = this.prompt;
+    if (!p || this.locked || !p.when()) return false;
+    p.act();
+    return true;
   }
 
   until(test: () => boolean): Promise<void> {
@@ -101,6 +130,7 @@ export class Director {
     this.voice?.pause();
     this.subs.hide();
     for (const w of this.timers.splice(0)) w.done();
+    for (const w of this.tweens.splice(0)) { w.f(1); w.done(); }
   }
 
   /** a line: `key` is the i18n line (line.s<n>.<id>), its recording voice/<stage>/<id>.mp3 */

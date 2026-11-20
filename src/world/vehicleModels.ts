@@ -23,8 +23,63 @@ export interface Wheel { name: string; hub: THREE.Vector3; r: number; w: number;
 interface Loaded { parts: PBRPart[]; wheels: Wheel[] }
 const cache = new Map<string, Promise<Loaded>>();
 
-/** wheels drawn with another wheel's mesh: the Pulsar's rear (its tyre came out thin and cut off below the hub) is its front's */
-const SAME_WHEEL: Record<string, Record<string, string>> = { pulsar: { wheel_r: 'wheel_f' } };
+/**
+ * The wheels every vehicle is drawn with: a car's (the cars, autos, the bus and truck, the e-rickshaw) and a motorbike's
+ * (tools/blender/build_wheels.py), and the cycle's own spoked one (its front, for the cycle-rickshaw's lumpy ones); null
+ * keeps the model's own. The model's wheel meshes are dropped and these put at its hubs, scaled to each wheel's radius
+ * and width.
+ */
+type WheelKind = 'car' | 'bike' | 'cycle';
+const WHEEL_KIND: Record<string, WheelKind | null> = { pulsar: 'bike', cycle: null, rickshaw: 'cycle' };
+interface Template { near: PBRPart[]; far: PBRPart[]; tw: number }
+const templates = new Map<string, Promise<Template>>();
+function template(kind: WheelKind): Promise<Template> {
+  let p = templates.get(kind);
+  if (!p) {
+    p = kind === 'cycle' ? cycleWheel() : gltfLoader().loadAsync(`models/wheel_${kind}.glb`).then((gltf) => {
+      gltf.scene.updateMatrixWorld(true);
+      const t: Template = { near: [], far: [], tw: 1 };
+      gltf.scene.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        let at: THREE.Object3D | null = m;
+        while (at && at.name !== 'near' && at.name !== 'far') at = at.parent;
+        if (!at) return;
+        t.tw = (at.userData as { tw?: number }).tw ?? t.tw;
+        (at.name === 'near' ? t.near : t.far).push({ geo: m.geometry.clone().applyMatrix4(m.matrixWorld), mat: m.material as THREE.MeshStandardMaterial });
+      });
+      return t;
+    });
+    templates.set(kind, p);
+  }
+  return p;
+}
+
+/** the cycle's front wheel as a template: about its hub, radius 1 */
+function cycleWheel(): Promise<Template> {
+  return gltfLoader().loadAsync('models/cycle.glb').then((gltf) => {
+    gltf.scene.updateMatrixWorld(true);
+    const t: Template = { near: [], far: [], tw: 1 };
+    const node = gltf.scene.getObjectByName('wheel_f');
+    if (!node) return t;
+    const u = node.userData as { r?: number; w?: number };
+    const r = u.r ?? 0.355;
+    t.tw = (u.w ?? 0.07) / r;
+    const to = new THREE.Matrix4().makeScale(1 / r, 1 / r, 1 / r).multiply(node.matrixWorld.clone().invert());
+    node.traverse((c) => {
+      const m = c as THREE.Mesh;
+      if (m.isMesh) t.near.push({ geo: m.geometry.clone().applyMatrix4(to.clone().multiply(m.matrixWorld)), mat: m.material as THREE.MeshStandardMaterial });
+    });
+    return t;
+  });
+}
+
+/** a template's parts for one wheel: radius r, width w (m), its face outward (a right wheel turned round) */
+function fitWheel(parts: PBRPart[], t: Template, r: number, w: number, right: boolean, name: string): PBRPart[] {
+  const m = new THREE.Matrix4().makeScale(w / t.tw, r, r);
+  if (right) m.premultiply(new THREE.Matrix4().makeRotationY(Math.PI));
+  return parts.map((q) => ({ geo: q.geo.clone().applyMatrix4(m), mat: q.mat, wheel: name }));
+}
 
 /** Every mesh of the model with its transform baked into the geometry, and its (shared) material; the wheels in place. */
 export function loadPBR(name: string): Promise<PBRPart[]> {
@@ -39,7 +94,8 @@ export function loadWheels(name: string): Promise<Wheel[]> {
 function load(name: string): Promise<Loaded> {
   let p = cache.get(name);
   if (!p) {
-    p = gltfLoader().loadAsync(`models/${name}.glb`).then((gltf) => {
+    const kind = name in WHEEL_KIND ? WHEEL_KIND[name] : 'car';
+    p = Promise.all([gltfLoader().loadAsync(`models/${name}.glb`), kind ? template(kind) : null]).then(([gltf, tpl]) => {
       gltf.scene.updateMatrixWorld(true);
       const out: PBRPart[] = [];
       const wheels: Wheel[] = [];
@@ -61,18 +117,22 @@ function load(name: string): Promise<Loaded> {
         }
         wheels.push(wheel);
       });
-      // a wheel the model got badly (cut short where it was split from the body) takes another's, about its own hub
-      const same = SAME_WHEEL[name] ?? {};
-      for (const [to, from] of Object.entries(same)) {
-        const a = wheels.find((w) => w.name === to), b = wheels.find((w) => w.name === from);
-        if (a && b) a.parts = b.parts.map((q) => ({ ...q, geo: q.geo.clone(), wheel: to }));
+      // the wheels it is drawn with (not the model's own, nor the made ones): near, and (for a made one) far
+      const swapped = new Set<string>();
+      if (tpl) for (const w of wheels) {
+        if (w.r <= 0) continue;                                      // the handlebar
+        const right = w.hub.x < -0.05;
+        w.parts = fitWheel(tpl.near, tpl, w.r, w.w, right, w.name);
+        if (w.made) w.far = fitWheel(tpl.far, tpl, w.r, w.w, right, w.name);
+        w.made = true;
+        swapped.add(w.name);
       }
       gltf.scene.traverse((o) => {
         const m = o as THREE.Mesh;
         if (!m.isMesh) return;
         let wheel: string | undefined;
         for (let q: THREE.Object3D | null = m; q; q = q.parent) if (q.name.startsWith('wheel_')) wheel = q.name;
-        if (wheel && same[wheel]) return;
+        if (wheel && swapped.has(wheel)) return;
         const mat = m.material as THREE.MeshStandardMaterial;
         const lamp = LAMP[mat.name];
         if (lamp) {
@@ -86,7 +146,7 @@ function load(name: string): Promise<Loaded> {
         out.push({ geo: m.geometry.clone().applyMatrix4(m.matrixWorld), mat, wheel });
       });
       // the modelled wheels, in place, for whatever shows the vehicle standing still
-      for (const w of wheels) if (w.made || same[w.name]) for (const q of w.parts) out.push({ geo: q.geo.clone().translate(w.hub.x, w.hub.y, w.hub.z), mat: q.mat, wheel: w.name });
+      for (const w of wheels) if (w.made) for (const q of w.parts) out.push({ geo: q.geo.clone().translate(w.hub.x, w.hub.y, w.hub.z), mat: q.mat, wheel: w.name });
       return { parts: out, wheels };
     });
     cache.set(name, p);

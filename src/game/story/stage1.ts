@@ -113,7 +113,7 @@ const v3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 /** beats 9-12: in line, at the front, no ticket, pushed aside */
 async function ticket(d: Director, ramu: Ramu, q: GateQueue): Promise<void> {
-  const guard = q.guard, rest = guard.facing;
+  const guard = q.guard, rest = guard.facing, post: [number, number] = [guard.position.x, guard.position.z];
   let aside: [number, number] = [0, 0];
   await d.scene(async () => {
     // he steps in at the end of the line, facing the gate
@@ -149,18 +149,21 @@ async function ticket(d: Director, ramu: Ramu, q: GateQueue): Promise<void> {
     aside = [fx + (dx / dl) * 2.1, fz + (dz / dl) * 2.1];
     // from inside the gate, over the rope: the guard's arm, Ramu sent out of the line behind him
     d.shot({ pos: v3(fx + 1.1, 1.75, GATE.z - 2.6), look: v3(fx + 0.4, 1.05, fz + 0.6), fov: 48 }, 0);
+    // he steps in as he draws his arm back (from his post his hand would stop short), and the hand lands at ~0.45 s
     guard.gesture('push_one', 'shove', 1.6);
-    await d.wait(0.55);
+    const reach: [number, number] = [fx - (dx / dl) * 0.72, fz - (dz / dl) * 0.72];
+    await d.tween(0.3, (k) => guard.place(post[0] + (reach[0] - post[0]) * k, post[1] + (reach[1] - post[1]) * k));
+    await d.wait(0.24);
     ramu.gesture('shove');
     const sx = fx, sz = fz;
-    await d.tween(0.75, (k) => {
+    await d.tween(0.9, (k) => {
       const e = 1 - (1 - k) * (1 - k);
       ramu.standAt(sx + (aside[0] - sx) * e, sz + (aside[1] - sz) * e);
     });
     await d.wait(0.3);
     guard.faceTowards(aside[0], aside[1]);
     const g2 = d.front(guard, { dist: 1.2, side: 0.45, up: 0.16, drop: -0.02, fov: 38 });
-    d.shot(g2, 0.5);
+    d.shot(g2, 0);
     await d.say('guard', guard.face, 'aside');
     if (ramu.face) ramu.face.angry = 1.2;
     const r2 = d.front(ramu, { dist: 1.1, side: 0.35, up: 0.02, drop: -0.05, fov: 36 });
@@ -172,7 +175,8 @@ async function ticket(d: Director, ramu: Ramu, q: GateQueue): Promise<void> {
   ramu.standAt(aside[0], aside[1]);
   q.release();
   guard.idle();
-  guard.turn(rest);
+  guard.walkTo(post[0], post[1], 0.8);                     // back to his post by the gap
+  void d.until(() => !guard.walking).then(() => guard.turn(rest));
   ramu.faceTowards(ramu.position.x, ramu.position.z - 5);   // facing the gate he cannot go through, the camera behind him
   ramu.yaw = ramu.facing;
   void d.wait(2.5).then(() => { if (ramu.face) ramu.face.angry = 0; });
@@ -220,8 +224,13 @@ async function samosa(d: Director, ramu: Ramu, k: Keeper): Promise<void> {
     await d.wait(Math.min(2.4, len || 1.6));
     ramu.stopGesture();
     await d.wait(0.2);
+    // he turns his back on the cart (over half a second, not at once)
+    const from = ramu.facing;
     turnAway(ramu, kp.x, kp.z);
-    await d.wait(0.6);
+    const to = ramu.facing, turn = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+    const p = ramu.position;
+    await d.tween(0.5, (k) => { const a = from + turn * k * k * (3 - 2 * k); ramu.faceTowards(p.x - Math.sin(a), p.z - Math.cos(a)); });
+    await d.wait(0.4);
   });
   // whether watched or skipped: he ends up turned away, the keeper back at his cart, the scowl fading
   const kp = k.position;

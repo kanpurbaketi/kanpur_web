@@ -89,6 +89,7 @@ export class Face {
       if (this.iMouth !== 0) console.warn('face: the shader expects mouth_open as the first shape key');
       this.iBlink = d.blink ?? -1;
       this.iAngry = d.angry ?? -1;
+      m.morphTargetInfluences.fill(0);       // at rest: the files carry their keys' weights as 1 (the glTF's default weights)
       prepareFace(m);
       for (const mat of Array.isArray(m.material) ? m.material : [m.material]) faceMaterial(mat);
     });

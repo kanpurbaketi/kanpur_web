@@ -1,11 +1,17 @@
 import * as THREE from 'three';
+import { NIGHT } from '../../world/night';
 
 /*
  The cutscene camera: it takes the camera from Ramu's orbit (ramu.cinematic), eases to a shot (a place to stand, a
  point to look at, a field of view) or cuts to it, can drift slowly through a shot, and eases back to the orbit when
  the scene is over (Ramu sets the camera again each frame; this blends from where the shot left it).
  update() runs after ramu.update() in the frame.
+ At night a soft warm key light rides beside the camera through a shot (faces are lit by the stalls behind them, or not
+ at all: a guard's eyes under his cap's brim read as shut); it is always in the scene, dark between shots, so turning it
+ on recompiles nothing.
 */
+
+const KEY = 5;
 
 const ease = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 
@@ -23,10 +29,16 @@ export class CutCam {
   private baseFov: number;
   private m = new THREE.Matrix4();
   private q = new THREE.Quaternion();
+  private key = new THREE.PointLight('#ffe4c4', 0, 4.5, 2);
+  private side = new THREE.Vector3();
 
   constructor(private camera: THREE.PerspectiveCamera, private ramu: { cinematic: boolean }) {
     this.baseFov = camera.fov;
+    this.key.castShadow = false;
   }
+
+  /** the scene the camera is in (the light goes in it) */
+  attach(scene: THREE.Object3D): void { if (NIGHT && !this.key.parent) scene.add(this.key); }
 
   get active(): boolean { return this.shot !== null || this.releasing; }
 
@@ -70,6 +82,7 @@ export class CutCam {
       c.position.lerpVectors(this.fromPos, s.pos, k);
       c.quaternion.slerpQuaternions(this.fromQ, this.q, k);
       this.setFov(this.fromFov + (s.fov - this.fromFov) * k);
+      this.light(k);
     } else if (this.releasing) {
       // Ramu has just put the camera where his orbit wants it: blend from the shot to there
       this.t = Math.min(1, this.t + dt / this.secs);
@@ -78,8 +91,18 @@ export class CutCam {
       this.q.copy(c.quaternion);
       c.quaternion.slerpQuaternions(this.fromQ, this.q, k);
       this.setFov(this.fromFov + (this.baseFov - this.fromFov) * k);
+      this.light(1 - k);
       if (this.t >= 1) this.releasing = false;
-    }
+    } else if (this.key.intensity) this.key.intensity = 0;
+  }
+
+  /** the key light: up and to the right of the camera, `k` of its strength */
+  private light(k: number): void {
+    if (!this.key.parent) return;
+    const c = this.camera;
+    this.side.set(0.45, 0.35, 0.1).applyQuaternion(c.quaternion);
+    this.key.position.copy(c.position).add(this.side);
+    this.key.intensity = KEY * k;
   }
 
   private setFov(f: number): void {

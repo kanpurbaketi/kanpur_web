@@ -663,6 +663,9 @@ if PREVIEW:
 
 # ---- export ------------------------------------------------------------------------------------------------
 os.makedirs(OUT, exist_ok=True)
+if mesh.data.shape_keys:                  # the face at rest in the file (its keys' values become the glTF's default weights)
+    for kb in mesh.data.shape_keys.key_blocks:
+        kb.value = 0.0
 for ob in bpy.context.scene.objects:
     ob.select_set(True)
 path = os.path.join(OUT, OUT_NAME)

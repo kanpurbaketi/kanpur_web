@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { fmtNum, onLang, t, tk } from '../../i18n';
+import { fmtNum, onLang, t, tIn, tk } from '../../i18n';
 import type { Guide } from '../../ui/hud';
 import { Subtitles } from '../../ui/subtitles';
 import type { Face } from '../../world/face';
@@ -150,7 +150,9 @@ export class Director {
     const key = `line.s${this.stage}.${id}`;
     this.subs.show(t(`who.${who}` as Parameters<typeof t>[0]), tk(key));
     const recorded = await this.recording(`audio/voice/stage${this.stage}/${id}.mp3`);
-    const secs = recorded ?? LINE_PAD + WORDS_S * tk(key).split(/\s+/).length;
+    // no recording: as long as the Hindi takes to say, or the subtitle to read if that is longer
+    const words = (l: 'en' | 'hi') => tIn(l, key).split(/\s+/).length;
+    const secs = recorded ?? LINE_PAD + WORDS_S * Math.max(words('hi'), words('en'));
     if (face) face.talking = true;
     await this.wait(secs);
     if (face) face.talking = false;

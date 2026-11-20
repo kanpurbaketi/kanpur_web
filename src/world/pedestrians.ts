@@ -104,6 +104,8 @@ export class Pedestrians {
   vehiclePush: ((x: number, z: number, r: number) => [number, number]) | null = null;
   /** where the nearest person hit by the last punch was (the puncher turns to face them) */
   lastHit: { x: number; z: number } | null = null;
+  /** other people and keep-clear places the walkers step round ([x, z, r]: the story's keepers and line, a cutscene's ground) */
+  obstacles: (() => [number, number, number][]) | null = null;
   /** a moving vehicle at a point, if one is there: its velocity (so a car can knock people over) */
   vehicleAt: ((x: number, z: number, r: number) => { vx: number; vz: number; speed: number } | null) | null = null;
   private rigged: number[] = [];     // indices of everybody (test scripts read it)
@@ -416,7 +418,15 @@ export class Pedestrians {
         b.x += nx * push; b.z += nz * push;
       }
     }
+    const obs = this.obstacles?.() ?? [];
     for (const p of near) {
+      for (const [ox, oz, r] of obs) {
+        const dx = p.x - ox, dz = p.z - oz, d = Math.hypot(dx, dz), need = BODY + r;
+        if (d >= need) continue;
+        const [nx, nz] = d > 1e-4 ? [dx / d, dz / d] : [-Math.sin(p.heading), -Math.cos(p.heading)];
+        p.x = ox + nx * need;
+        p.z = oz + nz * need;
+      }
       // nor through Ramu (a goon or a guard at his throat stands off him, not in him)
       const dx = p.x - px, dz = p.z - pz, d = Math.hypot(dx, dz), need = BODY + RAMU;
       if (d < need && Math.abs(p.y - py) < 1.2) {

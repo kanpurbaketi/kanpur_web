@@ -509,6 +509,11 @@ export function t(key: Key, vars?: Record<string, string | number>): string {
   return s;
 }
 
+/** a line in one language, whichever is chosen (a spoken line's length goes by its Hindi) */
+export function tIn(l: Lang, key: string): string {
+  return key in EN ? TABLE[l][key as Key] ?? EN[key as Key] : key;
+}
+
 /** t() for a key built at runtime (stage titles and the like); the key itself if there is no such line */
 export function tk(key: string, vars?: Record<string, string | number>): string {
   return key in EN ? t(key as Key, vars) : key;

@@ -112,6 +112,11 @@ export class GateQueue {
     this.posts.push([tx, tz, 0.5, 0.8]);
   }
 
+  /** where its people stand, for the street's walkers to step round: [x, z, r] */
+  solids(out: [number, number, number][]): void {
+    for (const p of [...this.line, this.guard]) if (p.visible) out.push([p.position.x, p.position.z, 0.3]);
+  }
+
   /** the story's people pushing Ramu out of them (as the crowds do) */
   pushOut(x: number, z: number, r: number): [number, number] {
     const z0 = z;

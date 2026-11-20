@@ -222,6 +222,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   document.body.append(chip.root);
   // the stage's story (src/game/story/): its cutscenes, lines and missions
   const director = play?.stage.n === 1 ? new Director(camera, ramu, 1) : null;
+  director?.cam.attach(scene);                           // its key light for faces at night (dark until a shot)
   hud.onOpen = () => menu.openMap();                     // a click on the minimap: the big map, with the mission's way marked
   if (director && params.has('debug')) (window as unknown as { __director: Director }).__director = director;
   let step = 0;
@@ -328,6 +329,17 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   if (traffic) { traffic.resolve = (x, z, r) => world.resolve(x, z, r, 0); traffic.crosses = (x0, z0, x1, z1) => world.crosses(x0, z0, x1, z1); }
   const driving = traffic && !fixed ? new Driving(scene, traffic, ramu, peds, () => label(controls.get('use')[0] || controls.get('use')[1])) : null;
   if (driving && params.has('debug')) (window as unknown as { __driving: Driving }).__driving = driving;
+  // the street's walkers step round the story's people, and keep out of a cutscene (from between the camera and the faces)
+  if (director) {
+    const solids: [number, number, number][] = [];
+    peds.obstacles = () => {
+      solids.length = 0;
+      if (keepers) for (const k of keepers.keepers) solids.push([k.position.x, k.position.z, 0.3]);
+      queue?.solids(solids);
+      if (director.locked) solids.push([ramu.position.x, ramu.position.z, 3.2]);
+      return solids;
+    };
+  }
   // the story's offers on the use key (E — stand in line) come before the vehicles'
   let storyTip: (() => string | null) | null = null;
   if (director) {

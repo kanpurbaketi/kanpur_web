@@ -123,6 +123,8 @@ export const DRIVER: Record<string, DriverSeat> = {
   ambassador: car([-0.4, 0.24, -0.1]),
   bolero: car([-0.42, 0.42, 0.0]),
   pulsar: { pose: 'ride', at: [0, 0.13, -0.3], cam: 4.6, camH: 1.5 },
+  enfield: { pose: 'ride', at: [0, 0.05, -0.26], cam: 4.7, camH: 1.5 },
+  enfield_black: { pose: 'ride', at: [0, 0.06, -0.22], cam: 4.7, camH: 1.5 },
   cycle: { pose: 'ride', at: [0, 0.35, -0.24], cam: 4.2, camH: 1.5 },
   rickshaw: { pose: 'ride', at: [0, 0.36, -0.02], cam: 5.6, camH: 1.7 },
 };
@@ -135,7 +137,7 @@ const NEAR_IN = 45, NEAR_OUT = 52;
 /** triangle budget of each kind's far model (tools/blender/make_lod.py -> <name>_lod.glb) */
 export const LOD_TRIS: Record<string, number> = {
   bus: 2500, bus_green: 2500, autorickshaw: 1800, tirri: 1800, maruti: 1800, maruti_red: 1800, maruti_green: 1800,
-  swift: 2500, ambassador: 2200, bolero: 2500, truck: 2500, pulsar: 1200, cycle: 600, rickshaw: 2000,
+  swift: 2500, ambassador: 2200, bolero: 2500, truck: 2500, pulsar: 1200, enfield: 1400, enfield_black: 1400, cycle: 600, rickshaw: 2000,
 };
 
 /** one way of drawing a kind: an InstancedMesh per part, plus the riders, packed so only the vehicles in use are drawn */
@@ -159,6 +161,8 @@ const LAMPS: Record<string, { at: [number, number, number][]; pool: [number, num
   bolero: { at: [[-0.7, 0.98, 1.93], [0.7, 0.98, 1.93]], pool: [3.2, 12] },
   truck: { at: [[-0.8, 0.9, 2.76], [0.8, 0.9, 2.76]], pool: [3.4, 13] },
   pulsar: { at: [[0, 0.95, 0.6]], pool: [2.2, 8] },
+  enfield: { at: [[0, 0.93, 0.56]], pool: [2.2, 8] },
+  enfield_black: { at: [[0, 0.94, 0.55]], pool: [2.2, 8] },
   cycle: { at: [], pool: [0, 0] },
   rickshaw: { at: [], pool: [0, 0] },
 };
@@ -175,14 +179,16 @@ const REAR: Record<string, { x: number; y: number; w: number; h: number } | null
   maruti: { x: 0.56, y: 0.6, w: 0.14, h: 0.12 }, maruti_red: { x: 0.56, y: 0.6, w: 0.14, h: 0.12 }, maruti_green: { x: 0.56, y: 0.6, w: 0.14, h: 0.12 },
   swift: { x: 0.66, y: 0.85, w: 0.2, h: 0.13 }, ambassador: { x: 0.71, y: 0.89, w: 0.12, h: 0.12 },
   bolero: { x: 0.73, y: 0.92, w: 0.13, h: 0.12 }, truck: { x: 0.97, y: 0.84, w: 0.2, h: 0.14 },
-  pulsar: { x: 0, y: 0.82, w: 0.12, h: 0.06 }, cycle: null, rickshaw: null,
+  pulsar: { x: 0, y: 0.82, w: 0.12, h: 0.06 }, enfield: { x: 0, y: 0.58, w: 0.1, h: 0.07 },
+  enfield_black: { x: 0, y: 0.63, w: 0.1, h: 0.07 }, cycle: null, rickshaw: null,
 };
 const BLINK_HZ = 1.5;
 /** where a damaged engine smokes from: x, z as a share of the half length (+ front), height */
 const ENGINE_AT: Record<string, [number, number, number] | null> = {
   swift: [0, 0.75, 0.95], maruti: [0, 0.7, 0.85], maruti_red: [0, 0.7, 0.85], maruti_green: [0, 0.7, 0.85],
   ambassador: [0, 0.75, 1.0], bolero: [0, 0.75, 1.15], truck: [0, 0.8, 1.5], bus: [0, -0.85, 1.2], bus_green: [0, -0.85, 1.2],
-  autorickshaw: [0, -0.6, 0.6], tirri: [0, -0.5, 0.7], pulsar: [0.12, 0.1, 0.5], cycle: null, rickshaw: null,
+  autorickshaw: [0, -0.6, 0.6], tirri: [0, -0.5, 0.7], pulsar: [0.12, 0.1, 0.5], enfield: [0.12, 0.1, 0.45],
+  enfield_black: [0.12, 0.1, 0.45], cycle: null, rickshaw: null,
 };
 const C_TAIL = new THREE.Color(0.55, 0.02, 0.01), C_BRAKE = new THREE.Color(4, 0.12, 0.05);
 const C_REV = new THREE.Color(2.4, 2.4, 2.2), C_IND = new THREE.Color(3.2, 1.3, 0.05);
@@ -270,6 +276,11 @@ export class Traffic {
       { name: 'truck', count: desktop ? 2 : 1, speed: 5.6, halfL: 2.8, halfW: 1.35, majorOnly: true },
       { name: 'pulsar', count: desktop ? 10 : 5, speed: 8.0, halfL: 1.0, halfW: 0.4, majorOnly: false, edge: 0.5,
         seats: [{ pose: 'ride', at: [0, 0.13, -0.3], who: ['boy', 'uncle', 'boy'] }] },
+      // Royal Enfield Classic 350s, a red one and a black one
+      { name: 'enfield', count: desktop ? 4 : 2, speed: 7.6, halfL: 1.08, halfW: 0.4, majorOnly: false, edge: 0.5,
+        seats: [{ pose: 'ride', at: [0, 0.05, -0.26], who: ['uncle', 'boy', 'uncle'] }] },
+      { name: 'enfield_black', count: desktop ? 3 : 1, speed: 7.8, halfL: 1.08, halfW: 0.4, majorOnly: false, edge: 0.5,
+        seats: [{ pose: 'ride', at: [0, 0.06, -0.22], who: ['boy', 'uncle', 'boy'] }] },
       { name: 'cycle', count: desktop ? 6 : 3, speed: 3.4, halfL: 0.92, halfW: 0.32, majorOnly: false, edge: 1.2,
         seats: [{ pose: 'ride', at: [0, 0.35, -0.24], who: ['uncle', 'boy'] }] },
       { name: 'rickshaw', count: desktop ? 8 : 4, speed: 2.9, halfL: 1.25, halfW: 0.6, majorOnly: false, edge: 0.9,

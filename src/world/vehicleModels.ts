@@ -30,7 +30,7 @@ const cache = new Map<string, Promise<Loaded>>();
  * and width.
  */
 type WheelKind = 'car' | 'bike' | 'cycle';
-const WHEEL_KIND: Record<string, WheelKind | null> = { pulsar: 'bike', cycle: 'cycle', rickshaw: 'cycle' };
+const WHEEL_KIND: Record<string, WheelKind | null> = { pulsar: 'bike', enfield: 'bike', enfield_black: 'bike', cycle: 'cycle', rickshaw: 'cycle' };
 interface Template { near: PBRPart[]; far: PBRPart[]; tw: number }
 const templates = new Map<string, Promise<Template>>();
 function template(kind: WheelKind): Promise<Template> {

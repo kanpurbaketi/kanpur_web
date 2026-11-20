@@ -52,11 +52,14 @@ export const SPECS: Record<string, Spec> = {
   autorickshaw: { mass: 420, power: 6e3, vtop: 16, mu: 0.85, steer: 0.75, drive: 'rear', brake: 0.7, cg: 0.58, cgH: 0.6, gears: [5, 9, 13, 16] },
   tirri: { mass: 380, power: 1.6e3, vtop: 7.5, mu: 0.8, steer: 0.7, drive: 'rear', brake: 0.6, cg: 0.45, cgH: 0.65 },
   pulsar: { mass: 210, power: 10e3, vtop: 30, mu: 1.1, steer: 0.5, drive: 'rear', brake: 0.95, cg: 0.55, cgH: 0.6, bike: true, gears: [8, 13, 18, 24, 30] },
+  // Classic 350: heavier, a little more pull, long gears, a slower top
+  enfield: { mass: 230, power: 13e3, vtop: 31, mu: 1.1, steer: 0.46, drive: 'rear', brake: 0.85, cg: 0.55, cgH: 0.62, bike: true, gears: [7, 12, 18, 24, 31] },
   cycle: { mass: 85, power: 0.35e3, vtop: 8.5, mu: 1.0, steer: 0.6, drive: 'rear', brake: 0.6, cg: 0.6, cgH: 0.9, bike: true, pedal: true },
   rickshaw: { mass: 140, power: 0.3e3, vtop: 5.8, mu: 0.9, steer: 0.5, drive: 'rear', brake: 0.5, cg: 0.5, cgH: 0.7, pedal: true },
 };
 SPECS.maruti_red = SPECS.maruti_green = SPECS.maruti;
 SPECS.bus_green = SPECS.bus;
+SPECS.enfield_black = SPECS.enfield;
 
 const G = 9.81, STEP = 1 / 120, CRR = 0.015;
 

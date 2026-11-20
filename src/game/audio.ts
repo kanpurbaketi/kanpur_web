@@ -2,7 +2,7 @@
  The sounds of the vehicle Ramu drives, all made with WebAudio (no sound files):
    engine   two detuned oscillators at the firing frequency (from the revs) and a little noise, through a low-pass
             that opens with the throttle; a preset per kind of engine (petrol car, diesel bus / truck, two-stroke auto,
-            single-cylinder bike, the e-rickshaw's motor whine; nothing for the pedalled ones but the chain)
+            single-cylinder bike, the Enfield's slow long-stroke thump, the e-rickshaw's motor whine; nothing for the pedalled ones but the chain)
    tyres    band-passed noise, as loud as they slide
    knocks   a thud (low sine + muffled noise burst) as hard as the hit
    horn     per kind: a car's twin-tone, a bus / truck's pressure horn, an auto's bulb-ish honk, a bike's beep, a bell
@@ -29,11 +29,12 @@ const PRESETS: Record<string, Preset> = {
   diesel: { lo: 24, hi: 78, wave: 'sawtooth', sub: 0.5, cut: 260, vol: 0.24, noise: 0.08 },
   auto: { lo: 22, hi: 82, wave: 'square', sub: 0.5, cut: 520, vol: 0.13, noise: 0.06 },
   bike: { lo: 26, hi: 150, wave: 'square', sub: 0.5, cut: 700, vol: 0.12, noise: 0.04 },
+  thump: { lo: 14, hi: 70, wave: 'square', sub: 0.5, cut: 380, vol: 0.17, noise: 0.05 },
   whine: { lo: 240, hi: 900, wave: 'sine', sub: 1.5, cut: 3000, vol: 0.035, noise: 0 },
 };
 const ENGINE: Record<string, string | null> = {
   swift: 'car', maruti: 'car', maruti_red: 'car', maruti_green: 'car', ambassador: 'car', bolero: 'diesel',
-  bus: 'diesel', bus_green: 'diesel', truck: 'diesel', autorickshaw: 'auto', pulsar: 'bike', tirri: 'whine',
+  bus: 'diesel', bus_green: 'diesel', truck: 'diesel', autorickshaw: 'auto', pulsar: 'bike', enfield: 'thump', enfield_black: 'thump', tirri: 'whine',
   cycle: null, rickshaw: null,
 };
 /** horn: frequencies (Hz), wave, loudness; 'bell' rings instead */
@@ -42,6 +43,7 @@ const HORNS: Record<string, { f: number[]; wave: OscillatorType; vol: number } |
   diesel: { f: [262, 330, 392], wave: 'sawtooth', vol: 0.09 },
   auto: { f: [370, 380], wave: 'square', vol: 0.08 },
   bike: { f: [480, 600], wave: 'square', vol: 0.06 },
+  thump: { f: [440, 554], wave: 'square', vol: 0.07 },
   whine: { f: [700], wave: 'square', vol: 0.05 },
 };
 

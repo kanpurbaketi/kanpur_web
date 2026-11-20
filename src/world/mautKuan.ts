@@ -25,8 +25,8 @@ const tangentRy = (a: number) => -(a + Math.PI / 2);
 function bikeModel(rider: number, tank: string): THREE.Group {
   const lamps = new Bulbs();
   const root = new THREE.Group();
-  // the motorbike is a photo-built model (tools/triposr); the rider sits on it
-  loadPBR('bike').then((parts) => root.add(cloneCar(parts, tank)));
+  // the motorbike is a Royal Enfield Classic 350, the well of death's own (tools/blender/import_vehicle.py); the rider sits on it
+  loadPBR('enfield').then((parts) => root.add(cloneCar(parts, tank)));
   lamps.add(0, 0.82, 0.86, '#fff4d6', -1, 1.1);
   lamps.add(0, 0.7, -0.98, '#ff3030', -1, 0.6);
   // rider (figures.ts): leaning forward, arms to the bar, feet on the pegs

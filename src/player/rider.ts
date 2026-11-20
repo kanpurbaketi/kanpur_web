@@ -37,6 +37,8 @@ export const SEATS: Record<string, Seat> = {
   autorickshaw: { hips: [0, 0.82, 0.3], hands: { bars: [0.3, 1.02, 0.66], pivot: [0, 1.0, 0.8] }, feet: { rest: [0.13, 0.3, 0.52] } },
   tirri: { hips: [0, 1.0, 0.38], hands: { bars: [0.28, 1.2, 0.8], pivot: [0, 1.15, 0.92] }, feet: { rest: [0.13, 0.6, 0.72] } },
   pulsar: { hips: [0, 0.98, -0.08], hands: { bars: [0.33, 1.02, 0.28], pivot: [0, 1.0, 0.42] }, feet: { rest: [0.2, 0.38, -0.05] }, bike: true },
+  enfield: { hips: [0, 0.9, -0.24], hands: { bars: [0.29, 1.01, 0.27], pivot: [0, 1.0, 0.52] }, feet: { rest: [0.22, 0.28, 0.08] }, bike: true },
+  enfield_black: { hips: [0, 0.91, -0.2], hands: { bars: [0.27, 1.01, 0.19], pivot: [0, 1.0, 0.47] }, feet: { rest: [0.21, 0.31, 0.02] }, bike: true },
   cycle: { hips: [0, 1.08, -0.3], hands: { bars: [0.25, 1.07, 0.24], pivot: [0, 1.05, 0.39] },
     feet: { pedals: [0, 0.32, -0.07], r: 0.17, x: 0.13, ratio: 0.355 * 2.4 }, bike: true },
   rickshaw: { hips: [0, 1.1, -0.04], hands: { bars: [0.2, 1.02, 0.53], pivot: [0, 1.0, 0.61] },

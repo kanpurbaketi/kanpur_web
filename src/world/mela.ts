@@ -4,7 +4,6 @@ import { gltfLoader } from './gltf';
 import { Actor, makeActors } from './actors';
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
-import { cloneCar, loadPBR } from './vehicleModels';
 import { MELA_MIX, Pedestrians } from './pedestrians';
 import { addFigures, FigureKind, figurePosts, ONLOOKER, someone, Spot } from './figures';
 import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, DX, DZ, GATE, HINDOLA, inMela, INFLATABLE, KUAN, MELA, Rect, SAMMELAN, SAMMELAN_GATES, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
@@ -439,7 +438,6 @@ export class Mela {
     this.buildSammelanFence();
     this.buildStalls(lights);
     this.buildGate(lights);
-    this.buildParking();
     this.buildMasts(lights);
     this.buildWalls(lights);
 
@@ -857,24 +855,6 @@ export class Mela {
     this.group.add(bulbs.object(0.7));
     addFigures(this.group, keepers);
     for (const [x, z, r, h, base] of figurePosts(keepers)) this.posts.push([x, z, r, h, base]);   // the stall-keepers and their customers
-  }
-
-  /** Bikes and cycles left outside the gate, nose to the cloth wall (downloaded models: tools/blender/import_vehicle.py). */
-  private buildParking(): void {
-    const row: [string, number][] = [];
-    const names = ['enfield', 'pulsar', 'cycle', 'pulsar', 'enfield', 'cycle', 'pulsar', 'cycle', 'enfield', 'pulsar'];
-    names.forEach((n, i) => row.push([n, (i < 5 ? GATE.x - GATE.half - 2.5 - i * 1.15 : GATE.x + GATE.half + 2.5 + (i - 5) * 1.15)]));
-    const tints = ['#ffffff', '#d9d9d9', '#ffe9d0', '#cfd8e6', '#f0f0f0'];
-    row.forEach(([name, x], i) => {
-      const z = GATE.z + 1.9 + rnd(i * 3.7) * 0.35;
-      this.posts.push([x, z, 0.55, 1.3]);
-      loadPBR(name).then((parts) => {
-        const bike = cloneCar(parts, tints[i % tints.length]);
-        bike.position.set(x, 0.05, z);
-        bike.rotation.y = Math.PI + (rnd(i * 9.1) - 0.5) * 0.25;      // the front toward the wall (-z)
-        this.group.add(bike);
-      }).catch((e) => console.error('parked bike failed to load', e));
-    });
   }
 
   private buildGate(lights: LightPool | null): void {

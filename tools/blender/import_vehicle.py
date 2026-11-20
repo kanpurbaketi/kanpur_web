@@ -31,7 +31,9 @@ PREVIEW = argv[argv.index('--preview') + 1] if '--preview' in argv else None
 # cut: slice this share of the height off the bottom (a scan's ground).  align: turn the longest side to lie fore-and-aft.
 # loose: drop loose scraps of fewer faces than this (a scan's debris).
 # whole: False to never cut the joined mesh as a whole.  floor: parts of fewer triangles than this are not cut (300).
-# roll: degrees about the fore-and-aft axis, to stand a leaning bike upright.
+# roll: degrees about the fore-and-aft axis, to stand a leaning bike upright.  pitch: degrees nose up, to stand a model
+# that sits nose-down on both its wheels.
+# erase: boxes (game frame, metres: x0, x1, y0, y1, z0, z1) the faces centred in which go, once it is scaled and stood (a stand left down).
 # weights: {object name (regular expression): n}: a bigger share of the triangle budget for what shows most.
 VEHICLES = {
     'autorickshaw': dict(src='auto-rickshaw/source/Auto.fbx', length=2.65, tris=9000, tex=1024, normal=True,
@@ -49,8 +51,18 @@ VEHICLES = {
     'bolero': dict(src='bolero-car-modified-with-alloy-wheel/source/Bolero Car.fbx', length=4.0, tris=40000, tex=4096, normal=True, whole=False),
     'ambassador': dict(src='hindustan-ambassador/source/ambassador.fbx', length=4.32, yaw=-90, tris=9000, tex=2048, normal=True, glass=r'blinn2',
                        maps={'blinn1': dict(base='Ambassador_Base_Color.png', rough='Ambassador_Roughness.png', normal='Ambassador_Normal_OpenGL.png', metal='Ambassador_Metallic.png')}),
-    # a photo scan of a parked bike on a slab of mud: the slab is cut away, the bike turned to face forward and stood upright
-    'enfield': dict(src='bike-royal-enfield/source/Bike_RE.fbx', length=2.15, tris=12000, tex=2048, cut=0.125, align=True, loose=400),
+    # Royal Enfield Classic 350, modelled (in place of the old photo scan, bike-royal-enfield); a stray 12 m curve and an
+    # empty disc left out. Over half its triangles are the wheels (spokes, tyres, discs), which the game draws with its
+    # own motorbike wheel: they keep a scrap of the budget (enough to measure by), the springs and bolts little more
+    'enfield': dict(src='royal-enfield-classic-350/source/BIKE.fbx', length=2.15, yaw=180, pitch=2.4, tris=24000, tex=2048, floor=120,
+                    drop=[r'^BezierCircle', r'^Circle\.004$'],
+                    colour={r'ENGINE': (0.3, 0.3, 0.31), r'Disk': (0.34, 0.34, 0.35), r'STEEL': (0.38, 0.38, 0.4)},     # bare metal (baked flat), not white
+                    weights={r'^NurbsPath\.(021|002)$|^Plane\.00[5-9]$|^RIM': 0.03,
+                             r'^Circle\.00[23]$|^Cube\.0(17|21|22|23)$': 0.1, r'^Circle\.0(2[5-9]|3[0-5])$|^Circle$': 0.2}),
+    # another Classic 350, modelled without any colours (bike smmoth.obj): all of it the black of a Stealth Black one
+    'enfield_black': dict(src='royal-enfield/inner/bike smmoth.obj', length=2.15, pitch=1.0, tris=14000, tex=1024,
+                          erase=[(-0.2, 0.2, -0.01, 0.2, -0.25, 0.06)],     # its stand, down
+                          colour={'.*': (0.025, 0.025, 0.027)}),
     'pulsar': dict(src='pulsar-135-ls-2/source/pulsar 135 ls 2.blend', length=2.0, yaw=180, tris=9000, tex=1024, glass=r'^glass'),
     'cycle': dict(src='cycle-bike-lowpoly/source/cycle.fbx', length=1.85, tris=4000, tex=1024, maps={'.*': dict(base='cycle.png')}),
     'truck': dict(src='tata-truck/source/tripo_refine_5aa22d95-f484-4906-90c2-1aa75a99fa38.glb', length=5.6, yaw=-90, tris=10000, tex=2048),
@@ -262,11 +274,23 @@ if V.get('align'):
 me.transform(Matrix.Rotation(math.radians(V.get('yaw', 0)), 4, 'Z'))
 if V.get('roll'):
     me.transform(Matrix.Rotation(math.radians(V['roll']), 4, 'Y'))
+if V.get('pitch'):                               # the front is toward -y: nose up lowers +y
+    me.transform(Matrix.Rotation(-math.radians(V['pitch']), 4, 'X'))
 lo = Vector((min(v.co[i] for v in me.vertices) for i in range(3)))
 hi = Vector((max(v.co[i] for v in me.vertices) for i in range(3)))
 k = V['length'] / (hi.y - lo.y)
 me.transform(Matrix.Translation((-(lo.x + hi.x) / 2 * k, -(lo.y + hi.y) / 2 * k, -lo.z * k)) @ Matrix.Scale(k, 4))
 print('VEH size in the game (width, length, height)', [round((hi[i] - lo[i]) * k, 2) for i in range(3)])
+for x0, x1, y0, y1, z0, z1 in V.get('erase', []):     # game frame (x, y up, z forward) = Blender (x, z, -y)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    gone = [f for f in bm.faces for c in [f.calc_center_median()] if x0 < c.x < x1 and y0 < c.z < y1 and z0 < -c.y < z1]
+    bmesh.ops.delete(bm, geom=gone, context='FACES')
+    bm.to_mesh(me)
+    bm.free()
+    print('VEH erased', len(gone), 'faces')
+if V.get('erase'):                                    # stood again, on what is left (its tyres)
+    me.transform(Matrix.Translation((0, 0, -min(v.co.z for v in me.vertices))))
 bpy.ops.object.shade_auto_smooth(angle=math.radians(38))       # smooth panels, crisp edges
 for md in list(ob.modifiers):
     bpy.ops.object.modifier_apply(modifier=md.name)

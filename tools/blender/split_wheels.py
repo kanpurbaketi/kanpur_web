@@ -34,7 +34,7 @@ def four(x, zf, zr, r, w, mode='cut', rr=None, wr=None):
 
 
 # how far out of the wheel's radius its faces may reach: a car's tyre bulges; a cycle's mudguard hugs the tyre
-CUT = {'rickshaw': 1.012, 'cycle': 1.012, 'pulsar': 1.03}
+CUT = {'rickshaw': 1.012, 'cycle': 1.012, 'pulsar': 1.03, 'enfield': 1.03, 'enfield_black': 1.03}
 
 # label, x, z, radius, width, steers, mode. Hubs from where the tyres touch the ground, radii measured on side renders.
 WHEELS = {
@@ -47,6 +47,9 @@ WHEELS = {
                  ('rr', -0.50, -0.80, 0.37, 0.09, False, 'cut')],
     'cycle': [('f', 0.01, 0.54, 0.355, 0.07, True, 'cut'), ('r', 0.01, -0.527, 0.355, 0.07, False, 'cut')],
     'pulsar': [('f', 0.0, 0.70, 0.30, 0.12, True, 'cut'), ('r', 0.0, -0.635, 0.30, 0.12, False, 'cut')],
+    # the Classic 350s: hubs and radii fitted to their tyres (circles through the tyre pieces of the mesh)
+    'enfield': [('f', 0.0, 0.730, 0.35, 0.16, True, 'cut'), ('r', 0.0, -0.643, 0.32, 0.16, False, 'cut')],
+    'enfield_black': [('f', 0.0, 0.761, 0.315, 0.14, True, 'cut'), ('r', 0.0, -0.615, 0.33, 0.14, False, 'cut')],
     # photo-built: modelled wheels in place of the lumps
     'truck': four(0.92, 1.66, -1.64, 0.47, 0.30, 'replace'),
     'tirri': [('f', 0.22, 1.13, 0.25, 0.14, True, 'replace'), ('rl', 0.40, -0.94, 0.25, 0.14, False, 'replace'),
@@ -61,6 +64,8 @@ WHEELS = {
 # box (game frame: x half-width, y from..to, z from..to) and the steering pivot (x, y, z)
 BARS = {
     'pulsar': ((0.62, 0.97, 1.55, 0.1, 0.5), (0.0, 1.0, 0.42)),
+    'enfield': ((0.45, 0.975, 1.3, 0.15, 0.7), (0.0, 1.0, 0.52)),
+    'enfield_black': ((0.5, 0.975, 1.35, 0.1, 0.65), (0.0, 1.0, 0.47)),
     'cycle': ((0.36, 0.985, 1.2, 0.14, 0.46), (0.0, 1.05, 0.39)),
     'rickshaw': ((0.3, 0.95, 1.14, 0.42, 0.72), (0.0, 1.0, 0.61)),
 }

@@ -583,8 +583,9 @@ export class Stage1Route {
   }
 
   /**
-   * Cars, bikes and cycles parked along both kerbs, with long gaps (a third of a full row). They are the traffic's own
-   * vehicles (Traffic.pin), locked: Ramu can pick a lock and take one (drive.ts).
+   * Cars, bikes and cycles parked along both kerbs, with long gaps (a third of a full row), and a row of two-wheelers
+   * outside the mela's gate. They are the traffic's own vehicles (Traffic.pin), locked: Ramu can pick a lock and take
+   * one (drive.ts).
    */
   private parkingSpots(): ParkSpot[] {
     const line = routeLine(this.map);
@@ -595,7 +596,8 @@ export class Stage1Route {
       { name: 'bolero', len: 4.0, w: 1.9 },
       { name: 'ambassador', len: 4.3, w: 1.9 },
       { name: 'pulsar', len: 2.0, w: 0.8 },
-      { name: 'pulsar', len: 2.0, w: 0.8 },
+      { name: 'enfield', len: 2.15, w: 0.8 },
+      { name: 'enfield_black', len: 2.15, w: 0.8 },
       { name: 'cycle', len: 1.8, w: 0.6 },
     ];
     const spots: ParkSpot[] = [];
@@ -608,7 +610,7 @@ export class Stage1Route {
         if (s > 0) return;
         seed++;
         const r = rnd(seed * 3.3);
-        const k = r < 0.12 ? -1 : r < 0.62 ? Math.floor(rnd(seed * 7.1) * 4) : 4 + Math.floor(rnd(seed * 5.7) * 3);
+        const k = r < 0.12 ? -1 : r < 0.62 ? Math.floor(rnd(seed * 7.1) * 4) : 4 + Math.floor(rnd(seed * 5.7) * 4);
         // keep clear: the gate, the mela gate's front, the bend, the barricades, the start
         const clear = Math.hypot(x - (-30), z - 57) < 14 || Math.hypot(x - GATE.x, z - (MZ1 + 12)) < 18 || Math.hypot(x + 44, z - 340) < 16 ||
           z < 70 || x < -214 || !inCorridor(x, z);
@@ -623,6 +625,12 @@ export class Stage1Route {
         spots.push({ kind: K.name, x: x + nx * off, z: z + nz * off, heading });
       }, 0);
     }
+    // bikes and cycles left outside the mela's gate, nose to the cloth wall, either side of the opening
+    const row = ['enfield', 'pulsar', 'cycle', 'enfield_black', 'enfield', 'cycle', 'pulsar', 'enfield_black', 'enfield', 'pulsar'];
+    row.forEach((kind, i) => {
+      const x = i < 5 ? GATE.x - GATE.half - 2.5 - i * 1.15 : GATE.x + GATE.half + 2.5 + (i - 5) * 1.15;
+      spots.push({ kind, x, z: GATE.z + 1.9 + rnd(i * 3.7) * 0.35, heading: Math.PI + (rnd(i * 9.1) - 0.5) * 0.25 });
+    });
     return spots;
   }
 }

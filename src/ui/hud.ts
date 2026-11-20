@@ -1,4 +1,21 @@
-import { DRIVABLE, MapData } from '../world/types';
+import { onLang, t } from '../i18n';
+import { DRIVABLE, MapData, type P2 } from '../world/types';
+
+/**
+ Where a stage's mission leads (set each frame from the story's director; null when roaming free): the minimap shows a
+ pin (or, off its edge, an arrow on the rim) and a dotted path; the big map the same with the mission's text.
+*/
+export interface Guide {
+  x: number;
+  z: number;
+  /** the mission, and the hint for the next place on the way */
+  title: string;
+  hint: string;
+  /** places to pass on the way, in order, before x/z */
+  path: P2[];
+  /** a search area (metres) instead of an exact spot */
+  radius?: number;
+}
 
 const SIZE = 180;      // minimap size in CSS px
 const RANGE = 160;     // meters shown from center to edge
@@ -11,9 +28,17 @@ export class Hud {
   readonly img: HTMLCanvasElement;
   readonly x0: number;
   readonly z0: number;
+  guide: Guide | null = null;
+  /** a click on the minimap (opens the big map) */
+  onOpen: (() => void) | null = null;
 
   constructor(map: MapData) {
     const canvas = document.getElementById('minimap') as HTMLCanvasElement;
+    canvas.addEventListener('click', () => this.onOpen?.());
+    canvas.style.cursor = 'pointer';
+    const tip = () => { canvas.title = t('map.open'); canvas.setAttribute('aria-label', t('map.open')); };
+    tip();
+    onLang(tip);
     const dpr = Math.min(2, devicePixelRatio);
     canvas.width = canvas.height = SIZE * dpr;
     this.ctx = canvas.getContext('2d')!;
@@ -74,6 +99,7 @@ export class Hud {
     c.scale(s / PX_PER_M, s / PX_PER_M);
     c.drawImage(this.img, -(x - this.x0) * PX_PER_M, -(z - this.z0) * PX_PER_M);
     c.restore();
+    this.drawGuide(x, z, yaw);
     // player arrow + north marker
     c.fillStyle = '#e8590c';
     c.beginPath();
@@ -87,5 +113,80 @@ export class Hud {
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillText('N', nx, ny);
+  }
+
+  /** the mission's pin, path and search area; an arrow on the rim when the pin is off the map */
+  private drawGuide(x: number, z: number, yaw: number): void {
+    const g = this.guide;
+    if (!g) return;
+    const c = this.ctx, s = SIZE / (RANGE * 2), C = SIZE / 2, cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const P = (wx: number, wz: number): P2 => {
+      const dx = (wx - x) * s, dz = (wz - z) * s;
+      return [C + dx * cos - dz * sin, C + dx * sin + dz * cos];
+    };
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.006);
+    const [tx, ty] = P(g.x, g.z);
+    const off = Math.hypot(tx - C, ty - C) > C - 12;
+    c.save();
+    c.beginPath();
+    c.arc(C, C, C, 0, Math.PI * 2);
+    c.clip();
+    c.lineCap = c.lineJoin = 'round';
+    c.beginPath();
+    c.moveTo(C, C);
+    for (const [px, pz] of g.path) c.lineTo(...P(px, pz));
+    c.lineTo(tx, ty);
+    c.setLineDash([2, 5]);
+    c.strokeStyle = 'rgba(255,255,255,.9)';
+    c.lineWidth = 5;
+    c.stroke();
+    c.strokeStyle = '#c2410c';
+    c.lineWidth = 3;
+    c.stroke();
+    c.setLineDash([]);
+    if (g.radius) {
+      c.beginPath();
+      c.arc(tx, ty, g.radius * s, 0, Math.PI * 2);
+      c.fillStyle = `rgba(242,153,42,${0.18 + 0.1 * pulse})`;
+      c.fill();
+      c.setLineDash([4, 3]);
+      c.strokeStyle = '#c2410c';
+      c.lineWidth = 1.5;
+      c.stroke();
+      c.setLineDash([]);
+    } else if (!off) {
+      c.beginPath();
+      c.arc(tx, ty, 6 + 5 * pulse, 0, Math.PI * 2);
+      c.fillStyle = `rgba(242,153,42,${0.5 - 0.35 * pulse})`;
+      c.fill();
+      c.beginPath();
+      c.arc(tx, ty, 5, 0, Math.PI * 2);
+      c.fillStyle = '#f2992a';
+      c.fill();
+      c.strokeStyle = '#fff';
+      c.lineWidth = 2;
+      c.stroke();
+    }
+    c.restore();
+    if (off) {
+      // on the rim, pointing out towards it
+      const a = Math.atan2(ty - C, tx - C), r = C - 11;
+      c.save();
+      c.translate(C + Math.cos(a) * r, C + Math.sin(a) * r);
+      c.rotate(a);
+      c.beginPath();
+      c.moveTo(8, 0);
+      c.lineTo(-5, -7);
+      c.lineTo(-2, 0);
+      c.lineTo(-5, 7);
+      c.closePath();
+      c.fillStyle = '#f2992a';
+      c.strokeStyle = '#fff';
+      c.lineWidth = 2;
+      c.globalAlpha = 0.75 + 0.25 * pulse;
+      c.stroke();
+      c.fill();
+      c.restore();
+    }
   }
 }

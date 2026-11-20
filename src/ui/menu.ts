@@ -110,6 +110,13 @@ export class Menu {
   /** the Stages panel (from ⓘ while roaming free) */
   openStages(): void { this.show('stages'); }
 
+  /** the street map, framed on Ramu and where his mission leads (a click on the minimap) */
+  openMap(): void {
+    this.cityView = false;
+    if (this.open === 'map') return;
+    this.show('map');
+  }
+
   private show(it: Item, again = false): void {
     this.toggleDrop(false);
     const wasOpen = this.open !== null || again;
@@ -122,7 +129,7 @@ export class Menu {
     if (it === 'stages') this.renderStages();
     else if (it === 'settings') this.body.append(settingsView({ onLogout: () => goFree() }));
     else if (it === 'profile') this.renderProfile();
-    else if (it === 'map') this.renderMap();
+    else if (it === 'map') { if (this.d.hud.guide) this.cityView = false; this.renderMap(); }
     else if (it === 'controls') this.renderControls();
     else if (it === 'places') this.renderPlaces();
     else this.renderStats();
@@ -183,6 +190,14 @@ export class Menu {
       canvas.width = canvas.clientWidth * dpr;
       canvas.height = canvas.clientHeight * dpr;
       this.mapView = { cx: me.x, cz: me.z, scale: fit() * 2.5 };
+      const g = this.d.hud.guide;
+      if (g) {
+        // Ramu, the places on the way and the goal all in view
+        const xs = [me.x, g.x, ...g.path.map((p) => p[0])], zs = [me.z, g.z, ...g.path.map((p) => p[1])];
+        const ax = Math.min(...xs), bx = Math.max(...xs), az = Math.min(...zs), bz = Math.max(...zs), m = 60 + (g.radius ?? 0);
+        const k = Math.min(canvas.clientWidth / (bx - ax + 2 * m), (canvas.clientHeight - 70) / (bz - az + 2 * m));
+        this.mapView = { cx: (ax + bx) / 2, cz: (az + bz) / 2 - 30 / Math.max(fit(), Math.min(6, k)), scale: Math.max(fit(), Math.min(6, k)) };
+      }
       draw();
     });
     const zoom = (k: number) => {
@@ -365,8 +380,57 @@ export class Menu {
       label([st[0], st[1] - 14 / scale], t('map.metro'), '#1f3b57');
     }
 
-    // player arrow (points where the camera looks)
     const me = this.d.player();
+    const goal = hud.guide;
+    if (goal) {
+      // the way there, dotted, and the goal: a pin, or a search area
+      g.lineCap = g.lineJoin = 'round';
+      g.beginPath();
+      g.moveTo(sx(me.x), sz(me.z));
+      for (const [px, pz] of goal.path) g.lineTo(sx(px), sz(pz));
+      g.lineTo(sx(goal.x), sz(goal.z));
+      g.setLineDash([2, 7]);
+      g.strokeStyle = 'rgba(255,255,255,.95)';
+      g.lineWidth = 7;
+      g.stroke();
+      g.strokeStyle = '#c2410c';
+      g.lineWidth = 4;
+      g.stroke();
+      g.setLineDash([]);
+      const gx = sx(goal.x), gz = sz(goal.z);
+      if (goal.radius) {
+        g.beginPath();
+        g.arc(gx, gz, goal.radius * scale, 0, Math.PI * 2);
+        g.fillStyle = 'rgba(242,153,42,.25)';
+        g.fill();
+        g.setLineDash([6, 4]);
+        g.strokeStyle = '#c2410c';
+        g.lineWidth = 2;
+        g.stroke();
+        g.setLineDash([]);
+        label([goal.x, goal.z], t('map.search'), '#7a2e0a');
+      } else {
+        g.fillStyle = '#f2992a';
+        g.strokeStyle = '#fff';
+        g.lineWidth = 2.5;
+        g.beginPath();
+        g.moveTo(gx, gz);
+        g.bezierCurveTo(gx - 4, gz - 9, gx - 11, gz - 13, gx - 11, gz - 21);
+        g.arc(gx, gz - 21, 11, Math.PI, 0);
+        g.bezierCurveTo(gx + 11, gz - 13, gx + 4, gz - 9, gx, gz);
+        g.closePath();
+        g.fill();
+        g.stroke();
+        g.beginPath();
+        g.arc(gx, gz - 21, 4, 0, Math.PI * 2);
+        g.fillStyle = '#fff';
+        g.fill();
+        g.font = '700 12px system-ui, sans-serif';
+        label([goal.x, goal.z - 42 / scale], t('map.goal'), '#7a2e0a');
+      }
+    }
+
+    // player arrow (points where the camera looks)
     g.save();
     g.translate(sx(me.x), sz(me.z));
     g.rotate(-me.yaw);
@@ -392,6 +456,27 @@ export class Menu {
     g.textAlign = 'left';
     g.font = '11px system-ui';
     g.fillText(bar >= 1000 ? `${bar / 1000} km` : `${bar} m`, 12, H - 26);
+
+    // the mission along the top
+    if (goal) {
+      const w = Math.min(W - 80, 460), x = (W - w) / 2, y = 10;
+      g.font = '700 15px system-ui, sans-serif';
+      const lines = [goal.title, goal.hint].filter(Boolean);
+      const h = 16 + lines.length * 20;
+      g.fillStyle = 'rgba(20,16,12,.8)';
+      g.beginPath();
+      g.roundRect(x, y, w, h, 10);
+      g.fill();
+      g.fillStyle = '#f2992a';
+      g.fillRect(x, y + 8, 4, h - 16);
+      g.textAlign = 'left';
+      g.textBaseline = 'top';
+      lines.forEach((l, i) => {
+        g.font = i ? '13px system-ui, sans-serif' : '700 15px system-ui, sans-serif';
+        g.fillStyle = i ? '#e9dccb' : '#fff';
+        g.fillText(l, x + 16, y + 9 + i * 21, w - 26);
+      });
+    }
   }
 
   // ---------- Places ----------

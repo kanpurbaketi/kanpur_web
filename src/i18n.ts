@@ -146,6 +146,9 @@ const EN = {
   'map.cityNote': 'Kanpur. Greyed parts are not open yet. ▦ switches to the local map.',
   'map.metro': 'Metro',
   'map.north': 'N ↑',
+  'map.open': 'Open the map',
+  'map.goal': 'Go here',
+  'map.search': 'Search here',
 
   'places.search': 'Search places',
   'places.here': 'You are here',
@@ -370,6 +373,9 @@ const HI: Record<Key, string> = {
   'map.cityNote': 'कानपुर। धुंधले हिस्से अभी खुले नहीं हैं। ▦ से आसपास का नक्शा देखें।',
   'map.metro': 'मेट्रो',
   'map.north': 'उ ↑',
+  'map.open': 'नक्शा खोलें',
+  'map.goal': 'यहाँ जाओ',
+  'map.search': 'यहाँ ढूँढो',
 
   'places.search': 'जगह खोजें',
   'places.here': 'आप यहाँ हैं',

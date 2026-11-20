@@ -220,6 +220,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   document.body.append(chip.root);
   // the stage's story (src/game/story/): its cutscenes, lines and missions
   const director = play?.stage.n === 1 ? new Director(camera, ramu, 1) : null;
+  hud.onOpen = () => menu.openMap();                     // a click on the minimap: the big map, with the mission's way marked
   if (director && params.has('debug')) (window as unknown as { __director: Director }).__director = director;
   let step = 0;
   const finish = () => {
@@ -422,6 +423,7 @@ void main() {
       }
     }
     sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
+    hud.guide = director?.guide() ?? null;
     if (!fixed) hud.update(ramu.position.x, ramu.position.z, ramu.yaw);
     renderer.info.reset();
     treeUniforms.time.value += dt;

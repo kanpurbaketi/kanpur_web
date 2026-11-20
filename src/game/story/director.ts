@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { fmtNum, onLang, t, tk } from '../../i18n';
+import type { Guide } from '../../ui/hud';
 import { Subtitles } from '../../ui/subtitles';
 import type { Face } from '../../world/face';
 import { CutCam, type Shot } from './cutcam';
@@ -26,6 +27,8 @@ export interface Waypoint {
   /** the hint shown on the way there */
   hint: string;
   done: (x: number, z: number) => boolean;
+  /** the maps show a search area this wide (m) round `at`, not the exact spot */
+  radius?: number;
 }
 
 export interface Actorish {
@@ -48,6 +51,7 @@ export class Director {
   private tests: { test: () => boolean; done: () => void }[] = [];
   private voice: HTMLAudioElement | null = null;
   private v = new THREE.Vector3();
+  private now: { textKey: string; steps: Waypoint[]; i: number } | null = null;
 
   constructor(camera: THREE.PerspectiveCamera, private ramu: Actorish & { cinematic: boolean }, private stage: number) {
     this.cam = new CutCam(camera, ramu);
@@ -134,12 +138,27 @@ export class Director {
   // ---- missions ----
 
   async mission(n: number, textKey: string, steps: Waypoint[]): Promise<void> {
+    this.now = { textKey, steps, i: 0 };
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
+      this.now.i = i;
       this.box.set(n, textKey, s.hint, s.at);
       await this.until(() => s.done(this.ramu.position.x, this.ramu.position.z));
     }
+    this.now = null;
     this.box.clear();
+  }
+
+  /** where the mission leads, for the maps: its last place, through the ones still ahead; null between missions and in cutscenes */
+  guide(): Guide | null {
+    const m = this.now;
+    if (!m || this.inScene) return null;
+    const ahead = m.steps.slice(m.i), last = ahead[ahead.length - 1];
+    return {
+      x: last.at[0], z: last.at[1], radius: last.radius,
+      title: tk(m.textKey), hint: tk(ahead[0].hint),
+      path: ahead.slice(0, -1).map((s) => s.at),
+    };
   }
 
   // ---- the camera ----

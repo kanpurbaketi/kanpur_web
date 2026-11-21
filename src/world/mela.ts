@@ -436,7 +436,8 @@ export interface Sammelan {
   ground: (x: number, z: number) => number;
   mic: [number, number];
   micProp: HandProp;
-  /** beside the mic, on Kumar's side (where whoever is called up comes to), and where the anchor steps aside to */
+  /** beside the mic, on Kumar's side (where whoever is called up comes to), and where the anchor steps aside to (that
+   * side too, once the mic is handed over: the far stairs' side clear) */
   micSide: [number, number];
   aside: [number, number];
   lota: HandProp;
@@ -460,6 +461,10 @@ export interface Sammelan {
   audience: Seated[];
   /** run every frame while Ramu is near the stage */
   ticks: Set<(dt: number) => void>;
+  /** just outside the sammelan's two gates (east, then north: two places at each) */
+  gates: [number, number][];
+  /** security men at `spots` sent after Ramu (at px, pz) from anywhere, for good (the mela's crowd's fighting) */
+  spawnGuards: (n: number, spots: [number, number][], px: number, pz: number) => Promise<void>;
 }
 
 /** somebody in the audience, and how they sit (their floor clip and its speed) */
@@ -834,11 +839,14 @@ export class Mela {
       this.props.push(mic);
       return {
         kumar, anchor, poets: ps, seats: seatW, seatY: SEAT_Y, facing: FACE, floor: FLOOR, ground,
-        mic: toW(MIC[0], MIC[1]), micProp: mic, micSide: toW(MIC[0] - 0.85, MIC[1] - 0.25), aside: toW(MIC[0] + 1.7, MIC[1] - 0.5), lota: new HandProp(lotaObj, 'hang', LOTA_NECK), lotaAt: [lx, lz] as [number, number],
+        mic: toW(MIC[0], MIC[1]), micProp: mic, micSide: toW(MIC[0] - 0.85, MIC[1] - 0.25), aside: toW(MIC[0] - 1.8, MIC[1] - 0.5), lota: new HandProp(lotaObj, 'hang', LOTA_NECK), lotaAt: [lx, lz] as [number, number],
         door: toW(doorX, -D / 2 - 2.6), behind: toW(doorX, -D / 2 - 0.8), inside: toW(doorX, -D / 2 + 1.3),
         exit: [[seats[0], SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z - 1.5], [st0 - 0.7, SEAT_Z - 1.5],
           [st0 - 0.5, scz], [st0 + 4.2, scz], [st0 + 7.5, scz + 1.5]].map(([x, z]) => toW(x, z)),
         centre: toW(cx, cz), props: this.props, quiet: this.quiet, group: this.group, audience: this.seated, ticks: this.ticks,
+        gates: [[SAMMELAN.x1 + 1.6, SAMMELAN_GATES.east.z - 0.8], [SAMMELAN.x1 + 2.4, SAMMELAN_GATES.east.z + 0.8],
+          [SAMMELAN_GATES.north.x - 0.7, SAMMELAN.z0 - 1.6], [SAMMELAN_GATES.north.x + 0.7, SAMMELAN.z0 - 2.4]] as [number, number][],
+        spawnGuards: (n: number, spots: [number, number][], px: number, pz: number) => this.crowd.spawnHunters(n, spots, px, pz, (x, z) => this.roundDari(x, z, pz)),
       };
     });
     this.sammelan.catch((e) => console.error('the sammelan failed to load', e));
@@ -1207,6 +1215,23 @@ export class Mela {
   }
 
   // ---- litter: the ground after a few evenings of the mela -----------------------------------------------
+
+  /**
+   * The way from (x, z) to the front of the stage round the audience on the dari (a block nobody gets through): in at the
+   * sammelan's gate if outside its fence, along the dari's side nearer (z) to the gap between it and the stage, then along
+   * that gap to about `toZ`.
+   */
+  private roundDari(x: number, z: number, toZ: number): [number, number][] {
+    const d = this.dari, side = z < (d.z0 + d.z1) / 2 ? d.z0 - 0.9 : d.z1 + 0.9, gap = d.x0 - 0.7;
+    const out: [number, number][] = [];
+    // outside the fence: in through the gate first
+    const { east, north } = SAMMELAN_GATES;
+    if (x > SAMMELAN.x1) out.push([SAMMELAN.x1 + 1, Math.max(east.z - east.half + 0.6, Math.min(east.z + east.half - 0.6, z))], [SAMMELAN.x1 - 1.2, east.z]);
+    else if (z < SAMMELAN.z0) out.push([Math.max(north.x - north.half + 0.5, Math.min(north.x + north.half - 0.5, x)), SAMMELAN.z0 - 1], [north.x, SAMMELAN.z0 + 1.2]);
+    if (x > d.x0) out.push([Math.min(x, d.x1 + 0.9), side]);
+    out.push([gap, side], [gap, Math.max(d.z0 + 0.5, Math.min(d.z1 - 0.5, toZ))]);
+    return out;
+  }
 
   /**
    * Worn patches of grass on the open ground (grass.ts): a green-brown stain on the dirt (roadDirt.ts) with clumps and

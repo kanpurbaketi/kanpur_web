@@ -28,8 +28,8 @@ type Live<T> = T | (() => T);
 const live = <T,>(v: Live<T>): T => (typeof v === 'function' ? (v as () => T)() : v);
 
 export interface Waypoint {
-  /** where it leads (for the distance shown) */
-  at: Live<[number, number]>;
+  /** where it leads (for the distance shown); null: nowhere in particular (no distance, nothing on the maps) */
+  at: Live<[number, number] | null>;
   /** the hint shown on the way there */
   hint: Live<string>;
   done: (x: number, z: number) => boolean;
@@ -199,11 +199,13 @@ export class Director {
     const m = this.now;
     if (!m || this.inScene) return null;
     const ahead = m.steps.slice(m.i), last = ahead[ahead.length - 1];
-    const [x, z] = live(last.at);
+    const at = live(last.at);
+    if (!at) return null;
+    const [x, z] = at;
     return {
       x, z, radius: last.radius === undefined ? undefined : live(last.radius),
       title: tk(m.textKey), hint: tk(live(ahead[0].hint)),
-      path: ahead.slice(0, -1).map((s) => live(s.at)),
+      path: ahead.slice(0, -1).map((s) => live(s.at)).filter((p): p is [number, number] => p !== null),
     };
   }
 
@@ -263,7 +265,7 @@ export class MissionBox {
     onLang(() => this.draw(true));
   }
 
-  set(n: number, textKey: string, hintKey: string, at: [number, number]): void {
+  set(n: number, textKey: string, hintKey: string, at: [number, number] | null): void {
     const fresh = n !== this.n || textKey !== this.textKey;
     this.n = n; this.textKey = textKey; this.hintKey = hintKey; this.target = at;
     this.root.hidden = false;
@@ -281,13 +283,13 @@ export class MissionBox {
   }
 
   private draw(force: boolean): void {
-    if (!this.target) return;
-    const m = Math.round(Math.hypot(this.target[0] - this.px, this.target[1] - this.pz) / 5) * 5;
+    if (this.root.hidden && !force) return;
+    const m = this.target ? Math.round(Math.hypot(this.target[0] - this.px, this.target[1] - this.pz) / 5) * 5 : -1;
     const key = `${this.textKey}|${this.hintKey}|${m}`;
     if (!force && key === this.last) return;
     this.last = key;
     this.num.textContent = t('obj.mission', { n: this.n });
-    this.dist.textContent = t('obj.dist', { m: fmtNum(m) });
+    this.dist.textContent = m < 0 ? '' : t('obj.dist', { m: fmtNum(m) });
     this.line.textContent = tk(this.textKey);
     this.hint.textContent = tk(this.hintKey);
     this.hint.hidden = !this.hintKey;

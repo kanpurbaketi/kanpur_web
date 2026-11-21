@@ -50,7 +50,13 @@ export async function stage1Part2(d: Director, ramu: Ramu, mela: Promise<Sammela
   const throwers = new Throwers(s, () => ramu.position);
   throwers.onHit = () => { ramu.flinch(); void playSfx('thud', 0.8); };
   for (const q of QUIZ) await quiz(d, ramu, s, ui, throwers, q);
-  hooks.done('story.s1.part1');
+
+  // ---- beats 8-10: found out; everyone up; "pakdo!"; the guards; run ----
+  foundOut(ramu, s, throwers);
+  hooks.step(6);
+  hooks.done('story.s1.part2');
+  // (part 3 takes it from here: until then the guards just keep after him)
+  await d.mission(6, 'm.s1.run', [{ at: null, hint: 'm.s1.run.h1', done: () => false }]);
 }
 
 /** the couplets (quiz.s1.<n> in i18n): which second line is the right one; the last is rigged */
@@ -99,13 +105,129 @@ async function quiz(d: Director, ramu: Ramu, s: Sammelan, ui: RhymeQuiz, thrower
     const over = { pos: v(head.x - fx * 1.8 - fz * 0.7, head.y + 0.35, head.z - fz * 1.8 + fx * 0.7), look: v(head.x + fx * 6, head.y - 1.4, head.z + fz * 6), fov: 50 };
     d.shot(over, 0);
     let landed = false;
-    void throwers.volley(q.rigged ? 14 : 8, q.rigged, q.rigged ? 3 : 2.2).then(() => { landed = true; });
+    void throwers.volley(q.rigged ? 14 : 8, q.rigged, q.rigged ? 3 : 2.2, q.rigged ? null : 3).then(() => { landed = true; });
     await d.say('audience', null, 'boo');
     d.shot(house, 0, d.pushIn(house, 0.05));
+    if (q.rigged) { await d.wait(1.6); await kumarBack(d, ramu, s, throwers); return; }   // in the middle of it: Kumar
     await d.until(() => landed || d.skipped);
     await d.wait(0.6);
   });
   ramu.yaw = s.facing;
+}
+
+/** where Kumar stops, on his way to Ramu from the top of the stairs */
+function kumarStop(ramu: Ramu, s: Sammelan): [number, number] {
+  const top = s.exit[4], p = ramu.position, dx = top[0] - p.x, dz = top[1] - p.z, d = Math.hypot(dx, dz) || 1;
+  return [p.x + (dx / d) * 2.4, p.z + (dz / d) * 2.4];
+}
+
+/**
+ Beats 7-9 (inside the last quiz's scene): the real Kumar back up the far stairs, lota in hand: "Abey guru, tum kaun ho
+ be?"; Ramu: "Heh… hum? Hum toh bas…"; everybody on their feet, poets and audience; the anchor points: "Dhokebaaz hai ye
+ launda, pakdo!"; four guards in through the sammelan's gates.
+*/
+async function kumarBack(d: Director, ramu: Ramu, s: Sammelan, throwers: Throwers): Promise<void> {
+  const k = s.kumar, { anchor } = s;
+  const foot = s.exit[5], top = s.exit[4], stop = kumarStop(ramu, s);
+  k.visible = true;
+  k.idle();
+  k.place(...foot);
+  k.position.y = s.ground(...foot);
+  holdLota(s, k);
+  s.quiet.add(k);
+  k.face.angry = 1;
+  const [fx, fz] = [-Math.sin(s.facing), -Math.cos(s.facing)];
+  // from out front, the stairs and Ramu at the mic both in it
+  const mid = [(top[0] + ramu.position.x) / 2, (top[1] + ramu.position.z) / 2];
+  d.shot({ pos: v(mid[0] + fx * 8.5, s.floor + 1.6, mid[1] + fz * 8.5), look: v(mid[0], s.floor + 0.9, mid[1]), fov: 46 }, 0);
+  void walk(d, k, [top, stop], 1.7);
+  await d.until(() => !walking.has(k) || d.skipped);
+  await d.wait(0.2);
+  k.faceTowards(ramu.position.x, ramu.position.z);
+  const kf = d.front(k, { dist: 1.7, side: 0.4, up: 0.05, drop: 0.15, fov: 37 });
+  d.shot(kf, 0, d.pushIn(kf, 0.03));
+  await d.wait(0.3);
+  await d.say('kumar', k.face, 'who');
+  // Ramu, caught
+  ramu.holdClip('idle');
+  s.micProp.mode = 'palm';
+  ramu.faceTowards(k.position.x, k.position.z);
+  const r = d.front(ramu, { dist: 1.5, side: 0.45, up: 0, drop: 0.15, fov: 37 });
+  d.shot(r, 0, d.pushIn(r, 0.03));
+  await d.wait(0.3);
+  await d.say('ramu', ramu.face, 'gulp');
+  // everybody up
+  standUpAll(s, ramu, throwers);
+  const head = new THREE.Vector3();
+  if (!ramu.headPosition(head)) head.set(ramu.position.x, ramu.position.y + 1.5, ramu.position.z);
+  d.shot({ pos: v(head.x - fx * 2.2 + fz * 1.2, head.y + 0.9, head.z - fz * 2.2 - fx * 1.2), look: v(head.x + fx * 7, head.y - 1.6, head.z + fz * 7), fov: 55 }, 0);
+  void playSfx('boo', 0.7, 2.5);
+  await d.wait(2.0);
+  // the anchor: "pakdo!"
+  anchor.faceTowards(ramu.position.x, ramu.position.z);
+  anchor.gesture('angry_point', 'pakdo', 2.4);
+  anchor.face.angry = 1;
+  const af = d.front(anchor, { dist: 2.0, side: -0.5, up: 0.05, drop: 0.2, fov: 40 });
+  d.shot(af, 0, d.pushIn(af, 0.04));
+  await d.wait(0.3);
+  await d.say('anchor', anchor.face, 'pakdo');
+  // the guards, in at the gates
+  await guards(ramu, s);
+  const g = s.gates[0];
+  d.shot({ pos: v(g[0] - 9, 2.2, g[1] + 3), look: v(g[0] - 1, 1.0, g[1]), fov: 48 }, 0);
+  await d.wait(2.2);
+}
+
+let guardsSent = false;
+function guards(ramu: Ramu, s: Sammelan): Promise<void> {
+  if (guardsSent) return Promise.resolve();
+  guardsSent = true;
+  return s.spawnGuards(4, s.gates, ramu.position.x, ramu.position.z).catch((e) => console.error('guards failed', e));
+}
+
+let stood = false;
+/** the poets up out of their seats (a step forward), and everyone in the audience on their feet, all facing Ramu */
+function standUpAll(s: Sammelan, ramu: Ramu, throwers: Throwers): void {
+  throwers.standAll();
+  if (stood) return;
+  stood = true;
+  const [fx, fz] = [-Math.sin(s.facing), -Math.cos(s.facing)];
+  s.poets.forEach((p, i) => {
+    const [x, z] = s.seats[i + 1];
+    p.idle();
+    p.place(x + fx * 0.45, z + fz * 0.45);
+    p.position.y = s.floor;
+    p.faceTowards(ramu.position.x, ramu.position.z);
+    p.face.laughing = false;
+    s.quiet.add(p);
+    p.face.talking = false;
+  });
+}
+
+/** watched or skipped, after the last quiz: Kumar back with his lota, everyone up, the guards coming, Ramu free to run */
+function foundOut(ramu: Ramu, s: Sammelan, throwers: Throwers): void {
+  const k = s.kumar, { anchor } = s;
+  if (!k.visible || walking.has(k)) {
+    stopWalk(k);
+    const stop = kumarStop(ramu, s);
+    k.visible = true;
+    k.idle();
+    k.place(...stop);
+    k.position.y = s.ground(...stop);
+    holdLota(s, k);
+  }
+  k.faceTowards(ramu.position.x, ramu.position.z);
+  standUpAll(s, ramu, throwers);
+  anchor.idle();
+  anchor.faceTowards(ramu.position.x, ramu.position.z);
+  void guards(ramu, s);
+  // the mic dropped where he stood, Ramu on his feet and his own again
+  const m = s.micProp;
+  m.holder(null);
+  m.object.position.set(s.mic[0] + 0.3, s.floor + 0.03, s.mic[1] + 0.2);
+  m.object.rotation.set(0, 0.6, Math.PI / 2);
+  ramu.standUp(ramu.position.x, ramu.position.z, s.floor);
+  ramu.yaw = ramu.facing;
 }
 
 /** the poets clap for a few seconds, then go back to what they were doing */
@@ -386,7 +508,8 @@ function standKumar(s: Sammelan): void {
 async function kumarGoes(d: Director, s: Sammelan, skipped: boolean): Promise<void> {
   const k = s.kumar, end = s.exit[s.exit.length - 1];
   if (skipped) { stopWalk(k); k.place(end[0], end[1]); k.position.y = 0; }
-  else await walking.get(k);
+  else await (walking.get(k) ?? Promise.resolve());
+  if (k.visible === false || walking.has(k)) return;       // (already sent back up by the last quiz)
   k.visible = false;
   k.face.angry = 0;
 }
@@ -404,6 +527,7 @@ function walk(d: Director, p: Person, pts: [number, number][], speed: number): P
     }
   })();
   walking.set(p, go);
+  void go.then(() => { if (walking.get(p) === go) walking.delete(p); });
   return go;
 }
 function stopWalk(p: Person): void { ways.delete(p); p.place(p.position.x, p.position.z); }

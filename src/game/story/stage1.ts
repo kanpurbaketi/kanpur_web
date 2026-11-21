@@ -279,4 +279,4 @@ async function refusals(d: Director, ramu: Ramu, keepers: CartKeepers): Promise<
 }
 
 /** how many missions the introduction lists */
-export const STAGE1_STEPS = 3;
+export const STAGE1_STEPS = 6;

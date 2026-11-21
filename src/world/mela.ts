@@ -8,7 +8,7 @@ import { groundDecals } from './roadDirt';
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { MELA_MIX, Pedestrians } from './pedestrians';
-import { FigureKind, figurePosts, ONLOOKER, someone, Spot } from './figures';
+import { figurePosts, ONLOOKER, someone, Spot } from './figures';
 import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, DX, DZ, GATE, HINDOLA, inMela, INFLATABLE, KUAN, MELA, Rect, SAMMELAN, SAMMELAN_GATES, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
 import { buildInflatable } from './inflatable';
 import { buildMautKuan } from './mautKuan';
@@ -717,11 +717,12 @@ export class Mela {
     this.stageProps(stage, sofas, SEAT_Z, FLOOR);
     this.stageTable(stage, seats, SEAT_Z + 1.25, FLOOR, post);
     // the poets: rigged people on the cushions, listening and talking among themselves, now and then laughing or clapping
-    const poets: FigureKind[] = ['uncle', 'uncle', 'boy', 'aunty', 'uncle', 'girl', 'uncle', 'boy'];
+    // ... Buddha, the old poet with the white beard (his own model: assets/budda), in the armchair at the right end
+    const poets: RigName[] = ['uncle', 'uncle', 'boy', 'aunty', 'uncle', 'girl', 'uncle', 'buddha'];
     const CLIPS = ['sitting_talking', 'sitting_clap', 'sitting_talking', 'sitting_laughing', 'sitting_talking', 'sitting_clap', 'sitting_laughing', 'sitting_talking'];
-    // ... and one more: the poet reciting, on his feet at the front, a mic in his fist at his chin (the recite clip: the
-    // talking clip with the right hand held up there; the mic is put in it every frame, holdMic)
-    const cast: FigureKind[] = [...poets, 'uncle'];
+    // ... and the anchor (his own model: assets/anchor), on his feet at the front, a mic in his fist at his chin (the
+    // recite clip: the talking clip with the right hand held up there; the mic is put in it every frame, holdMic)
+    const cast: RigName[] = [...poets, 'anchor'];
     const kinds = [...new Set(cast)];
     Promise.all(kinds.map((k) => makeActors(k, cast.filter((p) => p === k).length))).then((made) => {
       const left = new Map(kinds.map((k, i) => [k, made[i]]));
@@ -749,7 +750,7 @@ export class Mela {
         this.poets.push(k);
         this.chat.push({ a: k, t: 3 });
       }).catch((e) => console.error('kumar failed to load', e));
-      const r = left.get('uncle')!.shift()!;
+      const r = left.get('anchor')!.shift()!;
       r.root.position.set(MIC[0], FLOOR, MIC[1]);
       r.root.rotation.y = Math.PI;
       r.play('recite', 0.9, 0);

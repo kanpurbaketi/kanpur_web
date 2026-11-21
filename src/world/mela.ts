@@ -454,9 +454,16 @@ export interface Sammelan {
   props: HandProp[];
   /** people the chatting leaves alone */
   quiet: Set<Person>;
-  /** where to put things (the mela's group) */
+  /** where to put things (the mela's group, in the world's frame) */
   group: THREE.Group;
+  /** the audience on the dari (in the stage's group: their world positions by getWorldPosition), as they load */
+  audience: Seated[];
+  /** run every frame while Ramu is near the stage */
+  ticks: Set<(dt: number) => void>;
 }
+
+/** somebody in the audience, and how they sit (their floor clip and its speed) */
+export interface Seated { actor: Actor; sit: string; scale: number }
 
 
 export class Mela {
@@ -535,6 +542,7 @@ export class Mela {
       }
       for (const p of this.cast) if (p.visible) p.update(dt);
       for (const h of this.props) h.update();
+      for (const f of this.ticks) f(dt);
       this.audTick ^= 1;
       for (let i = this.audTick; i < this.audience.length; i += 2) this.audience[i].update(dt * 2);
     }
@@ -649,6 +657,10 @@ export class Mela {
   private props: HandProp[] = [];
   /** people the chatting leaves alone (the story has them talk) */
   private quiet = new Set<Person>();
+  /** the audience as the story sees them: each with the way they sit (to sit back down after getting up) */
+  private seated: Seated[] = [];
+  /** the story's things that move (thrown fruit), run every frame near the stage */
+  private ticks = new Set<(dt: number) => void>();
   private poetsAt: [number, number] = [0, 0];
   /** the audience on the dari, rigged (updated half at a time, while Ramu is near enough to see them) */
   private audience: Actor[] = [];
@@ -826,7 +838,7 @@ export class Mela {
         door: toW(doorX, -D / 2 - 2.6), behind: toW(doorX, -D / 2 - 0.8), inside: toW(doorX, -D / 2 + 1.3),
         exit: [[seats[0], SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z - 1.5], [st0 - 0.7, SEAT_Z - 1.5],
           [st0 - 0.5, scz], [st0 + 4.2, scz], [st0 + 7.5, scz + 1.5]].map(([x, z]) => toW(x, z)),
-        centre: toW(cx, cz), props: this.props, quiet: this.quiet, group: this.group,
+        centre: toW(cx, cz), props: this.props, quiet: this.quiet, group: this.group, audience: this.seated, ticks: this.ticks,
       };
     });
     this.sammelan.catch((e) => console.error('the sammelan failed to load', e));
@@ -855,11 +867,13 @@ export class Mela {
         const u = rnd(p.n! * 0.71 + 2);
         a.root.position.set(p.x, DARI_Y, p.z);
         a.root.rotation.y = p.ry;
-        a.play(u < 0.62 ? 'floor_idle' : u < 0.82 ? 'floor_cross' : 'floor_knees', 0.8 + rnd(p.n! + 9) * 0.4, 0);
+        const sit = u < 0.62 ? 'floor_idle' : u < 0.82 ? 'floor_cross' : 'floor_knees', scale = 0.8 + rnd(p.n! + 9) * 0.4;
+        a.play(sit, scale, 0);
         a.update(rnd(p.n! * 1.3) * 11);
         a.face.blinking = true;
         stage.add(a.root);
         this.audience.push(a);
+        this.seated.push({ actor: a, sit, scale });
       });
     }).catch((e) => console.error('audience failed to load', e));
     for (const [x, z, r, h, base] of figurePosts(people)) post(x, z, r, h, base);   // the poets and the audience: you go round them

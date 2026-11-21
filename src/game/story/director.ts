@@ -144,14 +144,16 @@ export class Director {
     for (const w of this.tweens.splice(0)) { w.f(1); w.done(); }
   }
 
-  /** a line: `key` is the i18n line (line.s<n>.<id>), its recording voice/<stage>/<id>.mp3 */
-  async say(who: Who, face: Face | null | undefined, id: string): Promise<void> {
+  /**
+   * a line: the i18n line line.s<n>.<id> (or `key`, if given), its recording voice/<stage>/<id>.mp3; `text`: what to
+   * show instead (two lines put together), its length from its words
+   */
+  async say(who: Who, face: Face | null | undefined, id: string, key = `line.s${this.stage}.${id}`, text?: () => string): Promise<void> {
     if (this.skipping) return;
-    const key = `line.s${this.stage}.${id}`;
-    this.subs.show(t(`who.${who}` as Parameters<typeof t>[0]), tk(key));
+    this.subs.show(t(`who.${who}` as Parameters<typeof t>[0]), text ? text() : tk(key));
     const recorded = await this.recording(`audio/voice/stage${this.stage}/${id}.mp3`);
     // no recording: as long as the Hindi takes to say, or the subtitle to read if that is longer
-    const words = (l: 'en' | 'hi') => tIn(l, key).split(/\s+/).length;
+    const words = (l: 'en' | 'hi') => (text ? text() : tIn(l, key)).split(/\s+/).length;
     const secs = recorded ?? LINE_PAD + WORDS_S * Math.max(words('hi'), words('en'));
     if (face) face.talking = true;
     await this.wait(secs);

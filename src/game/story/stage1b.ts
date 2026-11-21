@@ -5,6 +5,9 @@ import { HandProp } from '../../world/handProp';
 import type { Sammelan } from '../../world/mela';
 import type { Person } from '../../world/person';
 import type { Director } from './director';
+import { tk } from '../../i18n';
+import { RhymeQuiz } from '../../ui/rhyme';
+import { Throwers } from '../../world/throwers';
 import type { StoryHooks } from './stage1';
 import { playSfx } from './sfx';
 
@@ -41,7 +44,77 @@ export async function stage1Part2(d: Director, ramu: Ramu, mela: Promise<Sammela
   // ---- beats 4-5: a little later, the anchor's shayaris, "Kumar Andhvishwas!", and the mic ----
   await d.wait(4);
   await anchorCalls(d, ramu, s);
+
+  // ---- beats 6-7: the rhyme quiz, three times (the third rigged: whatever he says, it is wrong) ----
+  const ui = new RhymeQuiz();
+  const throwers = new Throwers(s, () => ramu.position);
+  throwers.onHit = () => { ramu.flinch(); void playSfx('thud', 0.8); };
+  for (const q of QUIZ) await quiz(d, ramu, s, ui, throwers, q);
   hooks.done('story.s1.part1');
+}
+
+/** the couplets (quiz.s1.<n> in i18n): which second line is the right one; the last is rigged */
+const QUIZ = [{ n: 1, right: 1, rigged: false }, { n: 2, right: 0, rigged: false }, { n: 3, right: 3, rigged: true }];
+
+/**
+ Ramu "recites" the first line; the player picks the second (the quiz panel); he says the couplet. Right: applause, wah
+ wah, the poets clapping. Wrong (or nothing picked in time, or the rigged one): boos, and those nearest the stage get up
+ and throw food at him (the rigged one: chappals and shoes too); what reaches him, he flinches at.
+*/
+async function quiz(d: Director, ramu: Ramu, s: Sammelan, ui: RhymeQuiz, throwers: Throwers, q: (typeof QUIZ)[number]): Promise<void> {
+  const key = `quiz.s1.${q.n}`, line = `${key}.line`;
+  const close = () => d.front(ramu, { dist: 2.0, side: 0.6, up: 0, drop: 0.25, fov: 38 });
+  await d.scene(async () => {
+    const r = close();
+    d.shot(r, 0, d.pushIn(r, 0.03));
+    await d.wait(0.5);
+    await d.say('ramu', ramu.face, `q${q.n}`, line);
+    await d.wait(0.2);
+  });
+  ramu.yaw = s.facing;                                         // over his shoulder at the audience, while he thinks
+  const a = await ui.ask({ line, choices: [0, 1, 2, 3].map((i) => `${key}.c${i}`), right: q.right, rigged: q.rigged });
+  await d.scene(async () => {
+    const r = close();
+    d.shot(r, 0, d.pushIn(r, 0.03));
+    await d.wait(0.2);
+    if (a.picked >= 0) {
+      const second = `${key}.c${a.picked}`;
+      await d.say('ramu', ramu.face, `q${q.n}c${a.picked}`, second, () => `${tk(line)}\n${tk(second)}`);
+    } else await d.say('ramu', ramu.face, 'umm');
+    const [fx, fz] = [-Math.sin(s.facing), -Math.cos(s.facing)];
+    const head = new THREE.Vector3();
+    if (!ramu.headPosition(head)) head.set(ramu.position.x, ramu.position.y + 1.5, ramu.position.z);
+    // from the audience, up at him
+    const house = { pos: v(head.x + fx * 7.5 + fz * 1.5, head.y - 0.6, head.z + fz * 7.5 - fx * 1.5), look: v(head.x, head.y - 0.3, head.z), fov: 40 };
+    if (a.right) {
+      void playSfx('applause', 1, 4);
+      clap(d, s);
+      d.shot(house, 0.5, d.pushIn(house, 0.1));
+      await d.say('audience', null, 'wah');
+      await d.wait(1.2);
+      return;
+    }
+    // boos, and over his shoulder: the front rows getting up, things coming at him
+    void playSfx('boo', 1, 3.5);
+    const over = { pos: v(head.x - fx * 1.8 - fz * 0.7, head.y + 0.35, head.z - fz * 1.8 + fx * 0.7), look: v(head.x + fx * 6, head.y - 1.4, head.z + fz * 6), fov: 50 };
+    d.shot(over, 0);
+    let landed = false;
+    void throwers.volley(q.rigged ? 14 : 8, q.rigged, q.rigged ? 3 : 2.2).then(() => { landed = true; });
+    await d.say('audience', null, 'boo');
+    d.shot(house, 0, d.pushIn(house, 0.05));
+    await d.until(() => landed || d.skipped);
+    await d.wait(0.6);
+  });
+  ramu.yaw = s.facing;
+}
+
+/** the poets clap for a few seconds, then go back to what they were doing */
+function clap(d: Director, s: Sammelan): void {
+  for (const p of s.poets) {
+    const was = p.pose;
+    p.hold('sitting_clap', 0.9 + Math.random() * 0.3);
+    void d.wait(2.5 + Math.random()).then(() => { if (p.pose === 'sitting_clap') p.hold(was ?? 'sitting_talking'); });
+  }
 }
 
 /** up on the stage (through the curtain at the back, or any way he likes) and into Kumar's chair */

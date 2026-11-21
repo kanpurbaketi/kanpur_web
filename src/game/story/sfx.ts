@@ -3,6 +3,9 @@
  with WebAudio (the audio context starts on the first click, and the stage's Start is one).
    stomach   a long hungry growl: a low buzzing tone that bends up and down, gurgling, under a little muffled noise
    applause  a crowd clapping: hundreds of short noise bursts (each a clap, its own pitch), thick at first, thinning out
+   boo       a crowd booing: a dozen low voices on an "ooo" (buzzing tones through the vowel's two formants), each its own
+             pitch, sliding down
+   thud      something soft hitting somebody: a short low knock
 */
 
 let ctx: AudioContext | null = null;
@@ -19,12 +22,61 @@ function file(name: string): Promise<boolean> {
   });
 }
 
-export type Sfx = 'stomach' | 'applause';
+export type Sfx = 'stomach' | 'applause' | 'boo' | 'thud';
 
 export async function playSfx(name: Sfx, volume = 1, secs = 3.5): Promise<void> {
   if (await file(name)) return;
   if (name === 'stomach') growl(volume);
   else if (name === 'applause') applause(volume, secs);
+  else if (name === 'boo') boo(volume, secs);
+  else if (name === 'thud') thud(volume);
+}
+
+function boo(volume: number, dur: number): void {
+  const c = audio();
+  void c.resume();
+  const t0 = c.currentTime + 0.02;
+  const out = c.createGain();
+  out.gain.setValueAtTime(0, t0);
+  out.gain.linearRampToValueAtTime(0.22 * volume, t0 + 0.35);
+  out.gain.setValueAtTime(0.22 * volume, t0 + dur - 0.8);
+  out.gain.linearRampToValueAtTime(0, t0 + dur);
+  // the "ooo": two formants
+  const f1 = c.createBiquadFilter(), f2 = c.createBiquadFilter(), mix = c.createGain();
+  f1.type = f2.type = 'bandpass';
+  f1.frequency.value = 330; f1.Q.value = 5;
+  f2.frequency.value = 820; f2.Q.value = 7;
+  mix.gain.value = 1;
+  f1.connect(mix); f2.connect(mix);
+  mix.connect(out).connect(c.destination);
+  for (let i = 0; i < 12; i++) {
+    const o = c.createOscillator(), g = c.createGain(), start = t0 + Math.random() * 0.5, f = 95 + Math.random() * 90;
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f, start);
+    o.frequency.linearRampToValueAtTime(f * 0.82, t0 + dur);
+    const vib = c.createOscillator(), vg = c.createGain();
+    vib.frequency.value = 4 + Math.random() * 3;
+    vg.gain.value = 3;
+    vib.connect(vg).connect(o.frequency);
+    g.gain.value = 0.5 + Math.random() * 0.5;
+    o.connect(g);
+    g.connect(f1); g.connect(f2);
+    for (const x of [o, vib]) { x.start(start); x.stop(t0 + dur + 0.05); }
+  }
+}
+
+function thud(volume: number): void {
+  const c = audio();
+  void c.resume();
+  const t0 = c.currentTime + 0.01;
+  const o = c.createOscillator(), g = c.createGain();
+  o.frequency.setValueAtTime(140, t0);
+  o.frequency.exponentialRampToValueAtTime(55, t0 + 0.12);
+  g.gain.setValueAtTime(0.6 * volume, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
+  o.connect(g).connect(c.destination);
+  o.start(t0);
+  o.stop(t0 + 0.2);
 }
 
 /** a crowd clapping for `dur` seconds */

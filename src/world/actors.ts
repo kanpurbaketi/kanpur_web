@@ -225,9 +225,41 @@ export async function rigMaterial(name: RigName, look: number): Promise<THREE.Me
   return lookMaterial(LOOKS[name][look % LOOKS[name].length], src.material);
 }
 
-/** `n` people of one kind (clones of one loaded model), each with the next of that kind's looks. */
-export async function makeActors(name: RigName, n: number): Promise<Actor[]> {
-  const src = await load(name);
+const liteCache = new Map<string, Promise<Source>>();
+/**
+ * The light body of a kind (models/<name>_rig_lite.glb: tools/blender/build_ramu_rig.py): the same skeleton, the mesh cut to
+ * about a fifth, no face keys. It plays the full file's clips and wears its material: its face UVs are passed on to the
+ * face shader, and its mouth never darkens.
+ */
+function loadLite(name: RigName): Promise<Source> {
+  const file = RIGS[name].file.replace('.glb', '_lite.glb');
+  let p = liteCache.get(file);
+  if (!p) {
+    p = Promise.all([load(name), gltfLoader().loadAsync(file)]).then(([full, gltf]) => {
+      gltf.scene.traverse((o) => {
+        const m = o as THREE.SkinnedMesh;
+        if (!m.isMesh) return;
+        m.castShadow = false;
+        m.frustumCulled = false;
+        m.material = full.material;
+        const g = m.geometry, uv1 = g.getAttribute('uv1');
+        if (uv1) g.setAttribute('faceUv', uv1);
+        else g.setAttribute('faceUv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2).fill(-1), 2));
+        g.setAttribute('faceDark', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count), 1));
+      });
+      return { scene: gltf.scene, clips: full.clips, material: full.material, lie: full.lie };
+    });
+    liteCache.set(file, p);
+  }
+  return p;
+}
+
+/**
+ * `n` people of one kind (clones of one loaded model), each with the next of that kind's looks. `lite`: the light body
+ * (for many at once, seldom seen close: the kavi sammelan's audience).
+ */
+export async function makeActors(name: RigName, n: number, lite = false): Promise<Actor[]> {
+  const src = await (lite ? loadLite(name) : load(name));
   const looks = LOOKS[name];
   const mats = await Promise.all(Array.from({ length: n }, () => lookMaterial(looks[nextLook[name]++ % looks.length], src.material)));
   return mats.map((m) => new Actor(name, src, m));

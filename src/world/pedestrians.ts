@@ -110,6 +110,8 @@ export class Pedestrians {
   vehicleAt: ((x: number, z: number, r: number) => { vx: number; vz: number; speed: number; player: boolean } | null) | null = null;
   /** somebody knocked down by a vehicle, where, how fast it was going, and whether Ramu was driving it */
   onRunOver: ((x: number, z: number, speed: number, byPlayer: boolean) => void) | null = null;
+  /** the share of the crowd made with the light bodies (actors.ts makeActors `lite`), set before populate */
+  lite = 0;
   private rigged: number[] = [];     // indices of everybody (test scripts read it)
   private want = 0;
   private dt = 0;
@@ -156,7 +158,11 @@ export class Pedestrians {
       const made: [RigName, Actor][] = [];
       const kinds = Object.entries(mix).map(([name, f]) => [name, Math.round(n * (f ?? 0))] as [RigName, number]);
       kinds.unshift(['uncle', Math.max(0, n - kinds.reduce((a, [, k]) => a + k, 0))]);
-      for (const [name, k] of kinds) if (k > 0) for (const a of await makeActors(name, k)) made.push([name, a]);
+      for (const [name, k] of kinds) {
+        const kl = Math.round(k * this.lite);
+        if (k - kl > 0) for (const a of await makeActors(name, k - kl)) made.push([name, a]);
+        if (kl > 0) for (const a of await makeActors(name, kl, true)) made.push([name, a]);
+      }
       for (let i = made.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [made[i], made[j]] = [made[j], made[i]]; }
       for (const [name, actor] of made) {
         actor.root.visible = false;

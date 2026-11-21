@@ -141,6 +141,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   const mela = map.area === 'moti_jheel' ? new Mela(map, NIGHT ? lightPool : null, desktop) : null;
   if (mela) {
     scene.add(mela.group);
+    if (params.has('debug')) (window as unknown as { __mela: Mela }).__mela = mela;   // for test scripts
     for (const [x, z, r, h, base] of mela.posts) world.addPost(x, z, r, h, base);
     for (const w of mela.rails) world.addWall(w.ring, w.h, w.camH > 0, w.camH);
     for (const f of mela.floors) world.addFloor(f);

@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { gltfLoader } from './gltf';
-import { Actor, makeActors } from './actors';
+import { Actor, makeActors, RigName } from './actors';
+import { addFoods, FoodName, FoodSpot } from './foods';
+import { groundDecals } from './roadDirt';
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { MELA_MIX, Pedestrians } from './pedestrians';
@@ -13,6 +15,8 @@ import { MapData } from './types';
 
 /** a sitting clip's body set on a sofa cushion: how much to lift it and move it back (tuned by eye: scripts/stageshot.mjs) */
 const SIT_Y = 0, SIT_Z = -0.12;
+/** the top of the dari sheets under the audience, and of the mela's dirt and its packed aisle from the gate (Ramu stands on them) */
+const DARI_Y = 0.11, DIRT_Y = 0.05, AISLE_Y = 0.08;
 
 /*
  The Moti Jheel mela, a night fair on the open ground of Tulsi Upvan:
@@ -440,10 +444,23 @@ export class Mela {
     this.buildGate(lights);
     this.buildMasts(lights);
     this.buildWalls(lights);
+    this.buildOperators();
+    this.buildLitter(desktop);
+    // Ramu walks on the dirt (it lies over the park's grass), the packed aisle, the dari: not sunk in them
+    const mid = DZ + 150;
+    this.floors.push((x, z) => {
+      if (!inMela(x, z)) return null;
+      if (x > this.dari.x0 && x < this.dari.x1 && z > this.dari.z0 && z < this.dari.z1) return DARI_Y;
+      if (Math.abs(x - GATE.x) < 3.5 && z > mid && z < GATE.z) return AISLE_Y;
+      return DIRT_Y;
+    });
 
+    // the crowd strolling the aisles: a mela is packed
     this.crowd = new Pedestrians(this.aisles(map), true);
-    this.crowd.setCount(desktop ? 24 : 12);
-    this.crowd.populate(desktop ? 24 : 12, MELA_MIX);
+    this.crowd.setCount(desktop ? 64 : 26);
+    this.crowd.lite = 0.5;                              // half of them the light bodies (actors.ts)
+    // as many guards as when the crowd was 24 (12) strong: more people, not more of them after Ramu
+    this.crowd.populate(desktop ? 64 : 26, { ...MELA_MIX, security: (MELA_MIX.security ?? 0) * (desktop ? 24 / 64 : 12 / 26) });
     this.crowd.huntIf = (x, z) => inMela(x, z);        // its guards go for Ramu once he is inside, never through the cloth
     this.crowd.huntRange = 70;                          // ... from anywhere they can see across the ground
     this.group.add(this.crowd.group);
@@ -471,8 +488,11 @@ export class Mela {
         if (c.t <= 0) { c.a.face.talking = !c.a.face.talking; c.t = c.a.face.talking ? 1.5 + Math.random() * 3.5 : 2 + Math.random() * 5; }
       }
       for (const a of this.poets) a.update(dt);
+      this.audTick ^= 1;
+      for (let i = this.audTick; i < this.audience.length; i += 2) this.audience[i].update(dt * 2);
     }
     for (const r of this.rides) r.update(this.t, dt);
+    for (const o of this.operators) this.operate(o, dt, Math.hypot(fx - o.x, fz - o.z) < 90);
     this.crowd.update(dt, fx, fz, dirX, dirZ, px, pz, py);
   }
 
@@ -539,9 +559,55 @@ export class Mela {
     }).catch(() => {});
   }
 
+  /**
+   * The long low table in front of the poets (stage frame; `seats`: the poets' x along the row, `z`: the table's middle):
+   * a white cloth with a maroon skirt, and before each poet a steel plate of fruit, a bottle of water and a glass, a
+   * packet of biscuits here and there; a heaped bowl of fruit and a bunch of marigolds in the middle.
+   */
+  private stageTable(stage: THREE.Group, seats: number[], z: number, floor: number, post: (x: number, z: number, r: number, h?: number, base?: number) => void): void {
+    const x0 = Math.min(...seats) - 0.55, x1 = Math.max(...seats) + 0.55, L = x1 - x0, cx = (x0 + x1) / 2, H = 0.48, top = floor + H + 0.02;
+    const g = new Geo();
+    g.box(cx, floor + H, z, L, 0.04, 0.66, '#ece6d6');                              // the cloth over the top
+    g.box(cx, floor + H / 2, z, L + 0.02, H - 0.02, 0.68, '#7b1113');               // the skirt to the floor
+    g.box(cx, floor + H - 0.06, z + 0.345, L + 0.03, 0.08, 0.01, '#f2c21b');        // a gold band along the front
+    const steel = new Geo();
+    const food: FoodSpot[] = [];
+    seats.forEach((x, i) => {
+      const r = (k: number) => rnd(i * 17 + k);
+      // the plate, its rim, and the fruit on it
+      steel.cyl(x, top, z - 0.04, 0.15, 0.012, '#c9c9cf', 16);
+      steel.cyl(x, top + 0.012, z - 0.04, 0.15, 0.012, '#b5b5bb', 16, 0.155);
+      food.push({ name: 'banana', x: x - 0.04, y: top + 0.012, z: z - 0.06, ry: r(1) * 6, s: 0.55 });
+      food.push({ name: r(2) < 0.5 ? 'apple' : 'orange', x: x + 0.07, y: top + 0.012, z: z - 0.0, ry: r(3) * 6 });
+      if (r(4) < 0.6) food.push({ name: 'mango', x: x - 0.06, y: top + 0.012, z: z + 0.03, ry: r(5) * 6, s: 0.85 });
+      // water and a glass of it, to his right
+      food.push({ name: r(6) < 0.5 ? 'water' : 'water_small', x: x + 0.24, y: top, z: z - 0.14, ry: r(7) * 6 });
+      steel.cyl(x + 0.2, top, z + 0.08, 0.035, 0.1, '#d8dde2', 10, 0.04);
+      if (r(8) < 0.5) food.push({ name: r(9) < 0.5 ? 'biscuits' : 'biscuits_b', x: x - 0.22, y: top, z: z + 0.12, ry: (r(10) - 0.5) * 0.8 });
+    });
+    // the middle: a bowl of fruit and a bunch of marigolds in a brass pot
+    const mid = seats.reduce((a, b) => a + b, 0) / seats.length;
+    steel.cyl(mid + 0.45, top, z + 0.12, 0.2, 0.08, '#b08d3a', 16, 0.13);
+    food.push({ name: 'grapes', x: mid + 0.45, y: top + 0.06, z: z + 0.1, ry: 0.4 }, { name: 'apple', x: mid + 0.36, y: top + 0.06, z: z + 0.2, ry: 1 },
+      { name: 'orange', x: mid + 0.55, y: top + 0.06, z: z + 0.18, ry: 2 }, { name: 'mango', x: mid + 0.5, y: top + 0.06, z: z + 0.02, ry: 3 },
+      { name: 'coconut', x: mid - 0.5, y: top, z: z + 0.1, ry: 0.3 });
+    steel.cyl(mid, top, z + 0.12, 0.08, 0.14, '#b08d3a', 12, 0.05);
+    for (let k = 0; k < 14; k++) g.sphere(mid + (rnd(k) - 0.5) * 0.22, top + 0.2 + rnd(k + 3) * 0.1, z + 0.12 + (rnd(k + 7) - 0.5) * 0.16, 0.045, k % 3 ? '#ef6c00' : '#f9a825');
+    const m = new THREE.Mesh(g.build(), litMat({ metalness: 0, roughness: 0.9 }));
+    m.castShadow = m.receiveShadow = true;
+    stage.add(m, new THREE.Mesh(steel.build(), litMat({ metalness: 0.85, roughness: 0.3 })));
+    addFoods(stage, food);
+    for (let x = x0 + 0.35; x < x1; x += 0.7) post(x, z, 0.35, floor + H, floor);     // knee high: jump up on it
+  }
+
   /** the poets on the stage's sofas (animated, so updated while Ramu is near enough to see them), and where they sit */
   private poets: Actor[] = [];
   private poetsAt: [number, number] = [0, 0];
+  /** the audience on the dari, rigged (updated half at a time, while Ramu is near enough to see them) */
+  private audience: Actor[] = [];
+  private audTick = 0;
+  /** where the dari is (world): Ramu stands on it */
+  private dari: Rect = { x0: 0, x1: 0, z0: 0, z1: 0 };
   /** the poets chatting on the sofas: seconds until each next starts or stops talking */
   private chat: { a: Actor; t: number }[] = [];
 
@@ -560,10 +626,10 @@ export class Mela {
     const g = new Geo(), bulbs = new Bulbs();
     g.box(cx, SH / 2, cz, W, SH, D, '#6b4a2a');
     g.box(cx, SH + 0.04, cz, W - 0.4, 0.08, D - 0.4, '#bdb8a8');                                     // white gaddi (a dull white: under the stage lights a true white burns out)
-    g.box(cx, SH + 0.04, cz + 1.5, 10, 0.1, 2.8, '#aca697');                                          // second sheet
+    g.box(cx, SH + 0.04, cz + 0.4, W - 2, 0.1, 3.2, '#aca697');                                         // second sheet, under the poets
     for (const sx of [-1, 1]) {
-      g.box(cx + sx * 6, 0.5, cz + D / 2 + 1.0, 1.4, 1.0, 0.5, '#8a5a2a');                          // steps
-      for (let k = 0; k < 3; k++) g.box(cx + sx * 9.5, 0.5 + k * 1.0, cz + 2.4, 1.2, 0.95, 1.2, '#161616');   // speaker stacks
+      g.box(cx + sx * (W / 2 - 1.2), 0.5, cz + D / 2 + 1.0, 1.4, 1.0, 0.5, '#8a5a2a');               // steps
+      for (let k = 0; k < 3; k++) g.box(cx + sx * (W / 2 + 1.3), 0.5 + k * 1.0, cz + D / 2 - 1.2, 1.2, 0.95, 1.2, '#161616');   // speaker stacks
     }
     // truss, pillars, roof
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.rod(new THREE.Vector3(cx + sx * (W / 2 - 0.2), SH, cz + sz * (D / 2 - 0.2)), new THREE.Vector3(cx + sx * (W / 2 - 0.2), 7.4, cz + sz * (D / 2 - 0.2)), 0.16, '#8f8f94');
@@ -582,8 +648,8 @@ export class Mela {
     };
     marigold(new THREE.Vector3(cx - W / 2, 7.2, cz + D / 2), new THREE.Vector3(cx, 7.2, cz + D / 2), 0.7, 20);
     marigold(new THREE.Vector3(cx, 7.2, cz + D / 2), new THREE.Vector3(cx + W / 2, 7.2, cz + D / 2), 0.7, 20);
-    for (let i = 0; i < 4; i++) marigold(new THREE.Vector3(cx - W / 2 + i * 2.2, SH + 0.15, cz + D / 2 - 0.05), new THREE.Vector3(cx - W / 2 + (i + 1) * 2.2, SH + 0.15, cz + D / 2 - 0.05), 0.35, 8);
-    for (let i = 0; i < 4; i++) marigold(new THREE.Vector3(cx + W / 2 - (i + 1) * 2.2, SH + 0.15, cz + D / 2 - 0.05), new THREE.Vector3(cx + W / 2 - i * 2.2, SH + 0.15, cz + D / 2 - 0.05), 0.35, 8);
+    const loops = Math.round(W / 2.2), lw = W / loops;
+    for (let i = 0; i < loops; i++) marigold(new THREE.Vector3(cx - W / 2 + i * lw, SH + 0.15, cz + D / 2 - 0.05), new THREE.Vector3(cx - W / 2 + (i + 1) * lw, SH + 0.15, cz + D / 2 - 0.05), 0.35, 8);
     // stage lights on the truss
     for (let i = 0; i < 9; i++) {
       const x = cx - W / 2 + 1 + i * (W - 2) / 8;
@@ -617,16 +683,17 @@ export class Mela {
     L(cx - 8, 6.4, cz + D / 2 + 2.5, '#ffd29a', 60, 26);
     L(cx + 8, 6.4, cz + D / 2 + 2.5, '#ffd29a', 60, 26);
     L(cx, 7, cz + 17, '#ffcf9a', 120, 28);
-    for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) post(cx + sx * 9.5, cz + 2.4, 0.9);
-    for (let i = -3; i <= 3; i++) for (const k of [-1, -0.5, 0, 0.5, 1]) post(cx + i * 2.4, cz + k * (D / 2 - 1.3), 1.3, SH);   // the platform: jump up on it
+    for (const sx of [-1, 1]) post(cx + sx * (W / 2 + 1.3), cz + D / 2 - 1.2, 0.65);
+    for (let i = -2; i <= 2; i++) for (const k of [-1, -0.5, 0, 0.5, 1]) post(cx + i * (W / 2 - 1.3) / 2, cz + k * (D / 2 - 1.3), 1.3, SH);   // the platform: jump up on it
     post(cx - W / 2, cz + D / 2 - 0.5, 0.5);
     post(cx + W / 2, cz + D / 2 - 0.5, 0.5);
 
     // people (figures.ts): poets on the gaddi, one at the mic, the audience on the floor
     const people: Spot[] = [];
-    // the poets on a row of sofas along the back (sofas.glb: tools/blender/build_props.py), the one reciting at the mic in
-    // front; his seat, the armchair at the left end, stands empty
-    const FLOOR = SH + 0.08, SEAT_Z = cz - D / 2 + 1.35;
+    // the poets on a row of sofas across the middle of the stage (sofas.glb: tools/blender/build_props.py), a long low table
+    // laid with fruit and water in front of them, the one reciting at the mic in front of that; his seat, the armchair at
+    // the left end, stands empty
+    const FLOOR = SH + 0.08, SEAT_Z = cz - 0.9, MIC: [number, number] = [cx - 2.6, cz + D / 2 - 0.9];
     const row: { name: 'chair' | 'sofa2' | 'sofa3'; w: number; seats: number[] }[] = [
       { name: 'chair', w: 0.67, seats: [0] }, { name: 'sofa2', w: 1.23, seats: [-0.3, 0.3] }, { name: 'sofa3', w: 1.8, seats: [-0.56, 0, 0.56] },
       { name: 'sofa2', w: 1.23, seats: [-0.3, 0.3] }, { name: 'chair', w: 0.67, seats: [0] },
@@ -641,7 +708,8 @@ export class Mela {
       post(x, SEAT_Z, r.w / 2, FLOOR + 0.9, FLOOR);
       at += r.w + GAP;
     }
-    this.stageProps(stage, sofas, SEAT_Z, FLOOR, cx - 3.6, cz + 3.0);
+    this.stageProps(stage, sofas, SEAT_Z, FLOOR, MIC[0], MIC[1]);
+    this.stageTable(stage, seats.slice(1), SEAT_Z + 1.25, FLOOR, post);
     // the poets: rigged people on the cushions, listening and talking among themselves, now and then laughing or clapping
     const poets: FigureKind[] = ['uncle', 'uncle', 'boy', 'aunty', 'uncle', 'girl', 'uncle', 'boy'];
     const CLIPS = ['sitting_talking', 'sitting_clap', 'sitting_talking', 'sitting_laughing', 'sitting_talking', 'sitting_clap', 'sitting_laughing', 'sitting_talking'];
@@ -664,7 +732,7 @@ export class Mela {
         if (CLIPS[i] === 'sitting_talking') this.chat.push({ a, t: rnd(i * 5 + 2) * 4 });
       });
       const r = left.get('uncle')!.shift()!;
-      r.root.position.set(cx - 3.6, FLOOR, cz + 3.0);
+      r.root.position.set(MIC[0], FLOOR, MIC[1]);
       r.root.rotation.y = Math.PI;
       r.play('singing', 0.9, 0);
       r.face.talking = r.face.blinking = true;      // reciting, all the while
@@ -672,7 +740,7 @@ export class Mela {
       this.poets.push(r);
     }).catch(() => {});
     for (let i = 0; i < poets.length; i++) post(seats[i + 1], SEAT_Z - 0.05, 0.3, FLOOR + 1.3, FLOOR);
-    post(cx - 3.6, cz + 3.0, 0.3, FLOOR + 1.8, FLOOR);
+    post(MIC[0], MIC[1], 0.3, FLOOR + 1.8, FLOOR);
     const [px, pz] = toW(cx, SEAT_Z);
     this.poetsAt = [px, pz];
     // the audience: the front rows fairly full, a few scattered behind (about 75 people); the rows stop short of the fence
@@ -684,13 +752,33 @@ export class Mela {
       // facing the stage (-z) with a little turn
       people.push({ x, y: 0.09, z, ry: (rnd(r * 3 + c * 11) - 0.5) * 0.5, pose: 'sit', n: r * 131 + c * 17 });
     }
-    addFigures(stage, people);
+    // they are rigged people sitting on the dari (the floor clips: Sitting Idle, and two ways of sitting still), each at
+    // their own moment of it, blinking now and then
+    const AUD_KINDS: RigName[] = ['uncle', 'aunty', 'girl', 'boy', 'uncle', 'aunty', 'boy'];
+    const kindOf = people.map((p) => AUD_KINDS[Math.floor(rnd(p.n! * 0.37 + 5) * AUD_KINDS.length)]);
+    const audKinds = [...new Set(kindOf)];
+    Promise.all(audKinds.map((k) => makeActors(k, kindOf.filter((x) => x === k).length, true))).then((made) => {
+      const left = new Map(audKinds.map((k, i) => [k, made[i]]));
+      people.forEach((p, i) => {
+        const a = left.get(kindOf[i])!.shift()!;
+        const u = rnd(p.n! * 0.71 + 2);
+        a.root.position.set(p.x, DARI_Y, p.z);
+        a.root.rotation.y = p.ry;
+        a.play(u < 0.62 ? 'floor_idle' : u < 0.82 ? 'floor_cross' : 'floor_knees', 0.8 + rnd(p.n! + 9) * 0.4, 0);
+        a.update(rnd(p.n! * 1.3) * 11);
+        a.face.blinking = true;
+        stage.add(a.root);
+        this.audience.push(a);
+      });
+    }).catch((e) => console.error('audience failed to load', e));
     for (const [x, z, r, h, base] of figurePosts(people)) post(x, z, r, h, base);   // the poets and the audience: you go round them
     // the white dari sheets under the audience
     const d = new Geo();
     const dw = AUDIENCE.z1 - AUDIENCE.z0, dd = rowsN * 0.95 + 0.4, dcz = AUDIENCE.x0 + dd / 2 - sx0;
     d.box(0, 0.09, dcz, dw, 0.04, dd, '#c9c5b6');
     for (let i = 0; i < Math.floor(dw / 3.1); i++) d.box(-dw / 2 + 1.5 + i * 3.1, 0.115, dcz, 0.05, 0.01, dd, '#cfc9b8');
+    // stage frame -> world: x = sx0 + lz, z = sz0 - lx
+    this.dari = { x0: sx0 + dcz - dd / 2, x1: sx0 + dcz + dd / 2, z0: sz0 - dw / 2, z1: sz0 + dw / 2 };
     const dm = new THREE.Mesh(d.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
     dm.receiveShadow = true;
     stage.add(dm);
@@ -699,7 +787,7 @@ export class Mela {
     const sw = STAGE_STAIRS.x1 - STAGE_STAIRS.x0, scz = (STAGE_STAIRS.x0 + STAGE_STAIRS.x1) / 2 - sx0;
     for (let i = 0; i < 4; i++) ex.box(W / 2 + 0.6 + (3 - i) * 0.9 - 0.3, (i + 1) * SH / 4 / 2, scz, 0.9, (i + 1) * SH / 4, sw, i % 2 ? '#8a5a2a' : '#7a4e24');
     for (const sz of [-1, 1]) ex.rod(new THREE.Vector3(W / 2 + 3.2, 0.9, scz + sz * sw / 2), new THREE.Vector3(W / 2 + 0.2, SH + 0.9, scz + sz * sw / 2), 0.04, '#b8b8bc');
-    const doorX = sz0 - (STAGE_ENTRY.z0 + STAGE_ENTRY.z1) / 2;          // local x of the back-stage door
+    const doorX = Math.max(-W / 2 + 1.5, Math.min(W / 2 - 1.5, sz0 - (STAGE_ENTRY.z0 + STAGE_ENTRY.z1) / 2));   // local x of the back-stage door
     ex.box(doorX, 0.35, -D / 2 - 1.0, 2.0, 0.7, 1.4, '#8a5a2a');
     ex.box(doorX, 0.8, -D / 2 - 0.3, 2.6, 1.6, 0.12, '#1c1c20');
     for (const sx of [-1, 1]) ex.rod(new THREE.Vector3(doorX + sx * 1.35, SH, -D / 2 - 0.1), new THREE.Vector3(doorX + sx * 1.35, SH + 2.6, -D / 2 - 0.1), 0.05, '#b8b8bc');
@@ -894,6 +982,163 @@ export class Mela {
       lights?.add(x, 10, z, '#fff0d0', 320, 40);
     }
     this.group.add(new THREE.Mesh(g.build(), litMat()), bulbs.object(1.0));
+  }
+
+  // ---- the people who run the rides --------------------------------------------------------------------
+
+  /** each ride's operator, at a control box with a lever (models/lever.glb: tools/blender/build_lever.py) */
+  private operators: { a: Actor; x: number; z: number; arm: THREE.Object3D | null; t: number; pull: number; n: number }[] = [];
+
+  /**
+   * Every ride has its man: he stands at a painted iron control box beside it, watching it go round, and every so often
+   * he pushes the lever on the box over (and back, the next time). The inflatable's attendant just stands by its door.
+   * Placed by the ride's middle, the direction out from it (radians, 0 = +x, PI/2 = +z) and the distance.
+   */
+  private buildOperators(): void {
+    const box = new Geo();
+    const spots: { x: number; z: number; ry: number; lever: boolean; kind: RigName }[] = [];
+    const place = (c: { x: number; z: number }, ang: number, dist: number, kind: RigName, lever = true) => {
+      const dx = Math.cos(ang), dz = Math.sin(ang);
+      const bx = c.x + dx * dist, bz = c.z + dz * dist, ry = Math.atan2(dx, dz);     // he faces the ride
+      if (lever) {
+        box.box(bx, 0.36, bz, 0.5, 0.62, 0.9, '#2f5d3a', ry);                       // the box, on short legs
+        box.box(bx, 0.68, bz, 0.54, 0.04, 0.94, '#24462c', ry);
+        for (const [lx, lz] of [[-0.2, -0.4], [0.2, -0.4], [-0.2, 0.4], [0.2, 0.4]]) {
+          const wx = bx + lx * Math.cos(ry) + lz * Math.sin(ry), wz = bz - lx * Math.sin(ry) + lz * Math.cos(ry);
+          box.box(wx, 0.03, wz, 0.06, 0.06, 0.06, '#1b1b1b', ry);
+        }
+        box.box(bx + 0.252 * Math.cos(ry), 0.5, bz - 0.252 * Math.sin(ry), 0.01, 0.16, 0.5, '#d8c060', ry);   // a yellow warning plate
+        this.posts.push([bx, bz, 0.4, 0.7]);
+      }
+      const ox = bx + dx * (lever ? 0.72 : 0), oz = bz + dz * (lever ? 0.72 : 0);
+      spots.push({ x: ox, z: oz, ry, lever, kind });
+      this.posts.push([ox, oz, 0.26, 1.7]);
+      return [bx, bz, ry] as const;
+    };
+    const levers: (readonly [number, number, number])[] = [
+      place(WHEEL, Math.PI / 2, 4.6, 'uncle'),
+      place(COLUMBUS, 0, 5.6, 'boy'),
+      place(CHAIR_SWING, Math.PI * 0.75, 8.3, 'uncle'),
+      place(CAROUSEL, -Math.PI / 2, 6.0, 'boy'),
+      place(HINDOLA, Math.PI, 3.0, 'uncle'),
+    ];
+    place(INFLATABLE, 1.0, INFLATABLE.r + 2.2, 'boy', false);
+    const m = new THREE.Mesh(box.build(), litMat({ metalness: 0.4, roughness: 0.6 }));
+    m.castShadow = m.receiveShadow = true;
+    this.group.add(m);
+    gltfLoader().loadAsync('models/lever.glb').then((gltf) => {
+      gltf.scene.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
+      levers.forEach(([bx, bz, ry], i) => {
+        const lv = gltf.scene.clone(true);
+        lv.position.set(bx, 0.7 - 0.16, bz);             // its plate on the box's lid, the cog down inside
+        lv.rotation.y = ry;
+        this.group.add(lv);
+        const arm = lv.getObjectByName('arm') ?? null;
+        if (arm) arm.rotation.x = 0.38;                  // over towards him
+        const op = this.operators.find((o) => o.n === i);
+        if (op) op.arm = arm;
+        this.leverArms[i] = arm;
+      });
+    }).catch((e) => console.error('lever failed to load', e));
+    const kinds = [...new Set(spots.map((s) => s.kind))];
+    Promise.all(kinds.map((k) => makeActors(k, spots.filter((s) => s.kind === k).length))).then((made) => {
+      const left = new Map(kinds.map((k, i) => [k, made[i]]));
+      spots.forEach((s, i) => {
+        const a = left.get(s.kind)!.shift()!;
+        a.root.position.set(s.x, DIRT_Y, s.z);
+        a.root.rotation.y = s.ry;
+        a.play(s.lever ? 'idle' : 'look_around', 0.9 + rnd(i) * 0.2, 0);
+        a.face.blinking = true;
+        this.group.add(a.root);
+        this.operators.push({ a, x: s.x, z: s.z, arm: s.lever ? this.leverArms[i] ?? null : null, t: 6 + rnd(i * 3) * 14, pull: -1, n: s.lever ? i : -1 });
+      });
+    }).catch((e) => console.error('operators failed to load', e));
+  }
+  private leverArms: (THREE.Object3D | null)[] = [];
+
+  /** an operator's few seconds: waiting, now and then the push on the lever (the arm goes over as his hand gets there) */
+  private operate(o: Mela['operators'][number], dt: number, near: boolean): void {
+    if (!near) return;
+    o.a.update(dt);
+    if (o.n < 0) return;
+    if (o.pull < 0) {
+      o.t -= dt;
+      if (o.t <= 0) { o.pull = 0; o.a.once('push_one', 'lever' + this.t.toFixed(1), 1, 0.25); }
+      return;
+    }
+    const from = o.arm?.userData.at ?? 0.38;
+    o.pull += dt;
+    if (o.arm) {
+      const k = Math.min(1, Math.max(0, (o.pull - 0.55) / 0.35));
+      o.arm.rotation.x = from + (-from - from) * k * k * (3 - 2 * k);
+    }
+    if (o.pull > 1.6) {
+      if (o.arm) o.arm.userData.at = -from;
+      o.pull = -1;
+      o.t = 12 + Math.random() * 18;
+      o.a.play('idle', 1, 0.4);
+    }
+  }
+
+  // ---- litter: the ground after a few evenings of the mela -----------------------------------------------
+
+  /**
+   * Chip packets, wrappers, cans, cartons and bottles (foods.ts), paper cups, leaf plates (pattal) and scraps of paper, and
+   * flat dirt (roadDirt.ts): thickest round the stalls, thinner in the open, none under the rides or in the stalls.
+   */
+  private buildLitter(desktop: boolean): void {
+    let seed = 91;
+    const r = () => rnd(seed++ * 0.613);
+    const pad = (b: Rect, m: number) => ({ x0: b.x0 - m, x1: b.x1 + m, z0: b.z0 - m, z1: b.z1 + m });
+    const inR = (b: Rect, x: number, z: number) => x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1;
+    const rides = [{ ...WHEEL, r: 3 }, { ...COLUMBUS, r: 6 }, { ...CHAIR_SWING, r: 1.5 }, { ...CAROUSEL, r: 5 }, { ...HINDOLA, r: 3.6 },
+      { ...INFLATABLE, r: INFLATABLE.r + 1 }, { ...KUAN, r: KUAN.r }];
+    const blocked = (x: number, z: number) => STALL_BLOCKS.some((b) => inR(pad(b, 0.2), x, z)) || inR(STAGE, x, z)
+      || rides.some((c) => Math.hypot(x - c.x, z - c.z) < c.r);
+    const nearStalls = (x: number, z: number) => STALL_BLOCKS.some((b) => inR(pad(b, 3.5), x, z));
+    const items: FoodSpot[] = [];
+    const cups = new Geo(), plates = new Geo();
+    const decals: { litter: [number, number, number, number, number][]; mud: [number, number, number, number, number][] } = { litter: [], mud: [] };
+    const N = desktop ? 2600 : 1200;
+    const THINGS: [FoodName, number][] = [['chips', 3], ['chips_b', 3], ['chips_c', 2], ['flat_bag', 3], ['wrapper', 2], ['wrapper_b', 2],
+      ['can', 1.5], ['carton', 1.5], ['cookie_pack', 1.5], ['water_small', 1.2], ['popcorn', 0.6]];
+    const total = THINGS.reduce((a, [, w]) => a + w, 0);
+    const mid = DZ + 150;
+    for (let i = 0; i < N; i++) {
+      const x = MELA.x0 + 0.5 + r() * (MELA.x1 - MELA.x0 - 1), z = MELA.z0 + 0.5 + r() * (MELA.z1 - MELA.z0 - 1);
+      if (blocked(x, z) || r() > (nearStalls(x, z) ? 1 : 0.35)) continue;
+      const y = (inR(this.dari, x, z) ? DARI_Y : Math.abs(x - GATE.x) < 3.5 && z > mid ? AISLE_Y : DIRT_Y) + 0.003;
+      const what = r();
+      if (what < 0.5) {                                   // something out of the food pack, mostly lying flat
+        let w = r() * total, k = 0;
+        while (w > THINGS[k][1]) w -= THINGS[k++][1];
+        const name = THINGS[k][0];
+        const lying = name === 'can' || name === 'carton' || name === 'water_small' || name === 'popcorn';
+        const crushed = 0.35 + r() * 0.5;
+        items.push(lying
+          ? { name, x, y: y + (name === 'can' ? 0.05 : name === 'water_small' ? 0.032 : name === 'popcorn' ? 0.06 : 0.016), z, ry: r() * 6.28, rz: Math.PI / 2, s: name === 'popcorn' ? 0.8 : 1 }
+          : { name, x, y, z, ry: r() * 6.28, rx: (r() - 0.5) * 0.3, s: 1, ...(name.startsWith('chips') ? { s: 0.9 } : {}), ...(crushed < 0.5 ? { rz: 0.2 } : {}) });
+      } else if (what < 0.65) {                           // a paper cup: of chai, tipped over
+        const a = r() * 6.28, tip = r() < 0.8;
+        const cup = new THREE.CylinderGeometry(0.035, 0.026, 0.07, 8, 1, true);
+        cups.add(cup, r() < 0.7 ? '#efeae0' : '#d9c7a3', tip
+          ? new THREE.Matrix4().makeRotationY(a).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2)).setPosition(x, y + 0.03, z)
+          : new THREE.Matrix4().makeTranslation(x, y + 0.035, z));
+      } else if (what < 0.78) {                           // a leaf plate (pattal), flat or a little curled
+        const rr = 0.1 + r() * 0.05;
+        plates.add(new THREE.CylinderGeometry(rr, rr * 0.8, 0.012, 10), r() < 0.5 ? '#6f7a3a' : '#8a7a45',
+          new THREE.Matrix4().makeRotationX((r() - 0.5) * 0.25).setPosition(x, y + 0.008, z));
+      } else if (what < 0.93) {
+        decals.litter.push([x, y + 0.002, z, 0.5 + r() * 0.8, r() * 6.28]);
+      } else {
+        decals.mud.push([x, y + 0.001, z, 1.2 + r() * 2.2, r() * 6.28]);
+      }
+    }
+    addFoods(this.group, items);
+    const cm = new THREE.Mesh(cups.build(), litMat({ metalness: 0, roughness: 0.85, side: THREE.DoubleSide }));
+    const pm = new THREE.Mesh(plates.build(), litMat({ metalness: 0, roughness: 0.95 }));
+    cm.receiveShadow = pm.receiveShadow = true;
+    this.group.add(cm, pm, groundDecals(decals));
   }
 
   // ---- boundary: long cloth walls on bamboo poles, with one torn place to slip in through -------------

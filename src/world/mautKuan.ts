@@ -3,6 +3,7 @@ import { addFigures, figure, figurePosts, ONLOOKER, Spot } from './figures';
 import { banner, Bulbs, Geo, litMat, rnd } from './geo';
 import { beamMaterial } from './night';
 import { cloneCar, loadPBR } from './vehicleModels';
+import { Actor, makeActors, RigName } from './actors';
 
 /*
  Maut ka kuan (the Well of Death): a tall round wooden drum with a railed gallery on top where the crowd leans over,
@@ -38,15 +39,23 @@ function bikeModel(rider: number, tank: string): THREE.Group {
   return root;
 }
 
-function carModel(file: string, stunt: boolean): THREE.Group {
+/** the show-offs dancing on the cars' roofs (rigged: updated with the well) */
+const dancers: Actor[] = [];
+
+function carModel(file: string, dancer: RigName, n: number): THREE.Group {
   const root = new THREE.Group();
   loadPBR(file).then((parts) => root.add(cloneCar(parts, '#ffffff')));
-  if (stunt) {   // a daredevil standing on the roof with his arms up
-    const man = figure('boy', 2, 'talk_b');
-    man.position.set(0, 1.43, -0.45);
-    man.rotation.y = Math.PI;
-    root.add(man);
-  }
+  // somebody standing up on the roof and dancing, arms up, as the car goes round the wall
+  makeActors(dancer, 1, true).then(([a]) => {
+    a.root.position.set(0, 1.43, -0.4);
+    a.root.rotation.y = n % 2 ? Math.PI : Math.PI * 0.8;
+    a.play('dance', 0.95 + n * 0.08, 0);
+    a.update(n * 0.7);
+    a.face.blinking = true;
+    a.face.laughing = n % 2 === 0;
+    root.add(a.root);
+    dancers.push(a);
+  }).catch((e) => console.error('dancer failed to load', e));
   return root;
 }
 
@@ -261,9 +270,9 @@ export function buildMautKuan() {
     { obj: bikeModel(1, '#d62828'), a0: 0.0, w: 1.55, y0: 5.6, amp: 0.9, sp: 0.5, phi: 0.1, ph: 0.0, off: 0.04 },
     { obj: bikeModel(4, '#1f4aa6'), a0: 2.2, w: 1.4, y0: 4.4, amp: 1.0, sp: 0.4, phi: 0.08, ph: 1.7, off: 0.04 },
     { obj: bikeModel(6, '#2a2a30'), a0: 4.1, w: 1.7, y0: 6.2, amp: 0.8, sp: 0.6, phi: 0.12, ph: 3.1, off: 0.04 },
-    { obj: carModel('maruti_red', false), a0: 1.0, w: 0.9, y0: 2.4, amp: 0.4, sp: 0.3, phi: 0.12, ph: 0.6, off: 0.32 },
-    { obj: carModel('maruti', true), a0: 3.3, w: 0.85, y0: 2.7, amp: 0.5, sp: 0.35, phi: 0.1, ph: 2.4, off: 0.32 },
-    { obj: carModel('maruti_green', false), a0: 5.4, w: 0.95, y0: 2.2, amp: 0.35, sp: 0.25, phi: 0.14, ph: 4.2, off: 0.32 },
+    { obj: carModel('maruti_red', 'boy', 0), a0: 1.0, w: 0.9, y0: 2.4, amp: 0.4, sp: 0.3, phi: 0.12, ph: 0.6, off: 0.32 },
+    { obj: carModel('maruti', 'uncle', 1), a0: 3.3, w: 0.85, y0: 2.7, amp: 0.5, sp: 0.35, phi: 0.1, ph: 2.4, off: 0.32 },
+    { obj: carModel('maruti_green', 'boy', 2), a0: 5.4, w: 0.95, y0: 2.2, amp: 0.35, sp: 0.25, phi: 0.14, ph: 4.2, off: 0.32 },
   ];
   for (const v of vehicles) group.add(v.obj);
   // each headlight throws a soft pool of light on the wall ahead of it (a curved strip, so it hugs the drum)
@@ -333,6 +342,7 @@ export function buildMautKuan() {
   // walkable: the gallery ring, and the stair (a smooth ramp through the treads) with its landing
   const floor = (x: number, z: number): number | null => {
     const rr = Math.hypot(x, z);
+    if (rr < R) return 0.1;                          // the sand floor of the well
     if (rr >= RG0 + 0.1 && rr <= RG1) return H - 0.01;
     if (rr > RG1 && rr <= RS1) {
       const da = wrap(A0 - Math.atan2(z, x));
@@ -343,7 +353,7 @@ export function buildMautKuan() {
 
   return {
     group,
-    update: (t: number, _dt: number) => place(t),
+    update: (t: number, dt: number) => { place(t); for (const d of dancers) d.update(dt); },
     post: posts,
     rails,
     floor,

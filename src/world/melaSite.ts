@@ -17,6 +17,8 @@ export const mz = (py: number): number => DZ + 127 + (py - 62) * K;
 
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
 const rect = (a: number, b: number, c: number, d: number): Rect => ({ x0: mx(a), x1: mx(c), z0: mz(b), z1: mz(d) });
+/** a box in metres from the layout's origin (DX, DZ) */
+const at = (x0: number, z0: number, x1: number, z1: number): Rect => ({ x0: DX + x0, x1: DX + x1, z0: DZ + z0, z1: DZ + z1 });
 const circle = (px: number, py: number, rpx: number) => ({ x: mx(px), z: mz(py), r: rpx * K });
 
 /** the trodden ground inside the cloth wall */
@@ -72,11 +74,16 @@ export const GATE = { x: mx(895), z: DZ + 203.5, half: 4.2 };
 export const WALL_LOOP: [number, number][] = [[DX - 9.5, DZ + 127], [DX + 109.5, DZ + 127], [DX + 109.5, DZ + 203.5], [DX - 9.5, DZ + 203.5]];
 
 // ---- the layout on the map ---------------------------------------------------------------------------
-/** kavi sammelan stage: its front faces east, towards the audience */
-export const STAGE = rect(144, 417, 302, 642);
-export const STAGE_STAIRS = rect(210, 365, 276, 417);     // on the stage's north side
-export const STAGE_ENTRY = rect(144, 562, 170, 642);      // back-stage door, next to the torn place in the wall
-export const AUDIENCE = rect(355, 384, 553, 675);         // people sitting, clapping
+/** kavi sammelan stage: its front faces east, towards the audience. The map drew it 12 m deep and 17 m wide; it is built
+ * smaller, 8 by 12 m, against the same back (the cloth wall side) and on the same middle */
+const STAGE_MAP = rect(144, 417, 302, 642);
+const STAGE_MID = (STAGE_MAP.z0 + STAGE_MAP.z1) / 2;
+export const STAGE: Rect = { x0: STAGE_MAP.x0, x1: STAGE_MAP.x0 + 8, z0: STAGE_MID - 6, z1: STAGE_MID + 6 };
+/** the stair up its north side, and the back-stage door at its south-west corner, next to the torn place in the wall */
+export const STAGE_STAIRS: Rect = { x0: STAGE.x0 + 2, x1: STAGE.x0 + 6.5, z0: STAGE.z0 - 4, z1: STAGE.z0 };
+export const STAGE_ENTRY: Rect = { x0: STAGE.x0, x1: STAGE.x0 + 2, z0: STAGE.z1 - 5, z1: STAGE.z1 };
+/** people sitting on the dari: from 3 m in front of the stage to where the map has them end */
+export const AUDIENCE: Rect = { ...rect(355, 384, 553, 675), x0: STAGE.x1 + 3 };
 /** the wooden fence round the stage and its audience: from the cloth wall (west) out past the last row, short of the stalls */
 export const SAMMELAN: Rect = { x0: DX - 9.5, x1: mx(553) - 3.3, z0: mz(365) - 1.6, z1: mz(675) + 2.3 };
 /** its two ways in: on the east side facing the stage, and on the north side by the aisle */
@@ -96,6 +103,9 @@ export const STALL_BLOCKS: Rect[] = [
   rect(790, 483, 870, 642), rect(988, 483, 1068, 642), rect(1120, 483, 1279, 562),
   rect(579, 668, 738, 747), rect(777, 668, 870, 747), rect(988, 668, 1147, 747),
   rect(500, 854, 658, 933), rect(688, 854, 846, 933), rect(962, 853, 1121, 932),       // the row by the gate
+  // more, in the ground the map left empty (metres from the wall's north-west corner: at, DX, DZ)
+  at(-6, 132, 5, 146), at(65.5, 152, 72.5, 159), at(13, 182.5, 24, 186), at(58, 182.5, 70, 186),
+  at(24, 197, 40, 200.5), at(60, 197, 74, 200.5), at(27, 157.5, 40, 163), at(27, 167, 40, 171),
 ];
 
 /** the older rides, kept, in the free ground of the map */

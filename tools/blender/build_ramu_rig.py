@@ -531,7 +531,33 @@ def jump(t):
     finger_curl(0.5)
 
 
+def dance(t):
+    """Bhangra-ish, for the show-offs on the cars in the maut ka kuan: both arms up, the shoulders pumping on every beat,
+    a bounce in the knees, the weight going side to side and the free leg kicked up in turn, the hands turning (a bulb
+    being screwed in). Four beats in the clip."""
+    beat = abs(S(t * 2))                                    # 0..1, four times
+    sway = S(t)                                             # the weight: left .. right
+    for side, sg, ph in (('Left', 1, 0.0), ('Right', -1, 0.5)):
+        lift = max(0.0, S(t + ph)) ** 2                     # this leg kicked up while the weight is on the other
+        rot_multi(f'{side}UpLeg', [(SIDE, -(14 * beat + 40 * lift)), (FWD, sg * 4)])
+        rot(f'{side}Leg', SIDE, 26 * beat + 70 * lift)
+        rot(f'{side}Foot', SIDE, -12 * beat + 10 * lift)
+        rot_multi(f'{side}Arm', [(FWD, sg * (20 + 14 * beat)), (SIDE, -22)])
+        rot(f'{side}ForeArm', SIDE, -(45 + 25 * beat))
+        rot(f'{side}Hand', UP, sg * 35 * S(t * 4 + ph))
+        rot(f'{side}Shoulder', FWD, sg * (4 + 10 * beat))
+    rot('Spine', FWD, 6 * sway)
+    rot('Spine1', SIDE, 4 * beat)
+    rot('Spine2', UP, 10 * S(t))
+    rot('Neck', SIDE, -4 * beat)
+    rot('Head', SIDE, 8 * beat - 4)
+    hips_offset(0.05 * sway, 0.0, -0.045 * beat)
+    rot('Hips', UP, -8 * S(t))
+    finger_curl(0.2)
+
+
 make_action('idle', 90, idle)
+make_action('dance', 72, dance)
 make_action('walk', 30, walk)
 make_action('run', 15, run)
 make_action('jump', 36, jump)
@@ -542,6 +568,8 @@ arm.animation_data.action = bpy.data.actions['idle']
 # file name (lower case) contains ... -> clip name in the game. First match wins, so the particular come before the general
 # ("Fighting Idle" is not the idle, "Taking Punch" is not the punch, "Shove Reaction" is not a hit).
 CLIP_RULES = (
+    # on the floor (the kavi sammelan's audience on the dari): "Sitting Idle" is not the standing idle
+    (('sitting', 'idle'), 'floor_idle'), (('sitting', 'pose1'), 'floor_cross'), (('sitting', 'pose'), 'floor_knees'),
     (('stomach',), 'stomach_hit'),
     (('crouch', 'walk'), 'crouch_walk'), (('crouched',), 'crouch_walk'), (('crouch',), 'crouch'), (('sneak',), 'crouch'),
     (('fighting idle',), 'fight_idle'), (('fight idle',), 'fight_idle'), (('boxing idle',), 'fight_idle'),
@@ -812,3 +840,36 @@ bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=Fals
                           export_image_format='JPEG', export_jpeg_quality=88, export_materials='EXPORT',
                           export_extras=True, export_morph=True, export_morph_normal=False)
 print('RIG exported', round(os.path.getsize(path) / 1e6, 2), 'MB')
+
+# ---- the light one: the same skeleton with the body cut to about a fifth, no face keys, no clips, no texture ---------
+# For the people who are seldom seen up close and many at once (the kavi sammelan's audience: actors.ts `lite`): the game
+# plays the full file's clips on it (same bones, same names) and dresses it in the full file's material.
+LITE_TRIS = 11000
+if CHAR != 'ramu':
+    bpy.ops.object.select_all(action='DESELECT')
+    lite = mesh.copy()
+    lite.data = mesh.data.copy()
+    lite.name = lite.data.name = 'body_lite'
+    bpy.context.scene.collection.objects.link(lite)
+    bpy.context.view_layer.objects.active = lite
+    lite.select_set(True)
+    if lite.data.shape_keys:
+        bpy.ops.object.shape_key_remove(all=True)
+    tris = sum(len(p.vertices) - 2 for p in lite.data.polygons)
+    dec = lite.modifiers.new('decimate', 'DECIMATE')
+    dec.ratio = min(1.0, LITE_TRIS / tris)
+    dec.use_collapse_triangulate = True
+    bpy.ops.object.modifier_move_to_index(modifier='decimate', index=0)     # before the armature: cut the mesh at rest
+    bpy.ops.object.modifier_apply(modifier='decimate')
+    lite.data.materials.clear()
+    for ob in bpy.context.scene.objects:
+        ob.select_set(ob in (arm, lite))
+    arm.animation_data.action = None
+    for b in arm.pose.bones:
+        b.rotation_quaternion = (1, 0, 0, 0)
+        b.location = (0, 0, 0)
+    lpath = os.path.join(OUT, OUT_NAME.replace('.glb', '_lite.glb'))
+    bpy.ops.export_scene.gltf(filepath=lpath, export_format='GLB', use_selection=True, export_yup=True, export_apply=False,
+                              export_skins=True, export_animations=False, export_materials='NONE', export_texcoords=True,
+                              export_extras=True, export_morph=False)
+    print('RIG lite', sum(len(p.vertices) - 2 for p in lite.data.polygons), 'triangles,', round(os.path.getsize(lpath) / 1e6, 2), 'MB')

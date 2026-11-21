@@ -13,7 +13,7 @@ import { P2 } from './types';
 const ROAD_Y = 0.07;          // just above the asphalt (0.05) and its dashes (0.065)
 const WALK_Y = 0.175;         // just above the raised footpath (0.16)
 
-type Decal = 'pothole' | 'puddle' | 'patch' | 'mud' | 'litter';
+export type Decal = 'pothole' | 'puddle' | 'patch' | 'mud' | 'litter';
 
 /** where to put the dirt: the road's centre line, its width, the footpaths' width; `keep`: false where nothing goes (gates, the mela's front) */
 export interface DirtOpts { line: P2[]; roadW: number; walkW: number; keep: (x: number, z: number) => boolean }
@@ -53,29 +53,7 @@ export class RoadDirt {
         }, r() * step);
       }
     }
-    const tex = atlas();
-    (Object.keys(spots) as Decal[]).forEach((kind, ti) => {
-      const list = spots[kind];
-      if (!list.length) return;
-      const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-      const uv = geo.getAttribute('uv') as THREE.BufferAttribute;
-      for (let i = 0; i < uv.count; i++) uv.setX(i, (uv.getX(i) + ti) / TILES);
-      const mat = new THREE.MeshStandardMaterial({
-        map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-        roughness: kind === 'litter' ? 0.75 : 0.95, metalness: 0,     // all matte: no lamps mirrored in the road
-      });
-      const im = new THREE.InstancedMesh(geo, mat, list.length);
-      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
-      list.forEach(([x, y, z, s, a], i) => {
-        const sq = kind === 'patch' ? 0.6 + 0.4 * ((i * 37) % 10) / 10 : 1;
-        im.setMatrixAt(i, m.compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(up, a), new THREE.Vector3(s, 1, s * sq)));
-      });
-      im.receiveShadow = true;
-      im.renderOrder = 1;
-      im.userData.noAO = true;
-      im.computeBoundingSphere();
-      this.group.add(im);
-    });
+    this.group.add(groundDecals(spots));
     // garbage heaps against the walls, past the footpaths (clear of the raised slab, so none is half buried in it)
     const heaps = new Geo();
     for (const [si, side] of offsetLines(o.line, hw + o.walkW + 0.25).entries()) {
@@ -195,4 +173,37 @@ function atlas(): THREE.CanvasTexture {
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   return t;
+}
+
+const KINDS: Decal[] = ['pothole', 'puddle', 'patch', 'mud', 'litter'];
+let sharedAtlas: THREE.CanvasTexture | null = null;
+
+/** Flat dirt on the ground, instanced per kind: [x, y, z, size, turn] for each (the road's, and the mela's: mela.ts). */
+export function groundDecals(spots: Partial<Record<Decal, [number, number, number, number, number][]>>): THREE.Group {
+  const group = new THREE.Group();
+  const tex = sharedAtlas ??= atlas();
+  (Object.keys(spots) as Decal[]).forEach((kind) => {
+    const ti = KINDS.indexOf(kind);
+    const list = spots[kind] ?? [];
+    if (!list.length) return;
+    const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    const uv = geo.getAttribute('uv') as THREE.BufferAttribute;
+    for (let i = 0; i < uv.count; i++) uv.setX(i, (uv.getX(i) + ti) / TILES);
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      roughness: kind === 'litter' ? 0.75 : 0.95, metalness: 0,     // all matte: no lamps mirrored in the road
+    });
+    const im = new THREE.InstancedMesh(geo, mat, list.length);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+    list.forEach(([x, y, z, s, a], i) => {
+      const sq = kind === 'patch' ? 0.6 + 0.4 * ((i * 37) % 10) / 10 : 1;
+      im.setMatrixAt(i, m.compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(up, a), new THREE.Vector3(s, 1, s * sq)));
+    });
+    im.receiveShadow = true;
+    im.renderOrder = 1;
+    im.userData.noAO = true;
+    im.computeBoundingSphere();
+    group.add(im);
+  });
+  return group;
 }

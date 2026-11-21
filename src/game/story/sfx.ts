@@ -2,6 +2,7 @@
  The story's sounds. A recording in public/audio/sfx/<name>.mp3 is played if there is one; otherwise it is made here
  with WebAudio (the audio context starts on the first click, and the stage's Start is one).
    stomach   a long hungry growl: a low buzzing tone that bends up and down, gurgling, under a little muffled noise
+   applause  a crowd clapping: hundreds of short noise bursts (each a clap, its own pitch), thick at first, thinning out
 */
 
 let ctx: AudioContext | null = null;
@@ -18,9 +19,38 @@ function file(name: string): Promise<boolean> {
   });
 }
 
-export async function playSfx(name: 'stomach', volume = 1): Promise<void> {
+export type Sfx = 'stomach' | 'applause';
+
+export async function playSfx(name: Sfx, volume = 1, secs = 3.5): Promise<void> {
   if (await file(name)) return;
   if (name === 'stomach') growl(volume);
+  else if (name === 'applause') applause(volume, secs);
+}
+
+/** a crowd clapping for `dur` seconds */
+function applause(volume: number, dur: number): void {
+  const c = audio();
+  void c.resume();
+  const t0 = c.currentTime + 0.02;
+  // one clap: 40 ms of noise falling away fast
+  const len = Math.ceil(c.sampleRate * 0.04), clap = c.createBuffer(1, len, c.sampleRate), d = clap.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (len * 0.18));
+  const out = c.createGain();
+  out.gain.value = 0.5 * volume;
+  out.connect(c.destination);
+  // ~30 people clapping ~3 times a second each at the start, fewer toward the end
+  const n = Math.round(90 * dur);
+  for (let i = 0; i < n; i++) {
+    const u = Math.random(), t = t0 + dur * (1 - Math.sqrt(1 - u)) ;   // more early on
+    const s = c.createBufferSource(), bp = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = clap;
+    bp.type = 'bandpass';
+    bp.frequency.value = 900 + Math.random() * 1800;
+    bp.Q.value = 1.2;
+    g.gain.value = 0.25 + Math.random() * 0.5;
+    s.connect(bp).connect(g).connect(out);
+    s.start(t);
+  }
 }
 
 function growl(volume: number): void {

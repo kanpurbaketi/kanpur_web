@@ -436,6 +436,9 @@ export interface Sammelan {
   ground: (x: number, z: number) => number;
   mic: [number, number];
   micProp: HandProp;
+  /** beside the mic, on Kumar's side (where whoever is called up comes to), and where the anchor steps aside to */
+  micSide: [number, number];
+  aside: [number, number];
   lota: HandProp;
   lotaAt: [number, number];
   /** outside the back-stage door, on the ground; just inside it, at the back of the stage */
@@ -819,7 +822,7 @@ export class Mela {
       this.props.push(mic);
       return {
         kumar, anchor, poets: ps, seats: seatW, seatY: SEAT_Y, facing: FACE, floor: FLOOR, ground,
-        mic: toW(MIC[0], MIC[1]), micProp: mic, lota: new HandProp(lotaObj, 'hang', LOTA_NECK), lotaAt: [lx, lz] as [number, number],
+        mic: toW(MIC[0], MIC[1]), micProp: mic, micSide: toW(MIC[0] - 0.85, MIC[1] - 0.25), aside: toW(MIC[0] + 1.7, MIC[1] - 0.5), lota: new HandProp(lotaObj, 'hang', LOTA_NECK), lotaAt: [lx, lz] as [number, number],
         door: toW(doorX, -D / 2 - 2.6), behind: toW(doorX, -D / 2 - 0.8), inside: toW(doorX, -D / 2 + 1.3),
         exit: [[seats[0], SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z - 1.5], [st0 - 0.7, SEAT_Z - 1.5],
           [st0 - 0.5, scz], [st0 + 4.2, scz], [st0 + 7.5, scz + 1.5]].map(([x, z]) => toW(x, z)),

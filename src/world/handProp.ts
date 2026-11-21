@@ -27,7 +27,7 @@ export class HandProp {
   private head: THREE.Object3D | null = null;
 
   /** `grip`: for 'mic', the handle below the fist; for 'hang', the height of the part held above the object's origin */
-  constructor(readonly object: THREE.Object3D, readonly mode: HoldMode, readonly grip = 0.07) {}
+  constructor(readonly object: THREE.Object3D, public mode: HoldMode, readonly grip = 0.07) {}
 
   /** in `root`'s right hand from now on (null: let go, the object stays where it was) */
   holder(root: THREE.Object3D | null): void {

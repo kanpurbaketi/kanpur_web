@@ -41,7 +41,7 @@ BODY_LIFT = 0.92       # <1 lightens everything a little
 ANIMS = os.path.join(ROOT, 'assets', 'anims')   # Mixamo FBX clips, shared by every character (see import_mixamo_clips)
 KEEP_ROOT = {'fall', 'fall2', 'get_up'}
 # clips in the folder that nothing plays yet (every clip baked goes into every character's file): left out until used
-UNUSED = {'falling', 'gunplay', 'sweep fall', 'throw object'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
+UNUSED = {'falling', 'gunplay', 'sweep fall'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
 
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
@@ -612,6 +612,7 @@ CLIP_RULES = (
     (('sitting', 'idle'), 'floor_idle'), (('sitting', 'pose1'), 'floor_cross'), (('sitting', 'pose'), 'floor_knees'),
     # the show-offs on the cars in the maut ka kuan
     (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
+    (('throw',), 'throw'),                          # the audience pelting a bad poet
     (('stomach',), 'stomach_hit'),
     (('crouch', 'walk'), 'crouch_walk'), (('crouched',), 'crouch_walk'), (('crouch',), 'crouch'), (('sneak',), 'crouch'),
     (('fighting idle',), 'fight_idle'), (('fight idle',), 'fight_idle'), (('boxing idle',), 'fight_idle'),
@@ -890,6 +891,66 @@ def recite_pole(t):
 
 reach_clip('recite', RECITE_N, recite_base, recite_target, recite_pole, recite_hand, _arg('--rpole', -90))
 reach_clip('push_one', 42, push_base, push_target, (SH.x - 0.5, 0.35, SH.z - 0.35), push_hand)
+
+
+# ---- eating in a chair (the poets on the stage, Ramu in Kumar's seat): sitting as in the first frame of Sitting Talking,
+# a fruit in the right fist (the game puts it there) brought up to the mouth, a bite, chewing with the hand down, the head
+# nodding a little with it. Four seconds, looped.
+def first_frame(name):
+    act = bpy.data.actions.get(name)
+    if not act:
+        return None
+    arm.animation_data.action = act
+    bpy.context.scene.frame_set(int(act.frame_range[0]))
+    out = {b.name: (b.rotation_quaternion.copy(), b.location.copy()) for b in P}
+    arm.animation_data.action = None
+    return out
+
+
+SIT0 = first_frame('sitting_talking')
+EAT_N = 120
+
+
+def eat_env(t):
+    return smooth(0.22, 0.36, t) * (1 - smooth(0.5, 0.66, t))     # up at a third of the way, down again by two thirds
+
+
+def eat_base(t):
+    if SIT0:
+        for b in P:
+            q, l = SIT0[b.name]
+            b.rotation_quaternion, b.location = q, l
+    else:
+        pose_rest()
+    up = eat_env(t)
+    chew = smooth(0.5, 0.6, t) * (1 - smooth(0.9, 1.0, t))
+    rot('Head', SIDE, -6 * up + 3 * chew * math.sin(t * math.tau * 6))         # into the bite, then chewing nods
+    rot('Neck', SIDE, -3 * up)
+
+
+def eat_target(t):
+    bpy.context.view_layer.update()
+    h = P['mixamorig:Head'].head
+    return (h.x - 0.02, h.y - 0.1, h.z + 0.0), eat_env(t)
+
+
+def eat_pole(t):
+    ch = P['mixamorig:Spine2']
+    turn = ch.matrix.to_3x3() @ ch.bone.matrix_local.to_3x3().inverted()
+    return P['mixamorig:RightArm'].head + turn @ Vector((-0.3, 0.15, -0.6))
+
+
+def eat_hand(t):
+    rot('RightHand', FWD, -20 * eat_env(t))
+    for f in ('Index', 'Middle', 'Ring', 'Pinky', 'Thumb'):       # holding the fruit
+        for i in (1, 2, 3):
+            n = f'mixamorig:RightHand{f}{i}'
+            if n in P:
+                P[n].rotation_quaternion = Quaternion((1, 0, 0), math.radians(20 if f == 'Thumb' else 40 + 6 * i))
+
+
+if SIT0:
+    reach_clip('sit_eat', EAT_N, eat_base, eat_target, eat_pole, eat_hand, _arg('--rpole', -90))
 bpy.context.view_layer.objects.active = arm
 bpy.ops.object.mode_set(mode='OBJECT')
 arm.animation_data.action = bpy.data.actions['idle']

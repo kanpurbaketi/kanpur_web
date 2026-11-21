@@ -48,7 +48,7 @@ const WALK_SPEED = 1.35, RUN_SPEED = 5.0, CLIP_HEIGHT = 1.52;
 
 /** clips that play through once and hold their last pose */
 export const ONCE = new Set(['punch', 'kick', 'hit', 'hit2', 'block', 'shove', 'fall', 'fall2', 'get_up', 'jump',
-  'stomach', 'stomach_hit', 'push', 'push_one', 'pockets', 'head_no', 'angry_point', 'disappointed']);   // the last row: stage 1's scenes
+  'stomach', 'stomach_hit', 'push', 'push_one', 'pockets', 'head_no', 'angry_point', 'disappointed', 'throw']);   // the last row: stage 1's scenes
 /** clip lengths as the game plays them, seconds at normal speed (after the cuts in prepareClips) */
 export const CLIP_SECS = { punch: 2.0, kick: 1.6, hit: 1.9, hit2: 1.35, block: 1.35, shove: 1.75, get_up: 2.7 };
 /** in the kick clip the foot lands this many seconds in */

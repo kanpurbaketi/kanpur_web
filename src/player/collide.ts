@@ -28,7 +28,8 @@ export class CollisionWorld {
   /** Square post (pillar, pole, tree trunk, a person who never moves) of half-size r, from `base` up to h. */
   addPost(x: number, z: number, r: number, h = 10, base = 0): void {
     this.addRing([[x - r, z - r], [x + r, z - r], [x + r, z + r], [x - r, z + r]], h, r > 0.5, h, base);
-    if (h <= 1.7 && base === 0) {
+    // low enough to jump up on (from the ground, or from whatever it stands on: a table on the stage): it has a top
+    if (h - base <= 1.7) {
       const t = { x0: x - r, x1: x + r, z0: z - r, z1: z + r, h };
       for (let cx = Math.floor(t.x0 / CELL); cx <= Math.floor(t.x1 / CELL); cx++) for (let cz = Math.floor(t.z0 / CELL); cz <= Math.floor(t.z1 / CELL); cz++) {
         const k = this.key(cx, cz);
@@ -45,6 +46,18 @@ export class CollisionWorld {
 
   addFloor(f: (x: number, z: number) => number | null): void {
     this.floors.push(f);
+  }
+
+  /**
+   * Whether a walker at foot height y is kept off (x, z) by a raised floor there (a stair, a platform: they have no walls
+   * of their own) that is too high to step up onto and not high enough to walk under.
+   */
+  tooHigh(x: number, z: number, y: number): boolean {
+    for (const f of this.floors) {
+      const h = f(x, z);
+      if (h !== null && h > y + 0.5 && h < y + HEAD) return true;
+    }
+    return false;
   }
 
   /** Height of the highest surface under (x, z) that a walker at foot height y can step onto (0 = the ground). */

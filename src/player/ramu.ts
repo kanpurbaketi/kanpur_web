@@ -308,10 +308,15 @@ export class Ramu {
     this.vel.y -= GRAVITY * dt;
 
     const p = this.root.position;
-    p.x += this.vel.x * dt;
-    p.z += this.vel.z * dt;
+    // a raised floor too high to step onto (a stair from the side, the stage) is a wall: slide along it
+    const nx = p.x + this.vel.x * dt, nz = p.z + this.vel.z * dt, w = this.world;
+    if (!w.tooHigh(nx, nz, p.y) || w.tooHigh(p.x, p.z, p.y)) { p.x = nx; p.z = nz; }
+    else if (!w.tooHigh(nx, p.z, p.y)) p.x = nx;
+    else if (!w.tooHigh(p.x, nz, p.y)) p.z = nz;
+    // falling: whatever he passed on the way down this frame catches him (a fast fall, or a slow frame, skips no top)
+    const y0 = p.y;
     p.y += this.vel.y * dt;
-    const floor = this.world.floorAt(p.x, p.z, p.y);
+    const floor = this.world.floorAt(p.x, p.z, Math.max(p.y, y0));
     if (this.grounded && this.vel.y <= 0 && p.y > floor && p.y - floor < 0.45) p.y = floor;   // walking down a stair keeps his feet on it
     if (p.y <= floor) {
       p.y = floor;

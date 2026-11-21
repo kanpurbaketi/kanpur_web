@@ -8,7 +8,7 @@ import { groundDecals } from './roadDirt';
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { MELA_MIX, Pedestrians } from './pedestrians';
-import { addFigures, FigureKind, figurePosts, ONLOOKER, someone, Spot } from './figures';
+import { FigureKind, figurePosts, ONLOOKER, someone, Spot } from './figures';
 import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, DX, DZ, GATE, HINDOLA, inMela, INFLATABLE, KUAN, MELA, Rect, SAMMELAN, SAMMELAN_GATES, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
 import { buildInflatable } from './inflatable';
 import { buildMautKuan } from './mautKuan';
@@ -497,6 +497,15 @@ export class Mela {
       this.audTick ^= 1;
       for (let i = this.audTick; i < this.audience.length; i += 2) this.audience[i].update(dt * 2);
     }
+    // the stall people: drawn only in front of the camera and within 90 m (rigged bodies are never culled on their own),
+    // and those within 60 m moving, half of them each frame
+    this.stallTick ^= 1;
+    const dl = Math.hypot(dirX, dirZ) || 1;
+    for (let i = 0; i < this.stallPeople.length; i++) {
+      const a = this.stallPeople[i], q = a.root.position, ox = q.x - fx, oz = q.z - fz, d = Math.hypot(ox, oz);
+      a.root.visible = d < 10 || (d < 90 && (ox * dirX + oz * dirZ) / (d * dl) > 0.3);
+      if ((i & 1) === this.stallTick && a.root.visible && d < 60) a.update(dt * 2);
+    }
     for (const r of this.rides) r.update(this.t, dt);
     grassWind(this.t);
     for (const o of this.operators) this.operate(o, dt, Math.hypot(fx - o.x, fz - o.z) < 90);
@@ -598,6 +607,9 @@ export class Mela {
   /** the audience on the dari, rigged (updated half at a time, while Ramu is near enough to see them) */
   private audience: Actor[] = [];
   private audTick = 0;
+  /** the stall keepers and their customers (rigged, talking) */
+  private stallPeople: Actor[] = [];
+  private stallTick = 0;
   /** where the dari is (world): Ramu stands on it */
   private dari: Rect = { x0: 0, x1: 0, z0: 0, z1: 0 };
   /** the poets chatting on the sofas: seconds until each next starts or stops talking */
@@ -676,7 +688,9 @@ export class Mela {
     L(cx + 8, 6.4, cz + D / 2 + 2.5, '#ffd29a', 60, 26);
     L(cx, 7, cz + 17, '#ffcf9a', 120, 28);
     for (const sx of [-1, 1]) post(cx + sx * (W / 2 + 1.3), cz + D / 2 - 1.2, 0.65);
-    for (let i = -2; i <= 2; i++) for (const k of [-1, -0.5, 0, 0.5, 1]) post(cx + i * (W / 2 - 1.3) / 2, cz + k * (D / 2 - 1.3), 1.3, SH);   // the platform: jump up on it
+    for (let i = -2; i <= 2; i++) for (const k of [-1, -0.5, 0, 0.5, 1]) post(cx + i * (W / 2 - 1.3) / 2, cz + k * (D / 2 - 1.3), 1.3, SH + 0.08);   // the platform (its top the gaddi): jump up on it
+    // the two wooden boxes in front of it (a metre high): jump up on them
+    for (const sx of [-1, 1]) for (const ox of [-0.45, 0, 0.45]) post(cx + sx * (W / 2 - 1.2) + ox, cz + D / 2 + 1.0, 0.25, 1.0);
     post(cx - W / 2, cz + D / 2 - 0.5, 0.5);
     post(cx + W / 2, cz + D / 2 - 0.5, 0.5);
 
@@ -786,9 +800,17 @@ export class Mela {
     const ex = new Geo();
     const sw = STAGE_STAIRS.x1 - STAGE_STAIRS.x0, scz = (STAGE_STAIRS.x0 + STAGE_STAIRS.x1) / 2 - sx0;
     for (let i = 0; i < 4; i++) ex.box(W / 2 + 0.6 + (3 - i) * 0.9 - 0.3, (i + 1) * SH / 4 / 2, scz, 0.9, (i + 1) * SH / 4, sw, i % 2 ? '#8a5a2a' : '#7a4e24');
+    // ... to walk up: each step's top is a floor (from the side the higher steps are too tall to step onto: Ramu goes round)
+    const st0 = W / 2 + 0.6 - 0.3 - 0.45;                                  // local x of the top step's inner edge
+    this.floors.push((x, z) => {
+      const lx = sz0 - z, lz = x - sx0;                                      // the stage's frame (toW turned back)
+      if (Math.abs(lz - scz) > sw / 2 || lx < st0 || lx > st0 + 3.6) return null;
+      return (4 - Math.floor((lx - st0) / 0.9)) * SH / 4;
+    });
     for (const sz of [-1, 1]) ex.rod(new THREE.Vector3(W / 2 + 3.2, 0.9, scz + sz * sw / 2), new THREE.Vector3(W / 2 + 0.2, SH + 0.9, scz + sz * sw / 2), 0.04, '#b8b8bc');
     const doorX = Math.max(-W / 2 + 1.5, Math.min(W / 2 - 1.5, sz0 - (STAGE_ENTRY.z0 + STAGE_ENTRY.z1) / 2));   // local x of the back-stage door
     ex.box(doorX, 0.35, -D / 2 - 1.0, 2.0, 0.7, 1.4, '#8a5a2a');
+    for (const ox of [-0.5, 0.5]) post(doorX + ox, -D / 2 - 1.0, 0.5, 0.7);           // the step up at the back: on top of it
     ex.box(doorX, 0.8, -D / 2 - 0.3, 2.6, 1.6, 0.12, '#1c1c20');
     for (const sx of [-1, 1]) ex.rod(new THREE.Vector3(doorX + sx * 1.35, SH, -D / 2 - 0.1), new THREE.Vector3(doorX + sx * 1.35, SH + 2.6, -D / 2 - 0.1), 0.05, '#b8b8bc');
     ex.box(doorX, SH + 2.7, -D / 2 - 0.1, 2.8, 0.1, 0.1, '#b8b8bc');
@@ -941,7 +963,25 @@ export class Mela {
     this.group.add(new THREE.Mesh(g.build(), litMat({ metalness: 0.05, roughness: 0.8 })));
     this.group.add(new THREE.Mesh(bunting.build(), litMat({ metalness: 0, roughness: 0.9, side: THREE.DoubleSide })));
     this.group.add(bulbs.object(0.7));
-    addFigures(this.group, keepers);
+    // the keepers and their customers are rigged people (the light bodies, actors.ts), talking: the keeper selling, the
+    // customer haggling, or looking round at the goods; each at their own moment of it
+    const KINDS: RigName[] = ['uncle', 'aunty', 'girl', 'boy', 'uncle', 'boy', 'aunty', 'girl', 'uncle'];
+    const kindOf = keepers.map((p) => KINDS[Math.floor(rnd(p.n! * 0.53 + 3) * KINDS.length)]);
+    const kinds = [...new Set(kindOf)];
+    Promise.all(kinds.map((k) => makeActors(k, kindOf.filter((x) => x === k).length, true))).then((made) => {
+      const left = new Map(kinds.map((k, i) => [k, made[i]]));
+      keepers.forEach((p, i) => {
+        const a = left.get(kindOf[i])!.shift()!;
+        const u = rnd(p.n! * 0.91 + 4);
+        a.root.position.set(p.x, DIRT_Y, p.z);
+        a.root.rotation.y = p.ry;
+        a.play(u < 0.7 ? 'talk' : u < 0.85 ? 'argue' : 'look_around', 0.85 + rnd(p.n! + 17) * 0.3, 0);
+        a.update(rnd(p.n! * 1.7) * 9);
+        a.face.blinking = true;
+        this.group.add(a.root);
+        this.stallPeople.push(a);
+      });
+    }).catch((e) => console.error('stall people failed to load', e));
     for (const [x, z, r, h, base] of figurePosts(keepers)) this.posts.push([x, z, r, h, base]);   // the stall-keepers and their customers
   }
 

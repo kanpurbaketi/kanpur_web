@@ -43,10 +43,70 @@ KEEP_ROOT = {'fall', 'fall2', 'get_up'}
 # clips in the folder that nothing plays yet (every clip baked goes into every character's file): left out until used
 UNUSED = {'falling', 'gunplay', 'sweep fall', 'throw object'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
 
+# Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
+# rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
+# to the uncle's rest orientations (the same T-pose, the same bone rolls) and that pose made their rest (to_tpose below).
+APOSE = {'kumar', 'anchor', 'buddha'}
+REF_REST = None
 bpy.ops.wm.read_factory_settings(use_empty=True)
+if CHAR in APOSE:
+    bpy.ops.import_scene.fbx(filepath=os.path.join(ROOT, 'assets', CHARS['uncle'][0]))
+    ref = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
+    rw = ref.matrix_world.to_quaternion().to_matrix()
+    REF_REST = {b.name.split(':')[-1]: (rw @ b.matrix_local.to_3x3()).normalized() for b in ref.data.bones}
+    for o in list(bpy.data.objects): bpy.data.objects.remove(o, do_unlink=True)
+    for m in list(bpy.data.meshes): bpy.data.meshes.remove(m)
+    for a in list(bpy.data.armatures): bpy.data.armatures.remove(a)
+    for im in list(bpy.data.images): bpy.data.images.remove(im)
+    for mt in list(bpy.data.materials): bpy.data.materials.remove(mt)
 bpy.ops.import_scene.fbx(filepath=SRC)
 arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
 mesh = next(o for o in bpy.data.objects if o.type == 'MESH')
+
+
+def to_tpose():
+    """each bone (parents first) turned to the reference rest orientation, in world space; the mesh baked in that pose,
+    and the pose applied as the rest"""
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode='POSE')
+    aw = arm.matrix_world.to_quaternion().to_matrix()      # its turn only (its scale must not reach the bones)
+    depth = lambda b: 0 if b.parent is None else 1 + depth(b.parent)
+    n = 0
+    for pb in sorted(arm.pose.bones, key=depth):
+        r = REF_REST.get(pb.name.split(':')[-1])
+        if r is None:
+            continue
+        m = pb.matrix.copy()                                   # armature space, its parent already turned
+        new = (aw.inverted() @ r).to_4x4()
+        new.translation = m.translation
+        pb.matrix = new
+        bpy.context.view_layer.update()
+        n += 1
+    bpy.ops.object.mode_set(mode='OBJECT')
+    # bake the mesh in that pose, then make the pose the rest
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = mesh
+    mesh.select_set(True)
+    if mesh.data.shape_keys:
+        mesh.shape_key_clear()
+    mod = next(md for md in mesh.modifiers if md.type == 'ARMATURE')
+    name = mod.name
+    bpy.ops.object.modifier_apply(modifier=name)
+    nm = mesh.modifiers.new(name, 'ARMATURE')
+    nm.object = arm
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode='POSE')
+    bpy.ops.pose.armature_apply(selected=False)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    print(f'RIG A-pose to T-pose: {n} bones turned to the reference rest')
+
+
+if REF_REST:
+    to_tpose()
 for a in list(bpy.data.actions):
     bpy.data.actions.remove(a)
 

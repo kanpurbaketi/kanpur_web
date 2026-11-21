@@ -59,8 +59,8 @@ export class Director {
   private v = new THREE.Vector3();
   private now: { n: number; textKey: string; steps: Waypoint[]; i: number } | null = null;
   private tweens: { t: number; secs: number; f: (k: number) => void; done: () => void }[] = [];
-  /** an offer on the use key, while `when()` holds and no scene runs (`key`: its i18n line, with {key}) */
-  prompt: { key: string; when: () => boolean; act: () => void } | null = null;
+  /** an offer on the use key, while `when()` holds and no scene runs (`key`: its i18n line, with {key}; it may change as he moves) */
+  prompt: { key: Live<string>; when: () => boolean; act: () => void } | null = null;
 
   constructor(camera: THREE.PerspectiveCamera, private ramu: Actorish & { cinematic: boolean }, private stage: number) {
     this.cam = new CutCam(camera, ramu);
@@ -100,7 +100,7 @@ export class Director {
   /** the prompt's line just now (null: none), `key` the use key's label */
   promptText(key: string): string | null {
     const p = this.prompt;
-    return p && !this.locked && p.when() ? tk(p.key, { key }) : null;
+    return p && !this.locked && p.when() ? tk(live(p.key), { key }) : null;
   }
 
   /** the use key pressed: true if the prompt took it */

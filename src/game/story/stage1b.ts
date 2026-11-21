@@ -32,8 +32,67 @@ export async function stage1Part2(d: Director, ramu: Ramu, mela: Promise<Sammela
   eating(s);
   const skipped = await lotaScene(d, ramu, s);
   void kumarGoes(d, s, skipped);
+
+  // ---- mission 5: the empty seat ----
+  await takeSeat(d, ramu, s);
+  hooks.step(5);
+  await sitAndEat(d, ramu, s);
   hooks.done('story.s1.part1');
 }
+
+/** up on the stage (through the curtain at the back, or any way he likes) and into Kumar's chair */
+async function takeSeat(d: Director, ramu: Ramu, s: Sammelan): Promise<void> {
+  const p = ramu.position, [cx, cz] = s.seats[0];
+  const onStage = () => p.y > s.floor - 0.3 && s.ground(p.x, p.z) >= s.floor - 0.01;
+  const byDoor = () => !onStage() && (near(p, s.door, 2.6) || near(p, s.behind, 1.6));
+  const byChair = () => onStage() && Math.hypot(p.x - cx, p.z - cz) < 1.4;
+  let sat = false;
+  d.prompt = {
+    key: () => (byChair() ? 'act.sit' : 'act.curtain'), when: () => byDoor() || byChair(),
+    act: () => {
+      if (byChair()) { sat = true; return; }
+      ramu.standAt(s.inside[0], s.inside[1], s.floor);
+      ramu.faceTowards(cx, cz);
+      const end = s.seats[s.seats.length - 1];                // the camera down the row (behind him is the banner)
+      ramu.yaw = Math.atan2(-(end[0] - cx), -(end[1] - cz));
+    },
+  };
+  await d.mission(5, 'm.s1.seat', [
+    { at: s.door, hint: 'm.s1.seat.h1', done: () => onStage() || sat },
+    { at: s.seats[0], hint: 'm.s1.seat.h2', done: () => sat },
+  ]);
+  d.prompt = null;
+}
+
+/** beat 3: Ramu in the armchair, a fruit off Kumar's plate, eating; the poet beside him gives him a look */
+async function sitAndEat(d: Director, ramu: Ramu, s: Sammelan): Promise<void> {
+  const [cx, cz] = s.seats[0], poet = s.poets[0];
+  ramu.sitAt(cx, s.seatY, cz, s.facing, 'sit_eat');
+  ramu.yaw = s.facing;
+  void foodMesh('apple').then((m) => {
+    s.group.add(m);
+    const h = new HandProp(m, 'palm');
+    h.holder(ramu.model);
+    s.props.push(h);
+  }).catch(() => {});
+  await d.scene(async () => {
+    const r = d.front(ramu, { dist: 1.7, side: 0.5, up: 0.05, drop: 0.2, fov: 38 });
+    d.shot(r, 0, d.pushIn(r, 0.03));
+    await d.wait(2.2);
+    // the poet beside him: a look (who is this?), and back to his plate
+    poet.turn(s.facing + 0.45);
+    const two = d.front(poet, { dist: 2.4, side: 0.8, up: 0.15, drop: 0.2, fov: 44 });
+    d.shot(two, 0.4);
+    await d.wait(1.6);
+    poet.turn(s.facing);
+    d.shot(r, 0, d.pushIn(r, 0.03));
+    await d.say('ramu', ramu.face, 'vip');
+    await d.wait(0.6);
+  });
+  poet.turn(s.facing);
+}
+
+const near = (p: THREE.Vector3, [x, z]: [number, number], r: number) => Math.hypot(p.x - x, p.z - z) < r;
 
 /** some of the poets take a fruit from their plates and eat (the sit_eat clip, the fruit in the right hand) from now on */
 function eating(s: Sammelan): void {

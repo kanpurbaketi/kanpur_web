@@ -441,6 +441,8 @@ export interface Sammelan {
   /** outside the back-stage door, on the ground; just inside it, at the back of the stage */
   door: [number, number];
   behind: [number, number];
+  /** through the curtain, on the stage, in front of the banner (by Kumar's end of the row) */
+  inside: [number, number];
   /** from Kumar's chair (a step out in front of it) round the end of the row, behind the sofas, down the far stairs and
    * away from the stage: the way he goes to find somewhere (and, backwards, the way he comes back) */
   exit: [number, number][];
@@ -818,7 +820,7 @@ export class Mela {
       return {
         kumar, anchor, poets: ps, seats: seatW, seatY: SEAT_Y, facing: FACE, floor: FLOOR, ground,
         mic: toW(MIC[0], MIC[1]), micProp: mic, lota: new HandProp(lotaObj, 'hang', LOTA_NECK), lotaAt: [lx, lz] as [number, number],
-        door: toW(doorX, -D / 2 - 2.4), behind: toW(doorX, -D / 2 - 0.8),
+        door: toW(doorX, -D / 2 - 2.6), behind: toW(doorX, -D / 2 - 0.8), inside: toW(doorX, -D / 2 + 1.3),
         exit: [[seats[0], SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z - 1.5], [st0 - 0.7, SEAT_Z - 1.5],
           [st0 - 0.5, scz], [st0 + 4.2, scz], [st0 + 7.5, scz + 1.5]].map(([x, z]) => toW(x, z)),
         centre: toW(cx, cz), props: this.props, quiet: this.quiet, group: this.group,
@@ -876,6 +878,8 @@ export class Mela {
     for (const sz of [-1, 1]) ex.rod(new THREE.Vector3(W / 2 + 3.2, 0.9, scz + sz * sw / 2), new THREE.Vector3(W / 2 + 0.2, SH + 0.9, scz + sz * sw / 2), 0.04, '#b8b8bc');
     ex.box(doorX, 0.35, -D / 2 - 1.0, 2.0, 0.7, 1.4, '#8a5a2a');
     for (const ox of [-0.5, 0.5]) post(doorX + ox, -D / 2 - 1.0, 0.5, 0.7);           // the step up at the back: on top of it
+    ex.box(doorX, 0.175, -D / 2 - 2.05, 2.0, 0.35, 0.7, '#7a4e24');                    // ... and a lower one before it
+    for (const ox of [-0.6, 0, 0.6]) post(doorX + ox, -D / 2 - 2.05, 0.4, 0.35);
     ex.box(doorX, 0.8, -D / 2 - 0.3, 2.6, 1.6, 0.12, '#1c1c20');
     for (const sx of [-1, 1]) ex.rod(new THREE.Vector3(doorX + sx * 1.35, SH, -D / 2 - 0.1), new THREE.Vector3(doorX + sx * 1.35, SH + 2.6, -D / 2 - 0.1), 0.05, '#b8b8bc');
     ex.box(doorX, SH + 2.7, -D / 2 - 0.1, 2.8, 0.1, 0.1, '#b8b8bc');

@@ -81,6 +81,7 @@ const RIGGED: Record<RigName, { speed: [number, number]; linger: number; tough: 
   girl: { speed: [1.0, 1.3], linger: 0.15, tough: TOUGH },
   boy: { speed: [1.1, 1.45], linger: 0.12, tough: TOUGH },
   aunty: { speed: [0.8, 1.05], linger: 0.25, tough: TOUGH },     // in no hurry, and stops to talk
+  kumar: { speed: [1.0, 1.3], linger: 0.15, tough: TOUGH },      // (the poet on the stage; not in the crowds)
 };
 const ACTOR_RANGE = 95;
 const BODY = 0.27;        // a person's radius, m

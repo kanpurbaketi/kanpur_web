@@ -28,6 +28,7 @@ CHARS = {
     'college_girl': ('college_girl/college_girl_rigged.fbx', 'college_girl_rig.glb', 1.58, 1024),
     'college_boy': ('college_boy/college_boy_rigged.fbx', 'college_boy_rig.glb', 1.70, 1024),
     'aunty': ('aunty/aunty_rigged.fbx', 'aunty_rig.glb', 1.56, 1024),
+    'kumar': ('kumar/kumar_rigged.fbx', 'kumar_rig.glb', 1.68, 1024),          # the young poet on the stage
 }
 CHAR = argv[argv.index('--char') + 1] if '--char' in argv else 'ramu'
 SRC, OUT_NAME, HEIGHT, TEX = CHARS[CHAR]
@@ -136,6 +137,7 @@ FACE = {
     'college_girl': dict(eyes=[(265, 283), (400, 283)], ew=48, mouth=(332, 412), mw=95),
     'college_boy': dict(eyes=[(232, 298), (355, 298)], ew=50, mouth=(295, 428), mw=110),
     'aunty': dict(eyes=[(198, 256), (322, 256)], ew=50, mouth=(262, 382), mw=110),
+    'kumar': dict(eyes=[(200, 373), (368, 373)], ew=54, mouth=(290, 562), mw=118),
 }
 
 

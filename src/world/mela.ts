@@ -697,8 +697,8 @@ export class Mela {
     // people (figures.ts): poets on the gaddi, one at the mic, the audience on the floor
     const people: Spot[] = [];
     // the poets on a row of sofas across the middle of the stage (sofas.glb: tools/blender/build_props.py), a long low table
-    // laid with fruit and water in front of them, the one reciting at the mic in front of that; his seat, the armchair at
-    // the left end, stands empty
+    // laid with fruit and water in front of them, the one reciting at the mic in front of that; in the armchair at the left
+    // end, Kumar, the young poet (his own model: assets/kumar)
     const FLOOR = SH + 0.08, SEAT_Z = cz - 0.9, MIC: [number, number] = [cx - 2.6, cz + D / 2 - 0.9];
     const row: { name: 'chair' | 'sofa2' | 'sofa3'; w: number; seats: number[] }[] = [
       { name: 'chair', w: 0.67, seats: [0] }, { name: 'sofa2', w: 1.23, seats: [-0.3, 0.3] }, { name: 'sofa3', w: 1.8, seats: [-0.56, 0, 0.56] },
@@ -715,7 +715,7 @@ export class Mela {
       at += r.w + GAP;
     }
     this.stageProps(stage, sofas, SEAT_Z, FLOOR);
-    this.stageTable(stage, seats.slice(1), SEAT_Z + 1.25, FLOOR, post);
+    this.stageTable(stage, seats, SEAT_Z + 1.25, FLOOR, post);
     // the poets: rigged people on the cushions, listening and talking among themselves, now and then laughing or clapping
     const poets: FigureKind[] = ['uncle', 'uncle', 'boy', 'aunty', 'uncle', 'girl', 'uncle', 'boy'];
     const CLIPS = ['sitting_talking', 'sitting_clap', 'sitting_talking', 'sitting_laughing', 'sitting_talking', 'sitting_clap', 'sitting_laughing', 'sitting_talking'];
@@ -738,6 +738,17 @@ export class Mela {
         // those talking among themselves say a few words, then listen (turned on and off in update)
         if (CLIPS[i] === 'sitting_talking') this.chat.push({ a, t: rnd(i * 5 + 2) * 4 });
       });
+      // Kumar in the armchair at the end, talking to the poet beside him now and then
+      makeActors('kumar', 1).then(([k]) => {
+        k.root.position.set(seats[0], FLOOR + SIT_Y, SEAT_Z + SIT_Z);
+        k.root.rotation.y = Math.PI;
+        k.play('sitting_talking', 0.9, 0);
+        k.update(7);
+        k.face.blinking = true;
+        stage.add(k.root);
+        this.poets.push(k);
+        this.chat.push({ a: k, t: 3 });
+      }).catch((e) => console.error('kumar failed to load', e));
       const r = left.get('uncle')!.shift()!;
       r.root.position.set(MIC[0], FLOOR, MIC[1]);
       r.root.rotation.y = Math.PI;
@@ -753,7 +764,7 @@ export class Mela {
         this.mic = { mic, hand, head, root: r.root };
       }).catch(() => {});
     }).catch(() => {});
-    for (let i = 0; i < poets.length; i++) post(seats[i + 1], SEAT_Z - 0.05, 0.3, FLOOR + 1.3, FLOOR);
+    for (let i = 0; i <= poets.length; i++) post(seats[i], SEAT_Z - 0.05, 0.3, FLOOR + 1.3, FLOOR);
     post(MIC[0], MIC[1], 0.3, FLOOR + 1.8, FLOOR);
     const [px, pz] = toW(cx, SEAT_Z);
     this.poetsAt = [px, pz];

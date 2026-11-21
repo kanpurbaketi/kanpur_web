@@ -14,7 +14,7 @@ import { NIGHT } from './night';
  Pedestrians moves them (see Pedestrians.addRigged): an Actor only knows how to stand somewhere and play a clip.
 */
 
-export type RigName = 'uncle' | 'security' | 'goon' | 'girl' | 'boy' | 'aunty' | 'burqa';
+export type RigName = 'uncle' | 'security' | 'goon' | 'girl' | 'boy' | 'aunty' | 'burqa' | 'kumar';
 
 /** height in metres (as built), used to match the walk clip's stride to the ground speed */
 /** `step`: how much of the walk clip's stride they take (a sari allows short steps only) */
@@ -26,6 +26,7 @@ const RIGS: Record<RigName, { file: string; height: number; step?: number }> = {
   boy: { file: 'models/college_boy_rig.glb', height: 1.70 },
   aunty: { file: 'models/aunty_rig.glb', height: 1.56, step: 0.55 },
   burqa: { file: 'models/aunty_rig.glb', height: 1.56, step: 0.55 },  // the aunty's body in a burqa
+  kumar: { file: 'models/kumar_rig.glb', height: 1.68 },        // the young poet on the kavi sammelan's stage
 };
 /** the looks of each kind: '' is the model as built, the rest are textures in models/looks/<name>.jpg (.webp when built) */
 const LOOKS: Record<RigName, string[]> = {
@@ -36,6 +37,7 @@ const LOOKS: Record<RigName, string[]> = {
   boy: ['', 'college_boy_b', 'college_boy_c', 'college_boy_d', 'college_boy_e', 'college_boy_f', 'college_boy_g', 'college_boy_h', 'college_boy_i', 'college_boy_j'],
   burqa: ['burqa_a', 'burqa_b', 'burqa_c', 'burqa_d'],
   aunty: ['', 'aunty_b', 'aunty_c', 'aunty_d', 'aunty_e', 'aunty_f', 'aunty_g', 'aunty_h', 'aunty_i', 'aunty_j'],
+  kumar: [''],
 };
 // Ramu's clips cover this much ground per second at normal playback, for his 1.52 m
 const WALK_SPEED = 1.35, RUN_SPEED = 5.0, CLIP_HEIGHT = 1.52;
@@ -81,7 +83,7 @@ function hipsAt(clip: THREE.AnimationClip | undefined, end: boolean): THREE.Vect
 interface Source { scene: THREE.Object3D; clips: THREE.AnimationClip[]; lie: THREE.Vector3; material: THREE.MeshStandardMaterial }
 const cache = new Map<string, Promise<Source>>();     // by file: the goon is the uncle's model
 const lookCache = new Map<string, Promise<THREE.MeshStandardMaterial>>();
-const nextLook: Record<RigName, number> = { uncle: 0, security: 0, goon: 0, girl: 0, boy: 0, aunty: 0, burqa: 0 };
+const nextLook: Record<RigName, number> = { uncle: 0, security: 0, goon: 0, girl: 0, boy: 0, aunty: 0, burqa: 0, kumar: 0 };
 
 /** The model's material wearing another texture (one material per look, shared by everyone who has that look). */
 function lookMaterial(look: string, base: THREE.MeshStandardMaterial): Promise<THREE.MeshStandardMaterial> {

@@ -1,4 +1,4 @@
-# 09 · Stage 1, part 2: the stage, the stolen seat and the poetry quiz
+# Stage 1, part 2: the stage, the stolen seat and the poetry quiz
 
 ## Context
 Part 1 is built and committed. Its story runs from the chowk, past the carts and the ticket line, to the torn sheet on the

@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { gltfLoader } from './gltf';
 import { Actor, makeActors, RigName } from './actors';
+import { HandProp } from './handProp';
+import { Person } from './person';
+import { lota, LOTA_NECK } from './storyProps';
 import { addFoods, FoodName, FoodSpot } from './foods';
 import { addGrass, grassWind, GrassSpot } from './grass';
 import { groundDecals } from './roadDirt';
@@ -417,8 +420,39 @@ function clothTexture(kind: number): THREE.CanvasTexture {
 
 // ---- the mela -------------------------------------------------------------------------------------
 
-const GRIP = 0.06;
-const HM = { v: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3(), f: new THREE.Vector3(), q: new THREE.Quaternion(), up: new THREE.Vector3(0, 1, 0) };
+/** the kavi sammelan's people and places, for the story (world frame; [x, z] on the ground) */
+export interface Sammelan {
+  kumar: Person;
+  anchor: Person;
+  /** on the sofas, left to right from Kumar's chair (Buddha last) */
+  poets: Person[];
+  /** where each sits ([0]: Kumar's armchair), at `seatY`, facing `facing` (the audience) */
+  seats: [number, number][];
+  seatY: number;
+  facing: number;
+  /** the stage's top */
+  floor: number;
+  /** the height of the ground (the stage, its stairs) */
+  ground: (x: number, z: number) => number;
+  mic: [number, number];
+  micProp: HandProp;
+  lota: HandProp;
+  lotaAt: [number, number];
+  /** outside the back-stage door, on the ground; just inside it, at the back of the stage */
+  door: [number, number];
+  behind: [number, number];
+  /** from Kumar's chair (a step out in front of it) round the end of the row, behind the sofas, down the far stairs and
+   * away from the stage: the way he goes to find somewhere (and, backwards, the way he comes back) */
+  exit: [number, number][];
+  centre: [number, number];
+  /** held things, put in their hands each frame (add a HandProp to have it done) */
+  props: HandProp[];
+  /** people the chatting leaves alone */
+  quiet: Set<Person>;
+  /** where to put things (the mela's group) */
+  group: THREE.Group;
+}
+
 
 export class Mela {
   readonly group = new THREE.Group();
@@ -489,11 +523,13 @@ export class Mela {
     if (far) return;
     if (Math.hypot(fx - this.poetsAt[0], fz - this.poetsAt[1]) < 70) {
       for (const c of this.chat) {
-        c.t -= dt;
-        if (c.t <= 0) { c.a.face.talking = !c.a.face.talking; c.t = c.a.face.talking ? 1.5 + Math.random() * 3.5 : 2 + Math.random() * 5; }
+        if (this.quiet.has(c.p) || (c.t -= dt) > 0) continue;
+        const f = c.p.face;
+        f.talking = !f.talking;
+        c.t = f.talking ? 1.5 + Math.random() * 3.5 : 2 + Math.random() * 5;
       }
-      for (const a of this.poets) a.update(dt);
-      this.holdMic();
+      for (const p of this.cast) if (p.visible) p.update(dt);
+      for (const h of this.props) h.update();
       this.audTick ^= 1;
       for (let i = this.audTick; i < this.audience.length; i += 2) this.audience[i].update(dt * 2);
     }
@@ -600,9 +636,14 @@ export class Mela {
     for (let x = x0 + 0.35; x < x1; x += 0.7) post(x, z, 0.35, floor + H, floor);     // knee high: jump up on it
   }
 
-  /** the poets on the stage's sofas (animated, so updated while Ramu is near enough to see them), and where they sit */
-  private poets: Actor[] = [];
-  private mic: { mic: THREE.Object3D; hand: THREE.Object3D; head: THREE.Object3D; root: THREE.Object3D } | null = null;
+  /** the kavi sammelan's people (poets, Kumar, the anchor) and their places, for the story, once all are in */
+  sammelan!: Promise<Sammelan>;
+  /** ... the same people (animated, so updated while Ramu is near enough to see them), and where they sit */
+  private cast: Person[] = [];
+  /** things in people's hands (the mic, the lota, fruit), put there each frame */
+  private props: HandProp[] = [];
+  /** people the chatting leaves alone (the story has them talk) */
+  private quiet = new Set<Person>();
   private poetsAt: [number, number] = [0, 0];
   /** the audience on the dari, rigged (updated half at a time, while Ramu is near enough to see them) */
   private audience: Actor[] = [];
@@ -613,7 +654,7 @@ export class Mela {
   /** where the dari is (world): Ramu stands on it */
   private dari: Rect = { x0: 0, x1: 0, z0: 0, z1: 0 };
   /** the poets chatting on the sofas: seconds until each next starts or stops talking */
-  private chat: { a: Actor; t: number }[] = [];
+  private chat: { p: Person; t: number }[] = [];
 
   private buildStage(lights: LightPool | null, desktop: boolean): void {
     // The stage is built in its own frame (centre at the origin, front toward +z, audience beyond) and the group is turned so the
@@ -716,55 +757,74 @@ export class Mela {
     }
     this.stageProps(stage, sofas, SEAT_Z, FLOOR);
     this.stageTable(stage, seats, SEAT_Z + 1.25, FLOOR, post);
-    // the poets: rigged people on the cushions, listening and talking among themselves, now and then laughing or clapping
-    // ... Buddha, the old poet with the white beard (his own model: assets/budda), in the armchair at the right end
+    // the poets: rigged people on the cushions, listening and talking among themselves, now and then laughing or clapping;
+    // Buddha, the old poet with the white beard (his own model: assets/budda), in the armchair at the right end; Kumar,
+    // the young poet (assets/kumar), in the armchair at the left end; and the anchor (assets/anchor), on his feet at the
+    // front, a mic in his fist at his chin (the recite clip: the talking clip with the right hand held up there; the mic
+    // is put in it every frame, HandProp). They are the story's people (stage 1, part 2 moves them about), so they are
+    // Persons in the world's frame, not in the stage's group.
     const poets: RigName[] = ['uncle', 'uncle', 'boy', 'aunty', 'uncle', 'girl', 'uncle', 'buddha'];
     const CLIPS = ['sitting_talking', 'sitting_clap', 'sitting_talking', 'sitting_laughing', 'sitting_talking', 'sitting_clap', 'sitting_laughing', 'sitting_talking'];
-    // ... and the anchor (his own model: assets/anchor), on his feet at the front, a mic in his fist at his chin (the
-    // recite clip: the talking clip with the right hand held up there; the mic is put in it every frame, holdMic)
-    const cast: RigName[] = [...poets, 'anchor'];
+    const FACE = -Math.PI / 2, SEAT_Y = FLOOR + SIT_Y;          // facing the audience (the stage's front, east)
+    const seatW = seats.map((x) => toW(x, SEAT_Z + SIT_Z));
+    // the stairs (north side, local +x) and the back-stage door (local -z), by the torn place in the wall
+    const sw = STAGE_STAIRS.x1 - STAGE_STAIRS.x0, scz = (STAGE_STAIRS.x0 + STAGE_STAIRS.x1) / 2 - sx0;
+    const doorX = Math.max(-W / 2 + 1.5, Math.min(W / 2 - 1.5, sz0 - (STAGE_ENTRY.z0 + STAGE_ENTRY.z1) / 2));
+    const st0 = W / 2 + 0.6 - 0.3 - 0.45;                                  // local x of the top step's inner edge
+    const stairs = (x: number, z: number): number | null => {
+      const lx = sz0 - z, lz = x - sx0;                                      // the stage's frame (toW turned back)
+      if (Math.abs(lz - scz) > sw / 2 || lx < st0 || lx > st0 + 3.6) return null;
+      return (4 - Math.floor((lx - st0) / 0.9)) * SH / 4;
+    };
+    const ground = (x: number, z: number): number => stairs(x, z) ?? (x > STAGE.x0 && x < STAGE.x1 && z > STAGE.z0 && z < STAGE.z1 ? FLOOR : 0);
+    const cast: RigName[] = [...poets, 'kumar', 'anchor'];
     const kinds = [...new Set(cast)];
-    Promise.all(kinds.map((k) => makeActors(k, cast.filter((p) => p === k).length))).then((made) => {
+    this.sammelan = Promise.all(kinds.map((k) => makeActors(k, cast.filter((p) => p === k).length))).then(async (made) => {
       const left = new Map(kinds.map((k, i) => [k, made[i]]));
-      poets.forEach((kind, i) => {
-        const a = left.get(kind)!.shift()!;
-        a.root.position.set(seats[i + 1], FLOOR + SIT_Y, SEAT_Z + SIT_Z);
-        a.root.rotation.y = Math.PI;                 // facing the audience
-        a.play(CLIPS[i], 0.85 + rnd(i * 7 + 3) * 0.3, 0);
-        a.update(rnd(i * 13 + 1) * 20);              // not all at the same moment of it
-        a.face.blinking = true;
-        a.face.laughing = CLIPS[i] === 'sitting_laughing';
-        stage.add(a.root);
-        this.poets.push(a);
+      const person = (kind: RigName, [x, z]: [number, number], y: number) => {
+        const p = new Person(left.get(kind)!.shift()!, x, y, z, FACE);
+        p.floor = ground;
+        this.group.add(p.actor.root);
+        this.cast.push(p);
+        return p;
+      };
+      const ps = poets.map((kind, i) => {
+        const p = person(kind, seatW[i + 1], SEAT_Y);
+        p.hold(CLIPS[i], 0.85 + rnd(i * 7 + 3) * 0.3, 0);
+        p.actor.update(rnd(i * 13 + 1) * 20);                // not all at the same moment of it
+        p.face.laughing = CLIPS[i] === 'sitting_laughing';
         // those talking among themselves say a few words, then listen (turned on and off in update)
-        if (CLIPS[i] === 'sitting_talking') this.chat.push({ a, t: rnd(i * 5 + 2) * 4 });
+        if (CLIPS[i] === 'sitting_talking') this.chat.push({ p, t: rnd(i * 5 + 2) * 4 });
+        return p;
       });
       // Kumar in the armchair at the end, talking to the poet beside him now and then
-      makeActors('kumar', 1).then(([k]) => {
-        k.root.position.set(seats[0], FLOOR + SIT_Y, SEAT_Z + SIT_Z);
-        k.root.rotation.y = Math.PI;
-        k.play('sitting_talking', 0.9, 0);
-        k.update(7);
-        k.face.blinking = true;
-        stage.add(k.root);
-        this.poets.push(k);
-        this.chat.push({ a: k, t: 3 });
-      }).catch((e) => console.error('kumar failed to load', e));
-      const r = left.get('anchor')!.shift()!;
-      r.root.position.set(MIC[0], FLOOR, MIC[1]);
-      r.root.rotation.y = Math.PI;
-      r.play('recite', 0.9, 0);
-      r.face.talking = r.face.blinking = true;      // reciting, all the while
-      stage.add(r.root);
-      this.poets.push(r);
-      const hand = r.root.getObjectByName('mixamorigRightHand'), head = r.root.getObjectByName('mixamorigHead');
-      if (hand && head) gltfLoader().loadAsync('models/handmic.glb').then((gltf) => {
-        const mic = gltf.scene;
-        mic.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
-        stage.add(mic);
-        this.mic = { mic, hand, head, root: r.root };
-      }).catch(() => {});
-    }).catch(() => {});
+      const kumar = person('kumar', seatW[0], SEAT_Y);
+      kumar.hold('sitting_talking', 0.9, 0);
+      kumar.actor.update(7);
+      this.chat.push({ p: kumar, t: 3 });
+      const anchor = person('anchor', toW(MIC[0], MIC[1]), FLOOR);
+      anchor.hold('recite', 0.9, 0);
+      anchor.face.talking = true;                            // reciting, all the while
+      const micObj = await gltfLoader().loadAsync('models/handmic.glb').then((g) => g.scene, () => new THREE.Group());
+      micObj.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
+      const mic = new HandProp(micObj, 'mic', 0.07);
+      this.group.add(micObj);
+      mic.holder(anchor.actor.root);
+      // the first poet's lota, on the floor at the end of his sofa (by Kumar's chair)
+      const lotaObj = lota(), [lx, lz] = toW((seats[0] + seats[1]) / 2 - 0.05, SEAT_Z + 0.35);
+      lotaObj.position.set(lx, FLOOR, lz);
+      this.group.add(lotaObj);
+      this.props.push(mic);
+      return {
+        kumar, anchor, poets: ps, seats: seatW, seatY: SEAT_Y, facing: FACE, floor: FLOOR, ground,
+        mic: toW(MIC[0], MIC[1]), micProp: mic, lota: new HandProp(lotaObj, 'hang', LOTA_NECK), lotaAt: [lx, lz] as [number, number],
+        door: toW(doorX, -D / 2 - 2.4), behind: toW(doorX, -D / 2 - 0.8),
+        exit: [[seats[0], SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z - 1.5], [st0 - 0.7, SEAT_Z - 1.5],
+          [st0 - 0.5, scz], [st0 + 4.2, scz], [st0 + 7.5, scz + 1.5]].map(([x, z]) => toW(x, z)),
+        centre: toW(cx, cz), props: this.props, quiet: this.quiet, group: this.group,
+      };
+    });
+    this.sammelan.catch((e) => console.error('the sammelan failed to load', e));
     for (let i = 0; i <= poets.length; i++) post(seats[i], SEAT_Z - 0.05, 0.3, FLOOR + 1.3, FLOOR);
     post(MIC[0], MIC[1], 0.3, FLOOR + 1.8, FLOOR);
     const [px, pz] = toW(cx, SEAT_Z);
@@ -810,17 +870,10 @@ export class Mela {
     stage.add(dm);
     // stairs up the north side (local +x), and the back-stage entry by the torn place in the wall (back = local -z)
     const ex = new Geo();
-    const sw = STAGE_STAIRS.x1 - STAGE_STAIRS.x0, scz = (STAGE_STAIRS.x0 + STAGE_STAIRS.x1) / 2 - sx0;
     for (let i = 0; i < 4; i++) ex.box(W / 2 + 0.6 + (3 - i) * 0.9 - 0.3, (i + 1) * SH / 4 / 2, scz, 0.9, (i + 1) * SH / 4, sw, i % 2 ? '#8a5a2a' : '#7a4e24');
     // ... to walk up: each step's top is a floor (from the side the higher steps are too tall to step onto: Ramu goes round)
-    const st0 = W / 2 + 0.6 - 0.3 - 0.45;                                  // local x of the top step's inner edge
-    this.floors.push((x, z) => {
-      const lx = sz0 - z, lz = x - sx0;                                      // the stage's frame (toW turned back)
-      if (Math.abs(lz - scz) > sw / 2 || lx < st0 || lx > st0 + 3.6) return null;
-      return (4 - Math.floor((lx - st0) / 0.9)) * SH / 4;
-    });
+    this.floors.push(stairs);
     for (const sz of [-1, 1]) ex.rod(new THREE.Vector3(W / 2 + 3.2, 0.9, scz + sz * sw / 2), new THREE.Vector3(W / 2 + 0.2, SH + 0.9, scz + sz * sw / 2), 0.04, '#b8b8bc');
-    const doorX = Math.max(-W / 2 + 1.5, Math.min(W / 2 - 1.5, sz0 - (STAGE_ENTRY.z0 + STAGE_ENTRY.z1) / 2));   // local x of the back-stage door
     ex.box(doorX, 0.35, -D / 2 - 1.0, 2.0, 0.7, 1.4, '#8a5a2a');
     for (const ox of [-0.5, 0.5]) post(doorX + ox, -D / 2 - 1.0, 0.5, 0.7);           // the step up at the back: on top of it
     ex.box(doorX, 0.8, -D / 2 - 0.3, 2.6, 1.6, 0.12, '#1c1c20');
@@ -1133,31 +1186,6 @@ export class Mela {
   }
 
   // ---- litter: the ground after a few evenings of the mela -----------------------------------------------
-
-  /**
-   * The reciting poet's mic, in his right fist: its grip (7 cm up the handle) in the middle of the fist, the handle
-   * pointing at his mouth, so its head stays at his lips however the clip moves him.
-   */
-  private holdMic(): void {
-    const m = this.mic;
-    if (!m) return;
-    const v = HM.v, a = HM.a, b = HM.b, f = HM.f;
-    m.root.updateMatrixWorld(true);
-    m.hand.getWorldPosition(a);
-    b.set(0, 1, 0).applyQuaternion(m.hand.getWorldQuaternion(HM.q));  // the hand bone points along the fingers
-    const grip = a.addScaledVector(b, GRIP);                          // the middle of the closed hand
-    m.head.getWorldPosition(v);
-    f.set(0, 0, 1).applyQuaternion(m.root.getWorldQuaternion(HM.q)); // his front
-    const mouth = v.addScaledVector(f, 0.1).add(HM.up.clone().multiplyScalar(0.075));
-    const dir = mouth.sub(grip).normalize();
-    const parent = m.mic.parent!;
-    const base = grip.clone().addScaledVector(dir, -0.07);
-    parent.worldToLocal(base);
-    m.mic.position.copy(base);
-    // the mic's +y along dir, in the parent's frame
-    const pq = parent.getWorldQuaternion(HM.q).invert();
-    m.mic.quaternion.setFromUnitVectors(HM.up, dir).premultiply(pq);
-  }
 
   /**
    * Worn patches of grass on the open ground (grass.ts): a green-brown stain on the dirt (roadDirt.ts) with clumps and

@@ -6,6 +6,8 @@ import { STATUE } from '../../world/stage1Site';
 import type { CartKeepers, Keeper } from '../../world/cartKeepers';
 import type { Director } from './director';
 import { playSfx } from './sfx';
+import type { Sammelan } from '../../world/mela';
+import { stage1Part2 } from './stage1b';
 
 /*
  Stage 1, part 1 (plans/08-stage1-part1.md). Built so far:
@@ -19,7 +21,8 @@ import { playSfx } from './sfx';
               Back at the gap later: "Ticket mila? Nahi? Toh side ho jao."
    mission 3  another way in: the maps show a search area round the torn sheet on the west wall, not the spot, and it
               closes in after 90 s without getting nearer; the hint sharpens as he does (the cloth wall, its west side,
-              there). Through the sheet (the only way in now) ends part 1, recorded as the stage's progress.
+              there). Through the sheet (the only way in now) ends part 1, recorded as the stage's progress; part 2 (stage1b.ts)
+   goes on inside.
  hooks.step(n) is called as each mission is done (recorded for the admin), hooks.done() at the end.
 */
 
@@ -27,7 +30,7 @@ export interface StoryHooks { step(n: number): void; done(toastKey?: string): vo
 
 const CART_R = 4.5;
 
-export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queue: GateQueue, hooks: StoryHooks): Promise<void> {
+export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queue: GateQueue, sammelan: Promise<Sammelan> | null, hooks: StoryHooks): Promise<void> {
   // ---- beat 1: hungry at the chowk ----
   await d.scene(async () => {
     await d.wait(0.3);
@@ -79,7 +82,8 @@ export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queu
   const search = searchArea(ramu);
   await d.mission(3, 'm.s1.way', [{ at: search.at, hint: search.hint, radius: search.radius, done: (x, z) => { search.tick(); return inMela(x, z); } }]);
   hooks.step(3);
-  hooks.done('story.s1.part1');
+  if (sammelan) await stage1Part2(d, ramu, sammelan, hooks);
+  else hooks.done('story.s1.part1');
 }
 
 /**

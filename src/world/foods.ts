@@ -33,6 +33,16 @@ function load() {
   }));
 }
 
+/** one item on its own (to be held, or thrown), its origin in its middle; `s` scales it */
+export async function foodMesh(name: FoodName, s = 1): Promise<THREE.Mesh> {
+  const it = (await load()).get(name);
+  if (!it) throw new Error(`no food ${name}`);
+  const m = new THREE.Mesh(it.geo.clone().center().scale(s, s, s), it.mat);
+  m.castShadow = true;
+  m.name = name;
+  return m;
+}
+
 /** Put food items at `spots` under `parent` (in its frame); they appear once the model is in. */
 export function addFoods(parent: THREE.Object3D, spots: FoodSpot[], shadows = false): void {
   load().then((items) => {

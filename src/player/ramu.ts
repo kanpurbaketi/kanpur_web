@@ -143,10 +143,32 @@ export class Ramu {
     return true;
   }
 
-  /** put him standing at (x, z) (a cutscene places him), still */
-  standAt(x: number, z: number): void {
-    this.root.position.set(x, this.world.floorAt(x, z, 0.5), z);
+  /** put him standing at (x, z) (a cutscene places him), still; `y`: about where his feet are (on the stage: its top) */
+  standAt(x: number, z: number, y = 0): void {
+    this.root.position.set(x, this.world.floorAt(x, z, y + 0.5), z);
     this.vel.set(0, 0, 0);
+  }
+
+  /** a held pose (sitting in a chair): a looping clip, where he is put, no walking or falling until standUp() */
+  private pose: string | null = null;
+  get posed(): boolean { return this.pose !== null; }
+
+  /** sit him (or hold him in any looping clip) at (x, y, z), facing `ry` */
+  sitAt(x: number, y: number, z: number, ry: number, clip = 'sitting_talking'): void {
+    this.root.position.set(x, y, z);
+    this.model.rotation.y = ry;
+    this.vel.set(0, 0, 0);
+    this.gestureT = 0;
+    this.pose = clip;
+  }
+
+  /** change the held clip (eating, talking) while sitting */
+  holdClip(clip: string): void { if (this.pose) this.pose = clip; }
+
+  /** out of the held pose, standing at (x, z) on whatever is there at about height y */
+  standUp(x: number, z: number, y: number): void {
+    this.pose = null;
+    this.standAt(x, z, y);
   }
 
   /** turn to face a point (the punch finds its man) */
@@ -296,6 +318,14 @@ export class Ramu {
       this.play('punch', 0.05);
     }
     this.punchQueued = false;
+    if (this.pose) {                         // held: sitting in a chair (a scene); a gesture may play over it
+      this.vel.set(0, 0, 0);
+      this.animate(dt, 0, false);
+      this.updateBlob();
+      const q = this.root.position;
+      if (!this.cinematic) this.updateCamera(q.x, q.y + EYE, q.z, CAM_DIST);
+      return;
+    }
     if (input.lengthSq() > 1) input.normalize();
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     const dir = new THREE.Vector3(input.x * cos + input.y * sin, 0, -input.x * sin + input.y * cos);
@@ -662,6 +692,8 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
     } else if (this.gestureT > 0 && this.gestureName && hs < 0.25) {
       this.gestureT -= dt;
       this.play(this.gestureName, 0.25);
+    } else if (this.pose) {
+      set(this.pose, 'idle', 1);
     } else if (this.lockPick && hs < 0.8) {
       set(this.lockPick.low && A.crouch ? 'crouch' : 'idle', 'idle', this.lockPick.low ? 1 : 0.6);
     } else if (crouching) {

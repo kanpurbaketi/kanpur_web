@@ -21,7 +21,7 @@ import { CutCam, type Shot } from './cutcam';
  people end up, what is set) still happens. update(dt) runs every frame after Ramu's, while the game is not paused.
 */
 
-export type Who = 'ramu' | 'keeper' | 'guard';
+export type Who = 'ramu' | 'keeper' | 'guard' | 'kumar' | 'poet' | 'anchor' | 'audience';
 
 /** a value, or one worked out again every frame (a hint that changes as he gets closer, a search area that shrinks) */
 type Live<T> = T | (() => T);

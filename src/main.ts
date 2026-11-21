@@ -35,6 +35,7 @@ import { stage as stageOf, type Stage } from './game/stages';
 import { goFree, introCard, loadingFailed, loadingScreen, toast, UserChip } from './ui/shell';
 import { Director } from './game/story/director';
 import { stage1, STAGE1_STEPS } from './game/story/stage1';
+import { stage1Part2 } from './game/story/stage1b';
 import { CartKeepers } from './world/cartKeepers';
 import { GateQueue } from './world/gateQueue';
 import { CityAmbience } from './game/ambience';
@@ -203,7 +204,8 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
     spawn = project(map, lat, lon);
   }
   // a stage starts where it starts (stage 1: the chowk); roaming free, where menu → Places says (the chowk unless changed)
-  const spawnMode = play ? 'shivaji' : params.get('spawn') ?? (map.area === 'moti_jheel' ? startChoice() : null);
+  const part2 = import.meta.env.DEV && params.has('debug') && params.get('part') === '2';   // test scripts: stage 1's part 2
+  const spawnMode = play ? (part2 ? 'inside' : 'shivaji') : params.get('spawn') ?? (map.area === 'moti_jheel' ? startChoice() : null);
   if (spawnMode === 'shivaji') spawn = SHIVAJI_START;   // by the statue, the Shivaji Putla gate ahead (the real start of stage 1)
   if (spawnMode === 'mela') spawn = [TEAR.x - 3.5, TEAR.z]; // in the alley outside the torn place in the cloth wall
   if (spawnMode === 'inside') spawn = [TEAR.x + 2.2, TEAR.z]; // the game starts in the mela, just past the tear (beside the stage entry)
@@ -525,10 +527,13 @@ void main() {
       paused = true;
       await introCard(play.stage.n, STAGE1_STEPS);
       paused = false;
-      void stage1(director, ramu, keepers, queue!, {
-        step: (n) => { step = n; if (play.run !== null) account.runBeat(play.run, run.played, runStats()); },
+      const hooks = {
+        step: (n: number) => { step = n; if (play.run !== null) account.runBeat(play.run, run.played, runStats()); },
         done: finish,
-      });
+      };
+      // test scripts: ?debug&stage=1&part=2 starts at part 2, just inside the tear
+      if (import.meta.env.DEV && params.has('debug') && params.get('part') === '2' && mela) void stage1Part2(director, ramu, mela.sammelan, hooks);
+      else void stage1(director, ramu, keepers, queue!, mela?.sammelan ?? null, hooks);
     },
   };
 }

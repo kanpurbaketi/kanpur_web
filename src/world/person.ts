@@ -14,6 +14,11 @@ export class Person {
   private speed = 1.2;
   private turnTo: number | null = null;
   private gestureT = 0;
+  /** a looping clip held while not walking or gesturing (sitting in a chair, eating): null stands */
+  pose: string | null = null;
+  private poseScale = 1;
+  /** the ground under them while walking (the stage, its stairs): null keeps their height */
+  floor: ((x: number, z: number) => number) | null = null;
 
   constructor(actor: Actor, x: number, y: number, z: number, ry: number) {
     this.actor = actor;
@@ -55,7 +60,13 @@ export class Person {
     this.gestureT = secs;
   }
 
-  idle(): void { this.gestureT = 0; this.actor.play('idle'); }
+  idle(): void { this.gestureT = 0; this.pose = null; this.actor.play('idle'); }
+
+  /** hold a looping clip (sitting, eating, reciting) */
+  hold(clip: string, timeScale = 1, fade = 0.25): void {
+    this.gestureT = 0; this.pose = clip; this.poseScale = timeScale;
+    this.actor.play(clip, timeScale, fade);
+  }
 
   /** walk to (x, z) at `speed` m/s, then stand */
   walkTo(x: number, z: number, speed = 1.2): void {
@@ -80,12 +91,14 @@ export class Person {
         const step = Math.min(d, this.speed * dt);
         p.x += (dx / d) * step;
         p.z += (dz / d) * step;
+        if (this.floor) p.y = this.floor(p.x, p.z);
         this.turnTo = Math.atan2(-dx, -dz);
         this.actor.move(d < 0.15 ? 0.6 : this.speed);
       }
     } else if (this.gestureT > 0) {
-      if ((this.gestureT -= dt) <= 0) this.actor.play('idle');
-    } else this.actor.move(0);
+      if ((this.gestureT -= dt) <= 0) this.actor.play(this.pose ?? 'idle', this.pose ? this.poseScale : 1);
+    } else if (this.pose) this.actor.play(this.pose, this.poseScale);
+    else this.actor.move(0);
     if (this.turnTo !== null) {
       const r = this.actor.root.rotation, a = Math.atan2(Math.sin(this.turnTo - r.y), Math.cos(this.turnTo - r.y));
       r.y += a * Math.min(1, dt * 8);

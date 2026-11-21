@@ -13,7 +13,7 @@ import { P2 } from './types';
 const ROAD_Y = 0.07;          // just above the asphalt (0.05) and its dashes (0.065)
 const WALK_Y = 0.175;         // just above the raised footpath (0.16)
 
-export type Decal = 'pothole' | 'puddle' | 'patch' | 'mud' | 'litter';
+export type Decal = 'pothole' | 'puddle' | 'patch' | 'mud' | 'litter' | 'grass';
 
 /** where to put the dirt: the road's centre line, its width, the footpaths' width; `keep`: false where nothing goes (gates, the mela's front) */
 export interface DirtOpts { line: P2[]; roadW: number; walkW: number; keep: (x: number, z: number) => boolean }
@@ -25,7 +25,7 @@ export class RoadDirt {
 
   constructor(o: DirtOpts) {
     if (o.line.length < 2) return;
-    const spots: Record<Decal, [number, number, number, number, number][]> = { pothole: [], puddle: [], patch: [], mud: [], litter: [] };   // x, y, z, size, turn
+    const spots: Record<Decal, [number, number, number, number, number][]> = { pothole: [], puddle: [], patch: [], mud: [], litter: [], grass: [] };   // x, y, z, size, turn
     let seed = 17;
     const r = () => rnd(seed++ * 0.731);
     const hw = o.roadW / 2;
@@ -95,9 +95,9 @@ function heap(g: Geo, x: number, z: number, R: number, r: () => number): void {
   }
 }
 
-const TILES = 5;
+const TILES = 6;
 
-/** the five decals side by side: pothole, puddle (a pothole full of water), patch, mud, litter */
+/** the six decals side by side: pothole, puddle (a pothole full of water), patch, mud, litter, grass */
 function atlas(): THREE.CanvasTexture {
   const S = 256, c = document.createElement('canvas');
   c.width = S * TILES;
@@ -169,13 +169,25 @@ function atlas(): THREE.CanvasTexture {
     else { g.fillStyle = r() < 0.5 ? '#7a6230' : '#5d7a2a'; g.beginPath(); g.ellipse(0, 0, 5, 2.5, 0, 0, Math.PI * 2); g.fill(); }   // leaves
     g.restore();
   }
+  // 5 grass: a worn patch of short grass on the dirt, olive and dry yellow, thick in the middle and thinning to bare earth
+  x0 = S * 5;
+  for (let k = 0; k < 7; k++) { g.fillStyle = `rgba(${66 + k * 5},${84 + k * 4},${40},${0.3 - k * 0.025})`; blob(x0 + 128 + (r() - 0.5) * 50, 128 + (r() - 0.5) * 50, 58 + r() * 46, 0.55); g.fill(); }
+  const BLADE = ['rgba(92,118,46,0.9)', 'rgba(70,98,38,0.9)', 'rgba(124,132,62,0.85)', 'rgba(156,146,84,0.75)', 'rgba(52,78,30,0.9)'];
+  g.lineWidth = 1.5;
+  for (let i = 0; i < 3200; i++) {
+    const a = r() * Math.PI * 2, d = Math.pow(r(), 0.7) * 112;
+    if (r() > 1.15 - d / 112) continue;                  // fewer blades toward the rim
+    const px = x0 + 128 + Math.cos(a) * d, py = 128 + Math.sin(a) * d, b = r() * 6.28, l = 3 + r() * 6;
+    g.strokeStyle = BLADE[Math.floor(r() * BLADE.length)];
+    g.beginPath(); g.moveTo(px, py); g.lineTo(px + Math.cos(b) * l, py + Math.sin(b) * l); g.stroke();
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   return t;
 }
 
-const KINDS: Decal[] = ['pothole', 'puddle', 'patch', 'mud', 'litter'];
+const KINDS: Decal[] = ['pothole', 'puddle', 'patch', 'mud', 'litter', 'grass'];
 let sharedAtlas: THREE.CanvasTexture | null = null;
 
 /** Flat dirt on the ground, instanced per kind: [x, y, z, size, turn] for each (the road's, and the mela's: mela.ts). */

@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { gltfLoader } from './gltf';
 import { Actor, makeActors, RigName } from './actors';
 import { addFoods, FoodName, FoodSpot } from './foods';
+import { addGrass, grassWind, GrassSpot } from './grass';
 import { groundDecals } from './roadDirt';
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
@@ -416,6 +417,9 @@ function clothTexture(kind: number): THREE.CanvasTexture {
 
 // ---- the mela -------------------------------------------------------------------------------------
 
+const GRIP = 0.06;
+const HM = { v: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3(), f: new THREE.Vector3(), q: new THREE.Quaternion(), up: new THREE.Vector3(0, 1, 0) };
+
 export class Mela {
   readonly group = new THREE.Group();
   /** solid circles for collision: [x, z, r] */
@@ -446,6 +450,7 @@ export class Mela {
     this.buildWalls(lights);
     this.buildOperators();
     this.buildLitter(desktop);
+    this.buildGrass(desktop);
     // Ramu walks on the dirt (it lies over the park's grass), the packed aisle, the dari: not sunk in them
     const mid = DZ + 150;
     this.floors.push((x, z) => {
@@ -488,10 +493,12 @@ export class Mela {
         if (c.t <= 0) { c.a.face.talking = !c.a.face.talking; c.t = c.a.face.talking ? 1.5 + Math.random() * 3.5 : 2 + Math.random() * 5; }
       }
       for (const a of this.poets) a.update(dt);
+      this.holdMic();
       this.audTick ^= 1;
       for (let i = this.audTick; i < this.audience.length; i += 2) this.audience[i].update(dt * 2);
     }
     for (const r of this.rides) r.update(this.t, dt);
+    grassWind(this.t);
     for (const o of this.operators) this.operate(o, dt, Math.hypot(fx - o.x, fz - o.z) < 90);
     this.crowd.update(dt, fx, fz, dirX, dirZ, px, pz, py);
   }
@@ -512,11 +519,10 @@ export class Mela {
   }
 
   /**
-   * The sofas and the mic, once their models are in: the sofas (in the stage's frame, backs to the banner, x along the row)
-   * merged by material, a few draw calls for the lot; the mic on a tripod foot in front of the reciter at (mx, mz),
-   * turned to him.
+   * The sofas, once their model is in (in the stage's frame, backs to the banner, x along the row), merged by material, a
+   * few draw calls for the lot.
    */
-  private stageProps(stage: THREE.Group, sofas: { name: string; x: number }[], z: number, floor: number, mx: number, mz: number): void {
+  private stageProps(stage: THREE.Group, sofas: { name: string; x: number }[], z: number, floor: number): void {
     const loader = gltfLoader();
     loader.loadAsync('models/sofas.glb').then((gltf) => {
       gltf.scene.updateMatrixWorld(true);
@@ -541,21 +547,6 @@ export class Mela {
         mesh.castShadow = mesh.receiveShadow = true;
         stage.add(mesh);
       }
-    }).catch(() => {});
-    loader.loadAsync('models/mic.glb').then((gltf) => {
-      const mic = gltf.scene;
-      mic.position.set(mx, floor, mz + 0.6);
-      mic.rotation.y = Math.PI;                      // its head toward him
-      mic.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
-      // the tripod foot it stands on
-      const g = new Geo();
-      for (let k = 0; k < 3; k++) {
-        const a = (k / 3) * Math.PI * 2;
-        g.rod(new THREE.Vector3(0, 0.32, 0), new THREE.Vector3(Math.cos(a) * 0.26, 0.01, Math.sin(a) * 0.26), 0.012, '#1b1b1d', 5);
-      }
-      g.cyl(0, 0.3, 0, 0.022, 0.06, '#1b1b1d', 8);
-      mic.add(new THREE.Mesh(g.build(), litMat({ metalness: 0.6, roughness: 0.4 })));
-      stage.add(mic);
     }).catch(() => {});
   }
 
@@ -602,6 +593,7 @@ export class Mela {
 
   /** the poets on the stage's sofas (animated, so updated while Ramu is near enough to see them), and where they sit */
   private poets: Actor[] = [];
+  private mic: { mic: THREE.Object3D; hand: THREE.Object3D; head: THREE.Object3D; root: THREE.Object3D } | null = null;
   private poetsAt: [number, number] = [0, 0];
   /** the audience on the dari, rigged (updated half at a time, while Ramu is near enough to see them) */
   private audience: Actor[] = [];
@@ -708,12 +700,13 @@ export class Mela {
       post(x, SEAT_Z, r.w / 2, FLOOR + 0.9, FLOOR);
       at += r.w + GAP;
     }
-    this.stageProps(stage, sofas, SEAT_Z, FLOOR, MIC[0], MIC[1]);
+    this.stageProps(stage, sofas, SEAT_Z, FLOOR);
     this.stageTable(stage, seats.slice(1), SEAT_Z + 1.25, FLOOR, post);
     // the poets: rigged people on the cushions, listening and talking among themselves, now and then laughing or clapping
     const poets: FigureKind[] = ['uncle', 'uncle', 'boy', 'aunty', 'uncle', 'girl', 'uncle', 'boy'];
     const CLIPS = ['sitting_talking', 'sitting_clap', 'sitting_talking', 'sitting_laughing', 'sitting_talking', 'sitting_clap', 'sitting_laughing', 'sitting_talking'];
-    // ... and one more: the poet reciting at the mic, on his feet (the singing clip: a hand out, the head up)
+    // ... and one more: the poet reciting, on his feet at the front, a mic in his fist at his chin (the recite clip: the
+    // talking clip with the right hand held up there; the mic is put in it every frame, holdMic)
     const cast: FigureKind[] = [...poets, 'uncle'];
     const kinds = [...new Set(cast)];
     Promise.all(kinds.map((k) => makeActors(k, cast.filter((p) => p === k).length))).then((made) => {
@@ -734,10 +727,17 @@ export class Mela {
       const r = left.get('uncle')!.shift()!;
       r.root.position.set(MIC[0], FLOOR, MIC[1]);
       r.root.rotation.y = Math.PI;
-      r.play('singing', 0.9, 0);
+      r.play('recite', 0.9, 0);
       r.face.talking = r.face.blinking = true;      // reciting, all the while
       stage.add(r.root);
       this.poets.push(r);
+      const hand = r.root.getObjectByName('mixamorigRightHand'), head = r.root.getObjectByName('mixamorigHead');
+      if (hand && head) gltfLoader().loadAsync('models/handmic.glb').then((gltf) => {
+        const mic = gltf.scene;
+        mic.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
+        stage.add(mic);
+        this.mic = { mic, hand, head, root: r.root };
+      }).catch(() => {});
     }).catch(() => {});
     for (let i = 0; i < poets.length; i++) post(seats[i + 1], SEAT_Z - 0.05, 0.3, FLOOR + 1.3, FLOOR);
     post(MIC[0], MIC[1], 0.3, FLOOR + 1.8, FLOOR);
@@ -1081,6 +1081,70 @@ export class Mela {
   }
 
   // ---- litter: the ground after a few evenings of the mela -----------------------------------------------
+
+  /**
+   * The reciting poet's mic, in his right fist: its grip (7 cm up the handle) in the middle of the fist, the handle
+   * pointing at his mouth, so its head stays at his lips however the clip moves him.
+   */
+  private holdMic(): void {
+    const m = this.mic;
+    if (!m) return;
+    const v = HM.v, a = HM.a, b = HM.b, f = HM.f;
+    m.root.updateMatrixWorld(true);
+    m.hand.getWorldPosition(a);
+    b.set(0, 1, 0).applyQuaternion(m.hand.getWorldQuaternion(HM.q));  // the hand bone points along the fingers
+    const grip = a.addScaledVector(b, GRIP);                          // the middle of the closed hand
+    m.head.getWorldPosition(v);
+    f.set(0, 0, 1).applyQuaternion(m.root.getWorldQuaternion(HM.q)); // his front
+    const mouth = v.addScaledVector(f, 0.1).add(HM.up.clone().multiplyScalar(0.075));
+    const dir = mouth.sub(grip).normalize();
+    const parent = m.mic.parent!;
+    const base = grip.clone().addScaledVector(dir, -0.07);
+    parent.worldToLocal(base);
+    m.mic.position.copy(base);
+    // the mic's +y along dir, in the parent's frame
+    const pq = parent.getWorldQuaternion(HM.q).invert();
+    m.mic.quaternion.setFromUnitVectors(HM.up, dir).premultiply(pq);
+  }
+
+  /**
+   * Worn patches of grass on the open ground (grass.ts): a green-brown stain on the dirt (roadDirt.ts) with clumps and
+   * sprigs of grass in it, thick in the middle, thinning out. Where the feet don't go: away from the stalls' fronts, the
+   * aisle, the dari, the rides.
+   */
+  private buildGrass(desktop: boolean): void {
+    let seed = 313;
+    const r = () => rnd(seed++ * 0.731);
+    const inR = (b: Rect, x: number, z: number) => x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1;
+    const pad = (b: Rect, m: number) => ({ x0: b.x0 - m, x1: b.x1 + m, z0: b.z0 - m, z1: b.z1 + m });
+    const rides = [{ ...WHEEL, r: 5 }, { ...COLUMBUS, r: 8 }, { ...CHAIR_SWING, r: 9 }, { ...CAROUSEL, r: 7 }, { ...HINDOLA, r: 5 },
+      { ...INFLATABLE, r: INFLATABLE.r + 3 }, { ...KUAN, r: KUAN.r + 1 }];
+    const mid = DZ + 150;
+    const bare = (x: number, z: number) => STALL_BLOCKS.some((b) => inR(pad(b, 1.2), x, z)) || inR(pad(STAGE, 1), x, z)
+      || inR(pad(this.dari, 0.5), x, z) || (Math.abs(x - GATE.x) < 5 && z > mid) || rides.some((c) => Math.hypot(x - c.x, z - c.z) < c.r)
+      || x < MELA.x0 + 0.6 || x > MELA.x1 - 0.6 || z < MELA.z0 + 0.6 || z > MELA.z1 - 0.6;
+    const spots: GrassSpot[] = [];
+    const stains: [number, number, number, number, number][] = [];
+    const N = desktop ? 60 : 26;
+    for (let i = 0, tries = 0; i < N && tries < 2000; tries++) {
+      const x = MELA.x0 + 2 + r() * (MELA.x1 - MELA.x0 - 4), z = MELA.z0 + 2 + r() * (MELA.z1 - MELA.z0 - 4);
+      if (bare(x, z)) continue;
+      i++;
+      const R = 0.8 + r() * 1.8;
+      stains.push([x, DIRT_Y + 0.004, z, R * 2.3, r() * 6.28]);
+      const n = Math.round(R * R * (desktop ? 2.6 : 1.6));
+      for (let k = 0; k < n; k++) {
+        const a = r() * 6.28, d = Math.pow(r(), 0.8) * R, gx = x + Math.cos(a) * d, gz = z + Math.sin(a) * d;
+        if (bare(gx, gz)) continue;
+        const edge = d / R;                                        // smaller and sparser toward the rim
+        const tuft = r() < 0.8 - edge * 0.4;
+        spots.push({ name: tuft ? 'tuft' : 'sprig', x: gx, y: DIRT_Y - 0.01, z: gz, ry: r() * 6.28,
+          s: tuft ? (0.7 + r() * 0.5) * (1 - edge * 0.35) : 1.3 + r() * 0.9 });
+      }
+    }
+    addGrass(this.group, spots);
+    this.group.add(groundDecals({ grass: stains }));
+  }
 
   /**
    * Chip packets, wrappers, cans, cartons and bottles (foods.ts), paper cups, leaf plates (pattal) and scraps of paper, and

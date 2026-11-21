@@ -347,6 +347,135 @@ def build_carousel():
         preview([o for o in meshes()], 'carousel')
 
 
+# ---- the hand mic --------------------------------------------------------------------------------------------------------
+def build_handmic():
+    reset()
+    tmp = tempfile.mkdtemp()
+    zipfile.ZipFile(os.path.join(ASSETS, 'microphone.zip')).extractall(tmp)
+    bpy.ops.import_scene.fbx(filepath=os.path.join(tmp, 'source', 'Microphone.fbx.fbx'))
+    bake_transforms()
+    for x in meshes(): x.select_set(True)
+    bpy.context.view_layer.objects.active = meshes()[0]
+    bpy.ops.object.join()
+    o = bpy.context.view_layer.objects.active
+    o.name = o.data.name = 'handmic'
+    if o.data.shape_keys: o.shape_key_clear()           # its basis key would keep the old coordinates in the export
+    # it lies on its side, along a diagonal: the grille ('Weave') at one end, the plug's pins at the other. Stand it up, the
+    # plug end at the origin, the grille up (+z), 19 cm long
+    vs = [v.co.copy() for v in o.data.vertices]
+    c = sum(vs, Vector()) / len(vs)
+    # the axis: the line through the farthest pair of ends, found from the two extreme projections on the diagonal
+    d0 = Vector((1, -1, 0)).normalized()
+    hi = max(vs, key=lambda v: v.dot(d0)); lo = min(vs, key=lambda v: v.dot(d0))
+    axis = (hi - lo); axis.z = 0; axis.normalize()                   # toward the grille (Weave sits at +x, -y)
+    rotq = axis.rotation_difference(Vector((0, 0, 1)))
+    o.data.transform(Matrix.Translation(-c))
+    o.data.transform(rotq.to_matrix().to_4x4())
+    vs = [v.co for v in o.data.vertices]
+    zlo, zhi = min(v.z for v in vs), max(v.z for v in vs)
+    xs = sum(v.x for v in vs) / len(vs); ys = sum(v.y for v in vs) / len(vs)
+    o.data.transform(Matrix.Scale(0.19 / (zhi - zlo), 4) @ Matrix.Translation(Vector((-xs, -ys, -zlo))))
+    # the grille (the wide end) on top: turn it over if the bottom is the wider
+    vs = [v.co for v in o.data.vertices]
+    wide = lambda sel: max((v.x * v.x + v.y * v.y) ** 0.5 for v in sel)
+    if wide([v for v in vs if v.z < 0.03]) > wide([v for v in vs if v.z > 0.16]):
+        o.data.transform(Matrix.Translation(Vector((0, 0, 0.19))) @ Matrix.Rotation(math.pi, 4, 'X'))
+    TEX = os.path.join(tmp, 'textures')
+    mat = bpy.data.materials.new('handmic'); mat.use_nodes = True
+    nt = mat.node_tree; bsdf = nt.nodes['Principled BSDF']
+    def img(file, colour=True):
+        im = bpy.data.images.load(os.path.join(TEX, file)); im.scale(256, 256)
+        im.filepath_raw = os.path.join(tmp, 'small_' + file); im.file_format = 'PNG'; im.save()
+        if not colour: im.colorspace_settings.name = 'Non-Color'
+        t = nt.nodes.new('ShaderNodeTexImage'); t.image = im
+        return t
+    P_ = 'Microphone_low02_Microphone_'
+    nt.links.new(img(P_ + 'BaseColor.png').outputs['Color'], bsdf.inputs['Base Color'])
+    nt.links.new(img(P_ + 'Roughness.png', False).outputs['Color'], bsdf.inputs['Roughness'])
+    nt.links.new(img(P_ + 'Metallic.png', False).outputs['Color'], bsdf.inputs['Metallic'])
+    o.data.materials.clear(); o.data.materials.append(mat)
+    s = box(o)
+    print('handmic tris', tris(o), 'size', [round(v, 3) for v in s[1] - s[0]])
+    export([o], 'handmic.glb', images='JPEG')
+    preview([o], 'handmic')
+
+
+# ---- grass ---------------------------------------------------------------------------------------------------------------
+GRASS_KEEP = {'tuft': 0.32, 'sprig': 0.45}       # the share of its blades each keeps
+
+
+def build_grass():
+    """grass.zip (Grass.fbx: three clumps of blade cards, each blade's picture and its cut-out separate): 'tuft', a knee-low
+    clump (Grass1), and 'sprig', a little dry one (GrassAutumn3), each on its own origin on the ground, thinned out; the
+    lawn piece (70k faces) is left out. Each blade map gets its cut-out as alpha (PNG)."""
+    reset()
+    tmp = tempfile.mkdtemp()
+    zipfile.ZipFile(os.path.join(ASSETS, 'grass.zip')).extractall(tmp)
+    bpy.ops.import_scene.fbx(filepath=os.path.join(tmp, 'source', 'Grass.fbx'))
+    bake_transforms()
+    names = {'Grass1': 'tuft', 'GrassAutumn3': 'sprig'}
+    out = []
+    import random
+    rng = random.Random(7)
+    for o in list(meshes()):
+        if o.name not in names:
+            bpy.data.objects.remove(o); continue
+        name = names[o.name]
+        o.name = o.data.name = name
+        n0 = tris(o)
+        # thin it: drop whole blades (the mesh's loose parts) at random
+        bm = bmesh.new(); bm.from_mesh(o.data)
+        seen, drop = set(), []
+        for f in bm.faces:
+            if f in seen: continue
+            part, stack = [], [f]
+            seen.add(f)
+            while stack:
+                g = stack.pop(); part.append(g)
+                for e in g.edges:
+                    for h in e.link_faces:
+                        if h not in seen: seen.add(h); stack.append(h)
+            if rng.random() > GRASS_KEEP[name]: drop += part
+        bmesh.ops.delete(bm, geom=drop, context='FACES')
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+        bm.to_mesh(o.data); bm.free()
+        size = ground_centre(o)
+        print(name, 'tris', n0, '->', tris(o), 'size', [round(v, 2) for v in size])
+        out.append(o)
+    TEX = os.path.join(tmp, 'textures')
+    done = {}
+    for o in out:
+        for i, m in enumerate(o.data.materials):
+            base = m.name.split('_')[0]                          # Grass2_Mat3 -> Grass2
+            if base not in done:
+                col = bpy.data.images.load(os.path.join(TEX, base + '.png'))
+                al = bpy.data.images.load(os.path.join(TEX, base + '_Opacity.png'))
+                w, h = col.size[0] // 4, col.size[1] // 4            # tall strips of blades (~280 x 4000): a quarter is plenty
+                col.scale(w, h); al.scale(w, h)
+                cp, ap = list(col.pixels), list(al.pixels)
+                px = [0.0] * (w * h * 4)
+                for k in range(w * h):
+                    px[k * 4:k * 4 + 3] = cp[k * 4:k * 4 + 3]
+                    px[k * 4 + 3] = ap[k * 4]
+                im = bpy.data.images.new('grass_' + base, w, h, alpha=True)
+                im.pixels = px
+                im.filepath_raw = os.path.join(tmp, base + '_rgba.png'); im.file_format = 'PNG'; im.save()
+                mat = bpy.data.materials.new('grass_' + base); mat.use_nodes = True
+                nt = mat.node_tree; bsdf = nt.nodes['Principled BSDF']
+                t = nt.nodes.new('ShaderNodeTexImage'); t.image = im
+                nt.links.new(t.outputs['Color'], bsdf.inputs['Base Color'])
+                nt.links.new(t.outputs['Alpha'], bsdf.inputs['Alpha'])
+                bsdf.inputs['Roughness'].default_value = 0.85
+                bsdf.inputs['Metallic'].default_value = 0.0
+                done[base] = mat
+            o.data.materials[i] = done[base]
+    export(out, 'grass.glb', images='AUTO')
+    for i, o in enumerate(out): o.location.x = i * 0.9
+    preview(out, 'grass')
+
+
 if want('sofas'): build_sofas()
 if want('mic'): build_mic()
 if want('carousel'): build_carousel()
+if want('handmic'): build_handmic()
+if want('grass'): build_grass()

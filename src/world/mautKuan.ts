@@ -45,11 +45,12 @@ const dancers: Actor[] = [];
 function carModel(file: string, dancer: RigName, n: number): THREE.Group {
   const root = new THREE.Group();
   loadPBR(file).then((parts) => root.add(cloneCar(parts, '#ffffff')));
-  // somebody standing up on the roof and dancing, arms up, as the car goes round the wall
+  // somebody standing up on the roof and dancing as the car goes round the wall (the Hip Hop and Silly Dancing clips, one
+  // each way)
   makeActors(dancer, 1, true).then(([a]) => {
     a.root.position.set(0, 1.43, -0.4);
     a.root.rotation.y = n % 2 ? Math.PI : Math.PI * 0.8;
-    a.play('dance', 0.95 + n * 0.08, 0);
+    a.play(n % 2 ? 'dance_silly' : 'dance_hiphop', 0.95 + n * 0.08, 0);
     a.update(n * 0.7);
     a.face.blinking = true;
     a.face.laughing = n % 2 === 0;

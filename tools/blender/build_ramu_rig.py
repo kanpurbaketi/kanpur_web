@@ -531,33 +531,7 @@ def jump(t):
     finger_curl(0.5)
 
 
-def dance(t):
-    """Bhangra-ish, for the show-offs on the cars in the maut ka kuan: both arms up, the shoulders pumping on every beat,
-    a bounce in the knees, the weight going side to side and the free leg kicked up in turn, the hands turning (a bulb
-    being screwed in). Four beats in the clip."""
-    beat = abs(S(t * 2))                                    # 0..1, four times
-    sway = S(t)                                             # the weight: left .. right
-    for side, sg, ph in (('Left', 1, 0.0), ('Right', -1, 0.5)):
-        lift = max(0.0, S(t + ph)) ** 2                     # this leg kicked up while the weight is on the other
-        rot_multi(f'{side}UpLeg', [(SIDE, -(14 * beat + 40 * lift)), (FWD, sg * 4)])
-        rot(f'{side}Leg', SIDE, 26 * beat + 70 * lift)
-        rot(f'{side}Foot', SIDE, -12 * beat + 10 * lift)
-        rot_multi(f'{side}Arm', [(FWD, sg * (20 + 14 * beat)), (SIDE, -22)])
-        rot(f'{side}ForeArm', SIDE, -(45 + 25 * beat))
-        rot(f'{side}Hand', UP, sg * 35 * S(t * 4 + ph))
-        rot(f'{side}Shoulder', FWD, sg * (4 + 10 * beat))
-    rot('Spine', FWD, 6 * sway)
-    rot('Spine1', SIDE, 4 * beat)
-    rot('Spine2', UP, 10 * S(t))
-    rot('Neck', SIDE, -4 * beat)
-    rot('Head', SIDE, 8 * beat - 4)
-    hips_offset(0.05 * sway, 0.0, -0.045 * beat)
-    rot('Hips', UP, -8 * S(t))
-    finger_curl(0.2)
-
-
 make_action('idle', 90, idle)
-make_action('dance', 72, dance)
 make_action('walk', 30, walk)
 make_action('run', 15, run)
 make_action('jump', 36, jump)
@@ -570,6 +544,8 @@ arm.animation_data.action = bpy.data.actions['idle']
 CLIP_RULES = (
     # on the floor (the kavi sammelan's audience on the dari): "Sitting Idle" is not the standing idle
     (('sitting', 'idle'), 'floor_idle'), (('sitting', 'pose1'), 'floor_cross'), (('sitting', 'pose'), 'floor_knees'),
+    # the show-offs on the cars in the maut ka kuan
+    (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
     (('stomach',), 'stomach_hit'),
     (('crouch', 'walk'), 'crouch_walk'), (('crouched',), 'crouch_walk'), (('crouch',), 'crouch'), (('sneak',), 'crouch'),
     (('fighting idle',), 'fight_idle'), (('fight idle',), 'fight_idle'), (('boxing idle',), 'fight_idle'),
@@ -682,20 +658,23 @@ def body_front(z, half_w=0.06):
     return min(ys) if ys else -0.12
 
 
-def reach_clip(name, frames, base, target, pole, hand=None):
+def reach_clip(name, frames, base, target, pole, hand=None, pole_angle=None):
     sc = bpy.context.scene
     arm.animation_data.action = None
     tgt = bpy.data.objects.new(name + '_ik', None); sc.collection.objects.link(tgt)
     pol = bpy.data.objects.new(name + '_pole', None); sc.collection.objects.link(pol)
-    pol.location = arm.matrix_world @ Vector(pole)
+    if not callable(pole): pol.location = arm.matrix_world @ Vector(pole)
     fore = P['mixamorig:RightForeArm']
     c = fore.constraints.new('IK')
-    c.target, c.pole_target, c.chain_count, c.pole_angle = tgt, pol, 2, math.radians(POLE_ANGLE)
+    c.target, c.pole_target, c.chain_count, c.pole_angle = tgt, pol, 2, math.radians(POLE_ANGLE if pole_angle is None else pole_angle)
     chain = [P['mixamorig:RightArm'], fore]
     got = []
     for f in range(frames + 1):
         t = f / frames
         pose_rest(); base(t)
+        if callable(pole):
+            bpy.context.view_layer.update()
+            pol.location = arm.matrix_world @ Vector(pole(t))
         pos, w = target(t)
         tgt.location = arm.matrix_world @ Vector(pos)
         c.influence = w
@@ -784,7 +763,66 @@ def push_hand(t):
     finger_curl(0.7 - 0.6 * w)
 
 
+def recite_parts():
+    # the talking clip, read once frame by frame (the body the reciting poet moves with: weight shifting, the free hand
+    # making his points), or the idle if it is missing
+    act = bpy.data.actions.get('talk')
+    if not act:
+        return None
+    sc = bpy.context.scene
+    arm.animation_data.action = act
+    f0, f1 = int(act.frame_range[0]), int(act.frame_range[1])
+    out = []
+    for fr in range(f0, f1 + 1):
+        sc.frame_set(fr)
+        out.append({b.name: (b.rotation_quaternion.copy(), b.location.copy()) for b in P})
+    arm.animation_data.action = None
+    return out
+
+
+REC_DX, REC_FWD, REC_DOWN, REC_BEND = _arg('--rdx', -0.03), _arg('--rfwd', 0.15), _arg('--rdown', 0.1), _arg('--rbend', -25)
+RECITE = recite_parts()
+RECITE_N = len(RECITE) - 1 if RECITE else 90
+
+
+def recite_base(t):
+    if not RECITE:
+        idle(t); return
+    fr = RECITE[min(RECITE_N, int(round(t * RECITE_N)))]
+    for b in P:
+        q, l = fr[b.name]
+        b.rotation_quaternion, b.location = q, l
+    # the trunk and the mic arm held as in the first frame (the clip's twists of the chest and lifts of the collarbone
+    # threw the elbow up): the free arm, the head and the legs keep moving
+    for n in ('Spine', 'Spine1', 'Spine2', 'RightShoulder', 'RightArm', 'RightForeArm'):
+        P['mixamorig:' + n].rotation_quaternion = RECITE[0]['mixamorig:' + n][0]
+
+
+def recite_target(t):
+    # the right fist just below and in front of the mouth, where the mic's head reaches the lips; it follows the head
+    bpy.context.view_layer.update()
+    h = P['mixamorig:Head'].head                     # armature space: the base of the skull, about level with the mouth
+    return (h.x + REC_DX, h.y - REC_FWD, h.z - REC_DOWN), 1.0
+
+
+def recite_hand(t):
+    rot('RightHand', FWD, REC_BEND)                  # the wrist cocked: the mic stands up out of the fist
+    for f in ('Index', 'Middle', 'Ring', 'Pinky', 'Thumb'):     # the right hand closed round the handle
+        for i in (1, 2, 3):
+            n = f'mixamorig:RightHand{f}{i}'
+            if n in P:
+                P[n].rotation_quaternion = Quaternion((1, 0, 0), math.radians((25 if f == 'Thumb' else 55 + 10 * i)))
+
+
 reach_clip('stomach', 105, stomach_base, stomach_target, (SH.x - 0.45, 0.25, SH.z - 0.3), stomach_hand)
+def recite_pole(t):
+    # below the shoulder, out to his right and a little back, turning with the chest: the elbow hangs under the fist
+    ch = P['mixamorig:Spine2']
+    turn = ch.matrix.to_3x3() @ ch.bone.matrix_local.to_3x3().inverted()
+    return P['mixamorig:RightArm'].head + turn @ Vector((-0.3, 0.15, -0.6))
+
+
+reach_clip('recite', RECITE_N, recite_base, recite_target, recite_pole, recite_hand, _arg('--rpole', -90))
 reach_clip('push_one', 42, push_base, push_target, (SH.x - 0.5, 0.35, SH.z - 0.35), push_hand)
 bpy.context.view_layer.objects.active = arm
 bpy.ops.object.mode_set(mode='OBJECT')

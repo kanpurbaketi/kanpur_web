@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { NIGHT } from '../../world/night';
+import { CINEMA_BAR } from '../../ui/subtitles';
 
 /*
  The cutscene camera: it takes the camera from Ramu's orbit (ramu.cinematic), eases to a shot (a place to stand, a
@@ -12,6 +13,10 @@ import { NIGHT } from '../../world/night';
 */
 
 const KEY = 5;
+
+/** a shot's field of view, opened up so what it frames fits between the black bars (they hide 2 x CINEMA_BAR of the
+ height: a close-up framed on the whole screen lost the top of the head behind the upper one) */
+const between = (fov: number) => (2 * Math.atan(Math.tan((fov * Math.PI) / 360) / (1 - 2 * CINEMA_BAR)) * 180) / Math.PI;
 
 const ease = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 
@@ -50,7 +55,7 @@ export class CutCam {
     this.fromPos.copy(this.camera.position);
     this.fromQ.copy(this.camera.quaternion);
     this.fromFov = this.camera.fov;
-    this.shot = { pos: shot.pos.clone(), look: shot.look.clone(), fov: shot.fov };
+    this.shot = { pos: shot.pos.clone(), look: shot.look.clone(), fov: between(shot.fov) };
     this.drift.copy(drift ?? new THREE.Vector3());
     this.t = 0;
     this.secs = Math.max(0, secs);

@@ -672,8 +672,8 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
     await d.say('girl', girl.face, 'khaoge');
     // slower still, close on the hands: his comes up to hers and takes it
     d.timeScale = 0.25;
-    const mid = at3([(girlAt[0] + meetAt[0]) / 2, (girlAt[1] + meetAt[1]) / 2], Y + 1.0);
-    const hands = { pos: at3(onWell(GIRL_A + 0.0375, rIn + 1.15), Y + 1.4), look: mid, fov: 30 };   // from the gallery side: the rail is behind them
+    // over the inner rail from the well's side, high enough to clear it: their faces and the hands between them
+    const hands = { pos: overWell(GIRL_A + 0.0375, Y + 1.8, 1.6), look: at3([(girlAt[0] + meetAt[0]) / 2, (girlAt[1] + meetAt[1]) / 2], Y + 1.15), fov: 36 };
     d.shot(hands, 0, d.pushIn(hands, 0.06));
     ramu.gesture('offer', 1, 30);
     await d.wait(0.85);

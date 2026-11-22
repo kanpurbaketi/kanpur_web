@@ -5,6 +5,9 @@ import { onLang, t } from '../i18n';
  runs, and its Skip button (Enter does the same).
 */
 
+/** each black bar's share of the screen's height (the cutscene camera frames its shots between them) */
+export const CINEMA_BAR = 0.09;
+
 export class Subtitles {
   private top = document.createElement('div');
   private bottom = document.createElement('div');
@@ -61,7 +64,7 @@ const css = `
 .cine-bar { position: fixed; left: 0; right: 0; height: 0; z-index: 17; background: #000; transition: height .45s ease; pointer-events: none; }
 .cine-bar.top { top: 0; }
 .cine-bar.bottom { bottom: 0; }
-body.cinema .cine-bar { height: 9vh; }
+body.cinema .cine-bar { height: ${CINEMA_BAR * 100}vh; }
 body.cinema #hint, body.cinema #life, body.cinema #minimap, body.cinema .sh-chip, body.cinema .menu-btn, body.cinema .obj,
 body.cinema .tbtn, body.cinema #stick, body.cinema #use-tip { visibility: hidden; }
 .subs { position: fixed; left: 50%; bottom: calc(9vh + 18px); z-index: 18; transform: translateX(-50%); max-width: min(760px, calc(100vw - 32px));

@@ -213,7 +213,6 @@ export function groundDecals(spots: Partial<Record<Decal, [number, number, numbe
     });
     im.receiveShadow = true;
     im.renderOrder = 1;
-    im.userData.noAO = true;
     im.computeBoundingSphere();
     group.add(im);
   });

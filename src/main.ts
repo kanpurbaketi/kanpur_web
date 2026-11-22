@@ -1,3 +1,4 @@
+import { Actor } from './world/actors';
 import { FOOTPATHS } from './world/footpaths';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -80,14 +81,18 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   }
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('cam') || params.has('at') });
-  renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+  // at most 1.5 pixels to the CSS pixel: a retina screen at 2 drew nearly twice the pixels (with 4x MSAA and the AO on each)
+  // for a sharpness hard to see at speed; ?pr= tries another
+  renderer.setPixelRatio(Number(params.get('pr')) || Math.min(1.5, devicePixelRatio));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.autoUpdate = false;            // drawn every other frame (the loop asks): what casts them seldom moves fast
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.info.autoReset = false; // count every pass of the frame (post-processing renders the scene twice)
   document.body.prepend(renderer.domElement);
+  if (params.has('debug')) Object.assign(window, { __renderer: renderer, __THREE: THREE });   // for test scripts (performance)
 
   const desktop = matchMedia('(pointer: fine)').matches;
   const useAO = params.has('ao') ? params.get('ao') !== '0' : desktop;
@@ -386,28 +391,32 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   menu.visible = !fixed;
   chip.root.style.display = fixed ? 'none' : '';
 
-  // Post: MSAA render -> ground-truth AO (skips leaf cards and wires) -> tone map / sRGB output.
+  // Post: MSAA render -> ground-truth AO -> bloom -> grade -> tone map / sRGB output.
+  // The AO works from the main render's own depth (its normals worked out from it): no second drawing of the whole scene
+  // for it, which had cost half of every frame. The composer swaps its two targets as it goes, so each frame the AO is
+  // given the depth of the one the scene was just drawn into (aoDepth, before composer.render).
   let composer: EffectComposer | null = null;
+  let aoDepth: (() => void) | null = null;
   if (useAO) {
-    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
+    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(innerWidth, innerHeight) });
     composer = new EffectComposer(renderer, rt);
     composer.addPass(new RenderPass(scene, camera));
     const ao = new GTAOPass(scene, camera, innerWidth, innerHeight);
+    ao.setGBuffer(rt.depthTexture ?? undefined);     // (after it is made: given to the constructor, three's GTAOPass trips over its own unmade normal target)
     ao.updateGtaoMaterial({ radius: 1.6, distanceExponent: 1.5, thickness: 2.5, scale: 1.0, samples: 12 });
     ao.blendIntensity = 0.85;
-    const hideMore = (ao as unknown as { _overrideVisibility: () => void });
-    const orig = hideMore._overrideVisibility.bind(ao);
-    hideMore._overrideVisibility = () => {
-      orig();
-      const cache = (ao as unknown as { _visibilityCache: THREE.Object3D[] })._visibilityCache;
-      scene.traverse((o) => {
-        if ((o.userData.noAO || o === sky) && o.visible) {
-          o.visible = false;
-          cache.push(o);
-        }
-      });
+    // the AO at half the resolution (it is soft anyway): a quarter of its pixels
+    const aoSize = ao.setSize.bind(ao);
+    ao.setSize = (w: number, h: number) => aoSize(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2)));
+    ao.setSize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
+    const c = composer, mats = ao as unknown as { gtaoMaterial: THREE.ShaderMaterial; pdMaterial: THREE.ShaderMaterial };
+    aoDepth = () => {
+      const d = c.readBuffer.depthTexture;
+      mats.gtaoMaterial.uniforms.tDepth.value = d;
+      mats.pdMaterial.uniforms.tDepth.value = d;
     };
     composer.addPass(ao);
+    if (params.has('debug')) Object.assign(window, { __composer: composer, __scene: scene, __sun: sun });
     // lights bloom (only things brighter than the scene's whites: bulbs, lamps, signs, lenses)
     composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), NIGHT ? 0.22 : 0.08, 0.4, NIGHT ? 1.05 : 1.3));
     // grade: cool shadows, warm highlights, a little vignette, so a night street reads as a night street
@@ -506,9 +515,13 @@ void main() {
     renderer.info.reset();
     treeUniforms.time.value += dt;
     sky.position.copy(camera.position);
+    Actor.eye.copy(camera.position);                 // (people near it wear their full bodies)
+    Actor.zoom = Math.tan((camera.fov * Math.PI) / 360) / Math.tan((70 * Math.PI) / 360);
     updateGlow(dt, camera, innerHeight * renderer.getPixelRatio());
     if (NIGHT) lightPool.update(focus.x, focus.z);
     lampPools?.update(camera.position.x, camera.position.z);
+    aoDepth?.();
+    if (frames % 2 === 0) renderer.shadowMap.needsUpdate = true;
     if (composer) composer.render(dt);
     else renderer.render(scene, camera);
     (window as unknown as { __ready: boolean }).__ready = true;

@@ -44,7 +44,6 @@ export class LampPools {
     for (const m of [this.pools]) {
       m.frustumCulled = false;
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      m.userData.noAO = true;
       m.renderOrder = 2;
       m.count = 0;
       this.group.add(m);

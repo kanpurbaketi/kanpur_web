@@ -60,7 +60,6 @@ export class Smoke {
     this.points = new THREE.Points(g, m);
     this.points.frustumCulled = false;
     this.points.renderOrder = 3;
-    this.points.userData.noAO = true;
   }
 
   emit(x: number, y: number, z: number, shade: number, vx = 0, vz = 0): void {

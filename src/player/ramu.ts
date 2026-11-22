@@ -547,9 +547,7 @@ export class Ramu {
         const m = o as THREE.SkinnedMesh;
         if (!m.isMesh) return;
         m.castShadow = false;                    // no dark shadow blob under / around him
-        // He stays in the ambient-occlusion pass: left out of it, the shading of whatever stood behind him (a railing,
-        // a lattice) was drawn across his body, as if he were see-through.
-        m.frustumCulled = false;                 // the skinned bounds do not follow the animation
+        m.frustumCulled = false;                 // he is always on screen (and his clips carry him far: the hanging, the fall)
         const mat = m.material as THREE.MeshStandardMaterial;
         mat.roughness = 0.82;
         mat.metalness = 0;
@@ -593,7 +591,6 @@ export class Ramu {
       new THREE.PlaneGeometry(1.15, 1.0).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.8, polygonOffset: true, polygonOffsetFactor: -2 }),
     );
-    m.userData.noAO = true;
     m.renderOrder = 1;
     this.blob = m;
     this.root.add(m);

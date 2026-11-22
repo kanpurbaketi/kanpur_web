@@ -435,7 +435,6 @@ export class Traffic {
     this.lamps.setColorAt(0, C_TAIL);
     this.lamps.frustumCulled = false;
     this.lamps.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.lamps.userData.noAO = true;
     this.group.add(this.lamps);
     if (NIGHT) {
       const n = kinds.reduce((a, k) => a + k.count * LAMPS[k.name].at.length, 0);
@@ -444,7 +443,6 @@ export class Traffic {
       for (const m of [this.lenses, this.pools]) {
         m.frustumCulled = false;
         m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        m.userData.noAO = true;
         this.group.add(m);
       }
       this.pools.renderOrder = 2;

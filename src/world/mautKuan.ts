@@ -309,7 +309,6 @@ export function buildMautKuan() {
     const m = new THREE.Mesh(i < 3 ? bikePool : carPool, poolMat);
     m.frustumCulled = false;
     m.renderOrder = 2;
-    m.userData.noAO = true;
     group.add(m);
     return m;
   });

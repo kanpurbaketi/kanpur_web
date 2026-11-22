@@ -45,6 +45,11 @@ const LOOKS: Record<RigName, string[]> = {
   buddha: [''],
   anaya: [''],
 };
+/** nearer than this (metres from the camera) a person wears the full body; further, the light one */
+const LOD_NEAR = 24;
+/** further than this they are not drawn at all */
+const CULL_FAR = 85;
+const _at = new THREE.Vector3();
 // Ramu's clips cover this much ground per second at normal playback, for his 1.52 m
 const WALK_SPEED = 1.35, RUN_SPEED = 5.0, CLIP_HEIGHT = 1.52;
 
@@ -111,6 +116,20 @@ function lookMaterial(look: string, base: THREE.MeshStandardMaterial): Promise<T
   return p;
 }
 
+/**
+ Off screen, not drawn: a body's bounds are its pose as built (the bind pose), opened out to take in whatever its clips
+ do with it (a fall a metre back, arms up, a hand reaching out). Without bounds of its own a skinned mesh was drawn every
+ frame wherever it was (three's own bounds for it come from one pose and would cut a falling man off mid-fall).
+*/
+export function cullAsBody(m: THREE.SkinnedMesh): void {
+  if (!m.isSkinnedMesh) { m.frustumCulled = true; return; }
+  const g = m.geometry;
+  if (!g.boundingSphere) g.computeBoundingSphere();
+  m.boundingSphere = g.boundingSphere!.clone();
+  m.boundingSphere.radius *= 2.2;
+  m.frustumCulled = true;
+}
+
 function load(name: RigName): Promise<Source> {
   let p = cache.get(RIGS[name].file);
   if (!p) {
@@ -119,7 +138,7 @@ function load(name: RigName): Promise<Source> {
         const m = o as THREE.SkinnedMesh;
         if (!m.isMesh) return;
         m.castShadow = false;
-        m.frustumCulled = false;                 // the skinned bounds do not follow the animation
+        cullAsBody(m);
         const mat = m.material as THREE.MeshStandardMaterial;
         mat.roughness = 0.85;
         mat.metalness = 0;
@@ -155,12 +174,24 @@ export class Actor {
   /** the mouth and eyes: still unless switched on (`face.talking`, `face.laughing`, `face.blinking`) */
   readonly face: Face;
 
-  constructor(name: RigName, src: Source, material = src.material) {
+  /** where the camera is (main.ts sets it every frame): near it a person wears the full body, further off the light one */
+  static readonly eye = new THREE.Vector3();
+  /** how zoomed in the camera is (1 at a 70 degree field of view; a cutscene's long lens is less): distances are counted
+   as they look on screen, so a guard 25 m off in a close shot across the well keeps his full body */
+  static zoom = 1;
+  private full: THREE.Object3D[] = [];
+  private lite: THREE.Object3D[] = [];
+  private far = false;
+  private skipped = 0;
+  private frame = 0;
+
+  constructor(name: RigName, src: Source, material = src.material, liteSrc?: Source) {
     const body = clone(src.scene);
     if (material !== src.material) body.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = material; });
     body.rotation.y = Math.PI;                   // the file faces +Z, the game's people face -Z
     this.root.add(body);
     this.face = new Face(body);
+    if (liteSrc) this.addLite(body, liteSrc, material);
     this.step = RIGS[name].step ?? 1;
     this.stride = (RIGS[name].height / CLIP_HEIGHT) * this.step;
     this.lie = src.lie;
@@ -177,6 +208,29 @@ export class Actor {
     }
     this.play('idle', 1, 0);
     this.mixer.update(Math.random() * 3);        // not everyone breathing in step
+  }
+
+  /**
+   The light body (a fifth of the triangles, no face keys) worn beside the full one, on the full one's skeleton: the same
+   bones by name, so one mixer moves both. update() shows one or the other by how far off the camera is.
+  */
+  private addLite(body: THREE.Object3D, liteSrc: Source, material: THREE.Material): void {
+    const bones = new Map<string, THREE.Bone>();
+    body.traverse((o) => { if ((o as THREE.Bone).isBone) bones.set(o.name, o as THREE.Bone); });
+    body.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) this.full.push(o); });
+    const liteBody = clone(liteSrc.scene);
+    const meshes: THREE.SkinnedMesh[] = [];
+    liteBody.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) meshes.push(o as THREE.SkinnedMesh); });
+    const parent = this.full[0]?.parent ?? body;
+    for (const m of meshes) {
+      const mapped = m.skeleton.bones.map((b) => bones.get(b.name));
+      if (mapped.some((b) => !b)) return;            // not the same skeleton after all: the full body only
+      m.bind(new THREE.Skeleton(mapped as THREE.Bone[], m.skeleton.boneInverses), m.bindMatrix);
+      m.material = material;
+      m.visible = false;
+      parent.add(m);
+      this.lite.push(m);
+    }
   }
 
   /** a build of their own: `tall` scales the height, `wide` the breadth (0.85: thin); the stride follows the legs */
@@ -226,8 +280,26 @@ export class Actor {
   }
 
   update(dt: number): void {
-    this.mixer.update(dt);
-    this.face.update(dt);
+    const d = this.root.getWorldPosition(_at).distanceTo(Actor.eye) * Actor.zoom;
+    // far across the fair they are a few pixels high: not drawn (the body only: the story hides people by their root)
+    const body = this.root.children[0];
+    if (body) body.visible = d < CULL_FAR;
+    if (this.lite.length) {
+      const far = d > (this.far ? LOD_NEAR - 3 : LOD_NEAR);       // (a little give, so nobody flickers on the line)
+      if (far !== this.far) {
+        this.far = far;
+        for (const m of this.full) m.visible = !far;
+        for (const m of this.lite) m.visible = far;
+      }
+    }
+    // far off, the body is moved every other or every third frame (by the time gone by): nobody can tell, and the
+    // crowd's bones are much of the frame's work
+    const every = d > 70 ? 3 : d > 35 ? 2 : 1;
+    this.skipped += dt;
+    if (++this.frame % every !== 0) return;
+    this.mixer.update(this.skipped);
+    this.skipped = 0;
+    if (!this.far) this.face.update(dt * every);
   }
 }
 
@@ -255,7 +327,7 @@ function loadLite(name: RigName): Promise<Source> {
         const m = o as THREE.SkinnedMesh;
         if (!m.isMesh) return;
         m.castShadow = false;
-        m.frustumCulled = false;
+        cullAsBody(m);
         m.material = full.material;
         const g = m.geometry, uv1 = g.getAttribute('uv1');
         if (uv1) g.setAttribute('faceUv', uv1);
@@ -278,5 +350,6 @@ export async function makeActors(name: RigName, n: number, lite = false, pick?: 
   const looks = LOOKS[name];
   // `pick`: these looks, in order (the story's own people, who must each look different)
   const mats = await Promise.all(Array.from({ length: n }, (_, i) => lookMaterial(pick ? pick[i % pick.length] : looks[nextLook[name]++ % looks.length], src.material)));
-  return mats.map((m) => new Actor(name, src, m));
+  const far = lite ? undefined : await loadLite(name).catch(() => undefined);     // the light body for when they are far off
+  return mats.map((m) => new Actor(name, src, m, far));
 }

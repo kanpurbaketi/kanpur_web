@@ -173,6 +173,5 @@ void main() {
   });
   const p = new THREE.Points(g, m);
   p.frustumCulled = false;
-  p.userData.noAO = true;
   return p;
 }

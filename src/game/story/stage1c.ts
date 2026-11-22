@@ -653,7 +653,7 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
     const top = (i: number) => onWell(GALLERY.a1 + 0.05 + (i >> 1) * 0.06, (GALLERY.r0 + GALLERY.r1) / 2 + (i % 2 ? 0.35 : -0.3));
     c.guards.forEach((q, i) => { q.floor = onFloor; q.walkTo(...top(i), 3.8); });
     // from behind the two of them, across the well to the stair's top
-    d.shot({ pos: at3(onWell(GIRL_A + 0.42, rIn + 0.55), Y + 1.7), look: at3(LANDING, Y + 1.0), fov: 24 }, 0);   // off the line through the centre pole
+    d.shot({ pos: at3(onWell(GIRL_A + 0.42, rIn + 0.55), Y + 1.7), look: at3(LANDING, Y + 1.0), fov: 17 }, 0);   // off the line through the centre pole
     await Promise.race([d.until(() => c.guards.every((q) => !q.walking)), d.wait(3.5)]);
     c.guards.forEach((q) => q.faceTowards(...meetAt));
     await d.wait(0.9);                               // there they are, across the well

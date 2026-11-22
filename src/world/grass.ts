@@ -60,7 +60,6 @@ export function addGrass(parent: THREE.Object3D, spots: GrassSpot[]): void {
         const im = new THREE.InstancedMesh(p.geo, p.mat, list.length);
         list.forEach((s, i) => im.setMatrixAt(i, m.compose(v.set(s.x, s.y, s.z), q.setFromAxisAngle(up, s.ry), sc.setScalar(s.s))));
         im.receiveShadow = true;
-        im.userData.noAO = true;
         im.computeBoundingSphere();
         parent.add(im);
       }

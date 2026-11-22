@@ -13,7 +13,7 @@ import { CutCam, type Shot } from './cutcam';
    wait(s)           seconds of game time (cut short by Skip inside a scene)
    until(test)       until the player does something (Skip does not touch these)
    mission(...)      the box at the top: the mission, the hint for the next place on the way, how far it is;
-                     resolves when the last place is reached
+                     resolves when the last place is reached (a place further on skips those before it)
    tween(s, f)       f(0..1) every frame for s seconds (somebody pushed aside): straight to f(1) when skipped
    prompt            an offer on the use key (E): its line in the tip while `when()` holds; act() on the key
    shot / front      the cutscene camera
@@ -201,11 +201,18 @@ export class Director {
 
   async mission(n: number, textKey: string, steps: Waypoint[]): Promise<void> {
     this.now = { n, textKey, steps, i: 0 };
-    for (let i = 0; i < steps.length; i++) {
+    for (let i = 0; i < steps.length;) {
       const s = steps[i];
       this.now.i = i;
       this.box.set(n, textKey, live(s.hint), live(s.at));
-      await this.until(() => s.done(this.ramu.position.x, this.ramu.position.z));
+      // this place, or one further on (he took another way round and missed one): on from the furthest reached
+      let got = i;
+      await this.until(() => {
+        const { x, z } = this.ramu.position;
+        for (let k = steps.length - 1; k >= i; k--) if (steps[k].done(x, z)) { got = k; return true; }
+        return false;
+      });
+      i = got + 1;
     }
     this.now = null;
     this.box.clear();

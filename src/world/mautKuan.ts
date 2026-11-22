@@ -19,7 +19,7 @@ const H = 13;                  // wall height (the gallery floor)
  -90 degrees in the mela, so a point (a, r) is at (x - sin a r, z + cos a r) in the world). The stair rises from its foot
  at a0 as the angle falls, to the landing at a1 (a0 - span); the last `land` of it is the landing, level with the gallery.
 */
-export const GALLERY = { y: H, r0: WELL_R + 0.05, r1: WELL_R + 1.8, stairR0: WELL_R + 1.9, stairR1: WELL_R + 3.9, a0: 2.356, span: 3.5, land: 0.17, a1: 2.356 - 3.5, girl: 2.356 - 3.5 - 0.6 };
+export const GALLERY = { y: H, r0: WELL_R + 0.05, r1: WELL_R + 1.8, stairR0: WELL_R + 1.9, stairR1: WELL_R + 3.9, a0: 2.356, span: 3.5, land: 0.17, a1: 2.356 - 3.5, girl: 2.356 - 3.5 + Math.PI };   // girl: right across the well from the stair's top
 const YK = H / 8.2;
 /**
  The story's hold on the show (stage 1, part 3: the bikes and cars come past Ramu as he falls): a turn added to each
@@ -260,9 +260,9 @@ export function buildMautKuan() {
   for (let i = 0; i < 112; i++) {
     const a = ((i + 0.5) / 112) * TAU + (rnd(i) - 0.5) * 0.03;
     if (inGap(a, 0.06)) continue;                     // the way in from the stair is kept clear
-    if (wrap(a - GALLERY.girl + 0.25) < 0.85) continue; // and the rail from there round to the little girl's spot (stage 1's end)
-    if (rnd(i * 3 + 1) < 0.12) continue;
-    const r = R + 0.55 + rnd(i * 5) * 0.35, p = wallPoint(a, r, H - 0.01);
+    if (wrap(a - GALLERY.girl + 0.45) < 0.9) continue;  // and the rail either side of the girl's spot (stage 1's end)
+    if (rnd(i * 3 + 1) < 0.5) continue;               // a thin crowd: Ramu runs round the gallery
+    const r = R + 0.4 + rnd(i * 5) * 0.12, p = wallPoint(a, r, H - 0.01);   // leaning on the rail: the outer half is free
     const kid = rnd(i * 9 + 2) < 0.12;
     spots.push({
       x: p.x, y: H - 0.01, z: p.z, ry: Math.atan2(Math.cos(a), Math.sin(a)) + (rnd(i * 7) - 0.5) * 0.5, n: i,

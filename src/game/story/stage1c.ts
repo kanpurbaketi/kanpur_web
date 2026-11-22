@@ -563,23 +563,32 @@ async function flung(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<voi
 // ---- the gallery ----
 
 /** along the gallery's ring (not across the well) from angle a0 to a1 (going the shorter way), at `speed` */
-async function round(d: Director, p: Person, a0: number, a1: number, speed: number): Promise<void> {
+async function round(d: Director, p: Person, a0: number, a1: number, speed: number, lane = 0): Promise<void> {
   let da = a1 - a0;
   da = Math.atan2(Math.sin(da), Math.cos(da));
-  const n = Math.max(1, Math.ceil(Math.abs(da) / 0.15)), r = (GALLERY.r0 + GALLERY.r1) / 2;
+  const n = Math.max(1, Math.ceil(Math.abs(da) / 0.15)), r = (GALLERY.r0 + GALLERY.r1) / 2 + lane;
   for (let i = 1; i <= n; i++) {
-    p.walkTo(...onWell(a0 + (da * i) / n, r), speed);
-    await d.until(() => !p.walking);
+    const [x, z] = onWell(a0 + (da * i) / n, r);
+    p.walkTo(x, z, speed);
+    // near is enough: the others (or the crowd) may keep them off the very spot
+    await d.until(() => !p.walking || Math.hypot(p.position.x - x, p.position.z - z) < 0.35);
     if (d.skipped || !d.locked) return;              // (the scene is over: they are put where it leaves them)
   }
 }
 
 /** the well's centre, for directions */
+/** how high the floor is under (x, z) up at the well: the gallery, or the round stair winding up outside it */
+const onFloor = (x: number, z: number): number => {
+  const dx = x - KUAN.x, dz = z - KUAN.z;
+  return Math.hypot(dx, dz) < GALLERY.r1 + 0.05 ? GALLERY.y - 0.01 : stairY(Math.atan2(-dx, dz));
+};
+
 const fromWell = (p: P2): P2 => { const dx = p[0] - KUAN.x, dz = p[1] - KUAN.z, l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
 
 /**
- On the gallery: he sees a little girl at the rail with candy floss, and goes to her (the player's walk); there, slow,
- she holds it out and he takes it; the guards come up and see him; he climbs the inner rail and jumps into the well:
+ On the gallery: he sees Anaya at the rail with candy floss, right across the well, and goes round to her (the player's
+ run); there the guards come up the stair across the well and see him; slow from then on: she holds the candy floss out
+ and he takes it as they come round; he climbs the inner rail and jumps into the well:
  slow all the way down, the bikes and cars on the wall going round past him, between him and the camera; down on the
  sand, the candy floss still in his hand. The stage is done.
 */
@@ -620,10 +629,24 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
   // ---- to her ----
   await d.mission(10, 'm.s1.kuan', [{ at: girlAt, hint: 'm.s1.kuan.h5', done: (x, z) => Math.hypot(x - meetAt[0], z - meetAt[1]) < 1.4 && ramu.position.y > Y - 0.6 }]);
 
-  // ---- slow: the candy floss; seen; into the well ----
+  // ---- the guards come up the stair, across the well from him; then slow: the candy floss, and into the well ----
   await d.scene(async () => {
     ramu.sitAt(meetAt[0], Y, meetAt[1], Math.atan2(-(girlAt[0] - meetAt[0]), -(girlAt[1] - meetAt[1])), 'idle');
     girl.faceTowards(...meetAt);
+    const top = (i: number) => onWell(GALLERY.a1 + 0.05 + (i >> 1) * 0.06, (GALLERY.r0 + GALLERY.r1) / 2 + (i % 2 ? 0.35 : -0.3));
+    c.guards.forEach((q, i) => { q.floor = onFloor; q.walkTo(...top(i), 3.8); });
+    // from behind the two of them, across the well to the stair's top
+    d.shot({ pos: at3(onWell(GIRL_A + 0.42, rIn + 0.55), Y + 1.7), look: at3(LANDING, Y + 1.0), fov: 24 }, 0);   // off the line through the centre pole
+    await Promise.race([d.until(() => c.guards.every((q) => !q.walking)), d.wait(3.5)]);
+    c.guards.forEach((q) => q.faceTowards(...meetAt));
+    await d.wait(0.9);                               // there they are, across the well
+    const g = c.guards[1];
+    g.faceTowards(...meetAt);
+    g.gesture('angry_point', 'wr', 1.8);
+    d.shot(d.front(g, { dist: 2.4, side: 0.6, up: 0.1, drop: 0.2, fov: 40 }), 0);
+    await d.say('guard', g.face, 'wohraha');
+    c.guards.forEach((q, i) => { q.floor = null; void round(d, q, GALLERY.a1 + 0.05, GIRL_A + 0.2 + i * 0.05, 3.8, (i % 2 ? 0.35 : -0.3)); });
+    // slow from here: she holds out the candy floss as they come round
     d.timeScale = 0.4;
     const two = { pos: overWell(GIRL_A + 0.04, Y + 1.45), look: at3(onWell(GIRL_A + 0.04, rIn), Y + 1.2), fov: 34 };
     d.shot(two, 0, d.pushIn(two, 0.05));
@@ -633,16 +656,7 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
     if (ramu.face) ramu.face.laughing = true;
     d.shot({ ...two, pos: overWell(GIRL_A + 0.04, Y + 1.3, 2.8), fov: 36 }, 0);
     await d.say('ramu', ramu.face, 'shrota');
-    await d.wait(0.5);
-    d.timeScale = 1;
-    // the guards up onto the gallery, and round to him
-    c.guards.forEach((q, i) => { const [x, z] = onWell(GALLERY.a1 + 0.04, (GALLERY.r0 + GALLERY.r1) / 2 + (i % 2 ? 0.35 : -0.3)); q.place(x, z); q.position.y = Y; });
-    const g = c.guards[1];
-    g.faceTowards(...meetAt);
-    g.gesture('angry_point', 'wr', 1.8);
-    d.shot(d.front(g, { dist: 2.4, side: 0.6, up: 0.1, drop: 0.2, fov: 40 }), 0);
-    await d.say('guard', g.face, 'wohraha');
-    c.guards.forEach((q, i) => void round(d, q, GALLERY.a1 + 0.04, GIRL_A + 0.2 + i * 0.05, 3.8));
+    await d.wait(0.3);
     // onto the inner rail, facing the well
     if (ramu.face) ramu.face.laughing = false;
     ramu.model.rotation.y = toWell;

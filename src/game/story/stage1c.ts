@@ -21,9 +21,11 @@ import { playSfx } from './sfx';
    mission 8  D (north up the main aisle), E (the giant wheel): he jumps for a cabin and it lifts him away
    mission 9  hold on: four times his grip slips, Space (or a tap) in time grabs again; a miss drops him (from D again).
               Then a guard has the operator stop the wheel dead, and Ramu is flung into the bouncy castle (F)
-   mission 10 G, H, the maut ka kuan's stair, its gallery: he hides among the people at the rail; the guards look and
-              miss him; a little girl offers him her candy floss (slow motion); "Woh raha!"; he leaps off the rail, slow
-              all the way down, and lands in the dirt with it in his hand. The stage is done.
+   mission 10 G, H, the maut ka kuan's stair, up to its gallery; at the top he sees Anaya across the well, candy floss
+              in her hand
+   mission 11 round the gallery to her: the guards come up the stair across the well, "Woh raha!"; slow motion: she
+              hands him the candy floss; he leaps off the rail, slow all the way down, and lands in the dirt with it in
+              his hand. The stage is done.
  Caught on any stretch: a beating, a fade, and that stretch again from its start, the guards a few metres behind.
 */
 
@@ -98,7 +100,7 @@ async function extra(mela: Mela, kind: RigName, x: number, z: number, ry: number
 // ---- part 3 ----
 
 export type Part3From = 'start' | 'flee' | 'wheel' | 'hang' | 'kuan' | 'gallery';
-/** a test start's mission (the Testing menu) -> where part 3 begins; 11 is mission 10 from the gallery (Anaya) */
+/** a test start's mission (the Testing menu) -> where part 3 begins; 11: on the gallery, Anaya seen across the well */
 export const PART3_FROM: Record<number, Part3From> = { 6: 'start', 7: 'flee', 8: 'wheel', 9: 'hang', 10: 'kuan', 11: 'gallery' };
 
 export async function stage1Part3(d: Director, ramu: Ramu, mela: Mela, hooks: StoryHooks, from: Part3From = 'start'): Promise<void> {
@@ -169,8 +171,9 @@ export async function stage1Part3(d: Director, ramu: Ramu, mela: Mela, hooks: St
   if (from !== 'gallery') await leg(d, ramu, c, 10, 'm.s1.kuan', [step(F, 'm.s1.kuan.h1', 2.2), step(G, 'm.s1.kuan.h1'), step(H, 'm.s1.kuan.h2'), step(FOOT, 'm.s1.kuan.h3', 3.5),
     { at: LANDING, hint: 'm.s1.kuan.h4', done: () => ramu.position.y > GALLERY.y - 0.6 }],
     { at: F, ry: Math.PI, behind: [[-134, 265.5], [-134.6, 267], [-136, 266], [-136.5, 267.5]] });
-  await gallery(d, ramu, c, mela);
   hooks.step(10);
+  await gallery(d, ramu, c, mela);
+  hooks.step(11);
   mela.crowd.huntIf = hunt;
   hooks.done();
 }
@@ -640,8 +643,8 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
   });
   ramu.yaw = ramu.facing;
 
-  // ---- to her ----
-  await d.mission(10, 'm.s1.kuan', [{ at: girlAt, hint: 'm.s1.kuan.h5', done: (x, z) => Math.hypot(x - meetAt[0], z - meetAt[1]) < 1.4 && ramu.position.y > Y - 0.6 }]);
+  // ---- mission 11: to her ----
+  await d.mission(11, 'm.s1.girl', [{ at: girlAt, hint: 'm.s1.girl.h1', done: (x, z) => Math.hypot(x - meetAt[0], z - meetAt[1]) < 1.4 && ramu.position.y > Y - 0.6 }]);
 
   // ---- the guards come up the stair, across the well from him; then slow: the candy floss, and into the well ----
   await d.scene(async () => {

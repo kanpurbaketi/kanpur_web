@@ -63,7 +63,7 @@ import { onLang, t, tk } from './i18n';
 */
 interface Play { stage: Stage; run: number | null }
 const params = new URLSearchParams(location.search);
-/** a test start (menu → Testing, development only): the mission to begin the stage at (11: mission 10 at the gallery) */
+/** a test start (menu → Testing, development only): the mission to begin the stage at */
 const TEST_FROM = import.meta.env.DEV && params.has('debug') ? Number(params.get('from')) || 0 : 0;
 
 async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> {

@@ -28,6 +28,6 @@ export const TEST_STARTS: Record<number, TestStart[]> = {
     { from: 1, n: 1, key: 'm.s1.food' }, { from: 2, n: 2, key: 'm.s1.gate' }, { from: 3, n: 3, key: 'm.s1.way' },
     { from: 4, n: 4, key: 'm.s1.stage' }, { from: 5, n: 5, key: 'm.s1.seat' }, { from: 6, n: 6, key: 'm.s1.run' },
     { from: 7, n: 7, key: 'm.s1.flee' }, { from: 8, n: 8, key: 'm.s1.wheel' }, { from: 9, n: 9, key: 'm.s1.hold' },
-    { from: 10, n: 10, key: 'm.s1.kuan' }, { from: 11, n: 10, key: 'm.s1.kuan', sub: 'test.gallery' },
+    { from: 10, n: 10, key: 'm.s1.kuan' }, { from: 11, n: 11, key: 'm.s1.girl' },
   ],
 };

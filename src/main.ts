@@ -33,7 +33,7 @@ import { CORRIDOR, corridorWalks, NAGAR_NIGAM, prepareRoute, SHIVAJI_START, Stag
 import { startChoice } from './game/start';
 import { account } from './game/account';
 import { stage as stageOf, type Stage } from './game/stages';
-import { goFree, introCard, loadingFailed, loadingScreen, toast, UserChip } from './ui/shell';
+import { goFree, introCard, loadingFailed, loadingScreen, passedCard, toast, UserChip } from './ui/shell';
 import { Director } from './game/story/director';
 import { stage1, STAGE1_STEPS } from './game/story/stage1';
 import { stage1Part2 } from './game/story/stage1b';
@@ -239,11 +239,14 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   hud.onOpen = () => menu.openMap();                     // a click on the minimap: the big map, with the mission's way marked
   if (director && params.has('debug')) (window as unknown as { __director: Director }).__director = director;
   let step = 0;
-  const finish = (toastKey?: string) => {
+  const finish = (toastKey?: string, big = false): void | Promise<void> => {
     if (!run.done) run.finishS = run.played;             // the time to finish (play goes on after it)
     run.done = true;
     if (play?.run != null) account.runBeat(play.run, run.played, runStats(), true);
-    if (play) toast(toastKey ? tk(toastKey) : t('stage.complete', { n: play.stage.n, goal: tk(`stage.${play.stage.n}.goal`) }), 6);
+    if (!play) return;
+    const line = toastKey ? tk(toastKey) : t('stage.complete', { n: play.stage.n, goal: tk(`stage.${play.stage.n}.goal`) });
+    if (big) return passedCard(t('stage.passed'), line, 5);
+    toast(line, 6);
   };
   if (play) {
     chip.setStage(play.stage, { played: () => run.played, done: () => run.done });

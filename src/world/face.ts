@@ -153,11 +153,18 @@ export class Face {
   blinking = false;
   /** a scowl, 0..1 (eased to over a quarter second or so) */
   angry = 0;
+  /** a smile, 0..1 (eased to); only the faces built with a `smile` key */
+  smile = 0;
+  /** the eyes shut, 0..1 (eased to, slowly: the lids sink); held over any blink */
+  shut = 0;
   private mesh: THREE.Mesh | null = null;
   private iMouth = -1;
   private iBlink = -1;
   private iAngry = -1;
+  private iSmile = -1;
   private scowl = 0;
+  private grin = 0;
+  private lids = 0;
   private open = 0;
   private target = 0;
   private next = 0;
@@ -176,6 +183,7 @@ export class Face {
       if (this.iMouth !== 0) console.warn('face: the shader expects mouth_open as the first shape key');
       this.iBlink = d.blink ?? -1;
       this.iAngry = d.angry ?? -1;
+      this.iSmile = d.smile ?? -1;
       m.morphTargetInfluences.fill(0);       // at rest: the files carry their keys' weights as 1 (the glTF's default weights)
       prepareFace(m);
       const marks = m.userData.face as Marks | undefined;
@@ -209,8 +217,17 @@ export class Face {
       if (Math.abs(this.angry - this.scowl) < 0.005) this.scowl = this.angry;
       inf[this.iAngry] = this.scowl;
     }
+    if (this.iSmile >= 0 && (this.grin !== this.smile)) {
+      this.grin += (this.smile - this.grin) * Math.min(1, dt * 4);
+      if (Math.abs(this.smile - this.grin) < 0.005) this.grin = this.smile;
+      inf[this.iSmile] = this.grin;
+    }
     // the eyes
     if (this.iBlink < 0) return;
+    if (this.lids !== this.shut) {
+      this.lids += (this.shut - this.lids) * Math.min(1, dt * 1.6);
+      if (Math.abs(this.shut - this.lids) < 0.005) this.lids = this.shut;
+    }
     if (this.blinking) {
       this.nextBlink -= dt;
       if (this.nextBlink <= 0 && this.lid <= 0) {
@@ -220,7 +237,7 @@ export class Face {
     }
     if (this.lid > 0) {
       this.lid = Math.max(0, this.lid - dt);
-      inf[this.iBlink] = Math.sin((1 - this.lid / 0.17) * Math.PI);
-    } else inf[this.iBlink] = 0;
+      inf[this.iBlink] = Math.max(this.lids, Math.sin((1 - this.lid / 0.17) * Math.PI));
+    } else inf[this.iBlink] = this.lids;
   }
 }

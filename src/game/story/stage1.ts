@@ -28,8 +28,8 @@ import { stage1Part2 } from './stage1b';
 
 export interface StoryHooks {
   step(n: number): void;
-  /** the stage is done (its toast: the stage's own, or `toastKey`) */
-  done(toastKey?: string): void;
+  /** the stage is done (its toast: the stage's own, or `toastKey`; `big`: the "mission passed" card, done when it has gone) */
+  done(toastKey?: string, big?: boolean): void | Promise<void>;
   /** a toast on the way (a part done) */
   note(toastKey: string): void;
 }

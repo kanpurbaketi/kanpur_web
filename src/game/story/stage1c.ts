@@ -172,10 +172,16 @@ export async function stage1Part3(d: Director, ramu: Ramu, mela: Mela, hooks: St
     { at: LANDING, hint: 'm.s1.kuan.h4', done: () => ramu.position.y > GALLERY.y - 0.6 }],
     { at: F, ry: Math.PI, behind: [[-134, 265.5], [-134.6, 267], [-136, 266], [-136.5, 267.5]] });
   hooks.step(10);
-  await gallery(d, ramu, c, mela);
-  hooks.step(11);
+  // mission 11 passed: the big card, while he lies there smiling, eyes shut (once, watched or skipped)
+  let passed: Promise<void> | null = null;
+  const pass = (): Promise<void> => (passed ??= (async () => { hooks.step(11); await hooks.done(undefined, true); })());
+  await gallery(d, ramu, c, mela, pass);
+  await pass();
   mela.crowd.huntIf = hunt;
-  hooks.done();
+  // then up off the sand, the stage played out (he can go on round the mela)
+  if (ramu.face) { ramu.face.smile = 0; ramu.face.shut = 0; }
+  ramu.standUp(ramu.position.x, ramu.position.z, 0.1);
+  ramu.gesture('get_up');
 }
 
 /** where he comes down after the rock (in front of the stall at C) */
@@ -619,7 +625,7 @@ const fromWell = (p: P2): P2 => { const dx = p[0] - KUAN.x, dz = p[1] - KUAN.z, 
  her; he sways, his foot slips and he goes over backward: slow all the way down, the bikes and cars on the wall going round past him, between him and the camera; down on the
  sand, the candy floss still in his hand. The stage is done.
 */
-async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<void> {
+async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () => Promise<void>): Promise<void> {
   c.stop();
   const Y = GALLERY.y - 0.01, rIn = GALLERY.r0 + 0.45;
   const GIRL_A = GALLERY.girl;
@@ -643,6 +649,18 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
   const onStair = (i: number): [number, number, number] => { const a = GALLERY.a1 + 0.45 + i * 0.09; const [x, z] = onWell(a, STAIR_R); return [x, stairY(a), z]; };
   c.guards.forEach((q, i) => { const [x, y, z] = onStair(i); q.place(x, z); q.position.y = y; q.faceTowards(...LANDING); q.idle(); });
   const overWell = (a: number, y: number, back = 2.2) => at3(onWell(a, GALLERY.r0 - back), y);
+  // on his back on the sand: close over his face, from above his chest along his body (so the face is the right way up)
+  const onFace = (): void => {
+    const h = new THREE.Vector3(), hips = new THREE.Vector3();
+    let hb: THREE.Object3D | null = null;
+    ramu.model.traverse((o) => { if (!hb && /Hips$/.test(o.name)) hb = o; });
+    if (!ramu.headPosition(h)) return;
+    const [ix, iz] = fromWell([h.x, h.z]);
+    if (hb) (hb as THREE.Object3D).getWorldPosition(hips); else hips.set(h.x - ix, h.y, h.z - iz);
+    const along = hips.sub(h).setY(0).normalize();               // from his head toward his feet
+    d.shot({ pos: v(h.x + along.x * 0.55, h.y + 0.85, h.z + along.z * 0.55), look: v(h.x - along.x * 0.04, h.y + 0.04, h.z - along.z * 0.04), fov: 38 }, 0);
+  };
+  let shown = false;                             // the card shown in the scene (not skipped)
 
   // ---- he sees her ----
   await d.scene(async () => {
@@ -760,14 +778,24 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
     d.timeScale = 1;
     ramu.model.rotation.set(0, ramu.model.rotation.y, 0);
     void playSfx('thud', 1);
-    ramu.holdClip('idle');
+    ramu.holdClip('fall', true);                 // and then he lies there
     ramu.model.rotation.y = toWell;              // facing the middle: the clip throws him back toward the wall, with room to
     ramu.gesture('fall');
     const p = ramu.position, [ix, iz] = fromWell([p.x, p.z]);
     d.shot({ pos: v(p.x - ix * 1.6 - iz * 2.8, 1.1, p.z - iz * 1.6 + ix * 2.8), look: v(p.x - ix * 0.3, 0.3, p.z - iz * 0.3), fov: 46 }, 0);   // side on, along the wall
-    await d.wait(1.8);
-    await d.say('ramu', ramu.face, 'bache');
+    await d.wait(2.4);
+    if (d.skipped) return;                       // (skipped: he is laid on the sand below, and the card shown from there)
+    // close over his face: a smile; his line; the eyes shut; the card
+    onFace();
     await d.wait(0.6);
+    if (ramu.face) ramu.face.smile = 1;
+    await d.wait(1.1);
+    await d.say('ramu', ramu.face, 'bache');
+    await d.wait(0.4);
+    if (ramu.face) ramu.face.shut = 1;
+    await d.wait(2.0);
+    shown = true;
+    await pass();
   });
   // watched or skipped: down on the sand at the foot of the wall, the candy floss in his hand, the guards at the rail above
   d.timeScale = 1;
@@ -776,10 +804,11 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
   ramu.model.rotation.set(0, 0, 0, 'XYZ');
   if (ramu.face) ramu.face.laughing = false;
   held.holder(ramu.model);
-  ramu.stopGesture();
-  ramu.standUp(ramu.position.x, ramu.position.z, 0.1);
-  ramu.model.rotation.y = toWell;
-  ramu.yaw = toWell;
+  ramu.sitAt(ramu.position.x, ramu.position.y, ramu.position.z, toWell, 'fall');
+  ramu.holdClip('fall', true);                   // on his back on the sand
+  if (ramu.face) { ramu.face.talking = false; ramu.face.smile = 1; ramu.face.shut = 1; }
+  ramu.yaw = toWell + Math.PI;                   // the camera on the well's open side, not in the sand banked up behind him
+  if (!shown) await d.scene(async () => { await d.wait(0.05); onFace(); await pass(); });   // skipped: the card over him lying there
   girl.idle();
   girl.place(...girlBack);
   girl.position.y = Y;

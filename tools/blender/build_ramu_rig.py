@@ -244,8 +244,9 @@ def build_face():
     mouth = mesh.shape_key_add(name='mouth_open', from_mix=False)
     blink = mesh.shape_key_add(name='blink', from_mix=False)
     angry = mesh.shape_key_add(name='angry', from_mix=False)             # after the others: the game's shader reads key 0
+    smile = mesh.shape_key_add(name='smile', from_mix=False)
     D = 0.008                                                            # the lower lip drops this much, wide open
-    moved = [0, 0, 0]
+    moved = [0, 0, 0, 0]
     for i, v in enumerate(me.vertices):
         c = v.co
         if not front(c):
@@ -295,7 +296,25 @@ def build_face():
             a.z -= 0.0026 * k
         if a.length > 1e-6:
             angry.data[i].co = c + a; moved[2] += 1
-    print(f'RIG face: mouth moves {moved[0]} vertices, blink {moved[1]}, angry {moved[2]}')
+        # smile: the mouth's corners up, out and a little back, the lips stretched toward them; the cheeks above lifted,
+        # the lower lids pushed up a touch
+        sm = Vector((0, 0, 0))
+        out = 1 if c.x > mx else -1
+        corner = abs(c.x - mx) / mhw
+        if corner < 1.9 and abs(c.z - mz) < 0.022:
+            k = smooth(0.1, 0.95, corner) * (1 - smooth(1.2, 1.9, corner)) * (1 - smooth(0.006, 0.022, abs(c.z - mz)))
+            sm += Vector((0.0028 * out * k, 0.0014 * k, 0.0062 * k))
+        if 0.8 < corner < 2.6 and mz < c.z < mz + 0.05:                  # the cheek beside and above the corner
+            k = smooth(0.8, 1.4, corner) * (1 - smooth(2.0, 2.6, corner)) * (1 - smooth(0.02, 0.05, c.z - mz))
+            sm += Vector((0.0006 * out * k, -0.0012 * k, 0.0026 * k))
+        for ex, ez in eyes:                                              # the lower lid up a little: smiling eyes
+            lat2 = 1 - smooth(ehw * 1.0, ehw * 1.55, abs(c.x - ex))
+            eb = ez - ehw * 0.55
+            if lat2 > 0 and ez - ehw * 1.4 < c.z <= eb + ehw * 0.1:
+                sm.z += 0.0013 * lat2 * smooth(ez - ehw * 1.4, eb, c.z)
+        if sm.length > 1e-6:
+            smile.data[i].co = c + sm; moved[3] += 1
+    print(f'RIG face: mouth moves {moved[0]} vertices, blink {moved[1]}, angry {moved[2]}, smile {moved[3]}')
     # where they are, in the glTF's frame (x, y up, z forward = -Blender y), for the game's shader
     mesh['face'] = {'mouth': [mx, mz, -(cy - 0.02)], 'mhw': mhw, 'eyes': [[ex, ez] for ex, ez in eyes], 'ehw': ehw}
 
@@ -443,8 +462,9 @@ if '--face-preview' in argv:          # renders of the head with the mouth and e
     cam.location = ((min(v.x for v in head) + max(v.x for v in head)) / 2, -3, top - 0.13); cam.rotation_euler = (1.5708, 0, 0)
     sc.camera = cam
     keys = mesh.data.shape_keys.key_blocks
-    for tag, m, b, g in (('rest', 0, 0, 0), ('talk', 1, 0, 0), ('blink', 0, 1, 0), ('angry', 0, 0, 1), ('angry_talk', 0.6, 0, 1)):
-        keys['mouth_open'].value = m; keys['blink'].value = b; keys['angry'].value = g
+    for tag, m, b, g, sm in (('rest', 0, 0, 0, 0), ('talk', 1, 0, 0, 0), ('blink', 0, 1, 0, 0), ('angry', 0, 0, 1, 0), ('angry_talk', 0.6, 0, 1, 0),
+                             ('smile', 0, 0, 0, 1), ('smile_shut', 0, 1, 0, 1)):
+        keys['mouth_open'].value = m; keys['blink'].value = b; keys['angry'].value = g; keys['smile'].value = sm
         sc.render.filepath = os.path.join(FP, f'{CHAR}_{tag}.png')
         bpy.ops.render.render(write_still=True)
     sys.exit(0)

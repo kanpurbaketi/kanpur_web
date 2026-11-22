@@ -164,10 +164,12 @@ export class Ramu {
     this.vel.set(0, 0, 0);
     this.gestureT = 0;
     this.pose = clip;
+    this.poseLast = false;
   }
 
-  /** change the held clip (eating, talking) while sitting */
-  holdClip(clip: string): void { if (this.pose) this.pose = clip; }
+  /** change the held clip (eating, talking) while sitting; `last`: a once-only clip (a fall) held on its last frame */
+  holdClip(clip: string, last = false): void { if (this.pose) { this.pose = clip; this.poseLast = last; } }
+  private poseLast = false;
 
   /** out of the held pose, standing at (x, z) on whatever is there at about height y */
   standUp(x: number, z: number, y: number): void {
@@ -695,6 +697,8 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
       this.play(this.gestureName, 0.25);
     } else if (this.pose) {
       set(this.pose, 'idle', 1);
+      const a = this.poseLast ? A[this.pose] : null;
+      if (a) { a.timeScale = 0; a.time = a.getClip().duration - 0.001; a.setEffectiveWeight(1); }
     } else if (this.lockPick && hs < 0.8) {
       set(this.lockPick.low && A.crouch ? 'crouch' : 'idle', 'idle', this.lockPick.low ? 1 : 0.6);
     } else if (crouching) {

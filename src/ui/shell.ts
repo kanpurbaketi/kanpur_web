@@ -477,6 +477,18 @@ export function toast(msg: string, s = 5): void {
   setTimeout(() => { d.classList.remove('on'); setTimeout(() => d.remove(), 400); }, s * 1000);
 }
 
+// ---------- a mission passed ----------
+
+/** big across the middle of the screen, a few seconds: the words, and a line under them */
+export function passedCard(title: string, sub: string, s = 5): Promise<void> {
+  const d = el('div', 'sh-passed');
+  d.setAttribute('role', 'status');
+  d.append(el('div', 'sh-passed-t', title), el('div', 'sh-passed-s', sub));
+  document.body.append(d);
+  requestAnimationFrame(() => requestAnimationFrame(() => d.classList.add('on')));
+  return new Promise((resolve) => setTimeout(() => { d.classList.remove('on'); setTimeout(() => { d.remove(); resolve(); }, 600); }, s * 1000));
+}
+
 // ---------- styles ----------
 
 const css = `
@@ -570,6 +582,13 @@ form .sh-links { margin-top: 0; }
   border-radius: 12px; background: rgba(28,24,20,.9); color: #fff; font: 600 16px system-ui, sans-serif; text-align: center; opacity: 0;
   transition: opacity .35s, transform .35s; pointer-events: none; }
 .sh-toast.on { opacity: 1; transform: translate(-50%, 0); }
+.sh-passed { position: fixed; left: 0; right: 0; top: 60%; z-index: 46; padding: 18px 16px 20px; text-align: center; pointer-events: none; opacity: 0;
+  background: linear-gradient(90deg, transparent, rgba(10,8,6,.72) 20%, rgba(10,8,6,.72) 80%, transparent); transition: opacity .6s; }
+.sh-passed.on { opacity: 1; }
+.sh-passed-t { font: 900 clamp(34px, 8vw, 72px)/1.05 system-ui, sans-serif; letter-spacing: .04em; text-transform: uppercase; color: #f5b83d;
+  text-shadow: 0 3px 0 #6b3a06, 0 0 24px rgba(245,184,61,.45); transform: scale(1.25); transition: transform .7s cubic-bezier(.2,.9,.3,1.2); }
+.sh-passed.on .sh-passed-t { transform: scale(1); }
+.sh-passed-s { margin-top: 8px; font: 600 clamp(15px, 3.4vw, 20px) system-ui, sans-serif; color: #f3eee6; }
 [hidden] { display: none !important; }
 @media (max-width: 520px) { .sh-chip-name { max-width: 90px; } }
 `;

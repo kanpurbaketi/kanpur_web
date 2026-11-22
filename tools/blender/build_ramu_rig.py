@@ -909,6 +909,33 @@ reach_clip('recite', RECITE_N, recite_base, recite_target, recite_pole, recite_h
 reach_clip('push_one', 42, push_base, push_target, (SH.x - 0.5, 0.35, SH.z - 0.35), push_hand)
 
 
+# offering something in the right hand (Anaya's candy floss) or reaching to take it (Ramu): the fist comes up and out to
+# a little below the chest, and stays there (played once, it holds its last frame)
+def env_offer(t): return smooth(0.0, 0.55, t)
+
+
+def offer_base(t):
+    idle(0.0)
+    k = env_offer(t)
+    rot('Spine1', FWD, 4 * k)                        # leaning a little toward the other
+    rot('Head', FWD, 6 * k)
+
+
+def offer_target(t):
+    k = env_offer(t)
+    front = body_front(CHEST_Z, 0.12)
+    out = Vector((SH.x * 0.55, front - 0.38, SH.z - 0.36))
+    return tuple(out), 0.95 * k
+
+
+def offer_hand(t):
+    finger_curl(0.85)                                # round the stick
+
+
+if CHAR in ('ramu', 'anaya'):
+    reach_clip('offer', 40, offer_base, offer_target, (SH.x - 0.5, 0.3, SH.z - 0.45), offer_hand)
+
+
 # ---- eating in a chair (the poets on the stage, Ramu in Kumar's seat): sitting as in the first frame of Sitting Talking,
 # a fruit in the right fist (the game puts it there) brought up to the mouth, a bite, chewing with the hand down, the head
 # nodding a little with it. Four seconds, looped.

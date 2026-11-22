@@ -602,7 +602,7 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
   const girl = await extra(mela, 'anaya', girlAt[0], girlAt[1], Math.atan2(-(meetAt[0] - girlAt[0]), -(meetAt[1] - girlAt[1])));
   girl.position.y = Y;
   girl.face.laughing = true;
-  const floss = candyFloss(), held = new HandProp(floss, 'mic', 0.05);
+  const floss = candyFloss(), held = new HandProp(floss, 'hang', 0.12);   // upright, the fist 12 cm up the stick
   mela.group.add(floss);
   held.holder(girl.actor.root);
   props.push(held);
@@ -650,9 +650,21 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
     d.timeScale = 0.4;
     const two = { pos: overWell(GIRL_A + 0.04, Y + 1.45), look: at3(onWell(GIRL_A + 0.04, rIn), Y + 1.2), fov: 34 };
     d.shot(two, 0, d.pushIn(two, 0.05));
-    await d.wait(0.6);
+    await d.wait(0.4);
+    girl.gesture('offer', 'offer', 30);              // she holds it out (till it is taken)
     await d.say('girl', girl.face, 'khaoge');
+    // slower still, close on the hands: his comes up to hers and takes it
+    d.timeScale = 0.25;
+    const mid = at3([(girlAt[0] + meetAt[0]) / 2, (girlAt[1] + meetAt[1]) / 2], Y + 1.0);
+    const hands = { pos: at3(onWell(GIRL_A + 0.0375, rIn + 1.15), Y + 1.4), look: mid, fov: 30 };   // from the gallery side: the rail is behind them
+    d.shot(hands, 0, d.pushIn(hands, 0.06));
+    ramu.gesture('offer', 1, 30);
+    await d.wait(0.85);
     held.holder(ramu.model);
+    await d.wait(0.45);
+    girl.idle();
+    ramu.stopGesture();
+    d.timeScale = 0.4;
     if (ramu.face) ramu.face.laughing = true;
     d.shot({ ...two, pos: overWell(GIRL_A + 0.04, Y + 1.3, 2.8), fov: 36 }, 0);
     await d.say('ramu', ramu.face, 'shrota');

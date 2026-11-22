@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import { gltfLoader } from './gltf';
 
 /*
- Small things the story hands about (stage 1, part 2): a brass lota. Made here, from a turned profile; each stands on
+ Small things the story hands about (stage 1, part 2): a brass lota. The candy floss (stage 1, part 3) is the modelled one in models/cotton_candy.glb. Made here, from a turned profile; each stands on
  its own origin.
 */
 
@@ -94,5 +95,30 @@ export function candyFloss(): THREE.Group {
   g.add(stick);
   g.traverse((o) => { o.castShadow = true; });
   g.name = 'candyfloss';
+  // the modelled one (models/cotton_candy.glb) takes the puffs' place once it has loaded
+  void cottonCandy().then((m) => { g.clear(); g.add(m); }).catch(() => {});
   return g;
+}
+
+let cotton: Promise<THREE.Object3D> | null = null;
+/** the cotton candy model, 0.5 m tall, set on the stick's foot (+y up); a copy each time */
+async function cottonCandy(): Promise<THREE.Object3D> {
+  cotton ??= gltfLoader().loadAsync('models/cotton_candy.glb').then((gltf) => {
+    const m = gltf.scene;
+    m.updateMatrixWorld(true);
+    // the stick: the slimmer of its two meshes; its lowest point is where the hand holds it from
+    const boxes: THREE.Box3[] = [];
+    m.traverse((o) => { if ((o as THREE.Mesh).isMesh) boxes.push(new THREE.Box3().setFromObject(o)); });
+    const all = new THREE.Box3().setFromObject(m), size = new THREE.Vector3();
+    const stick = boxes.reduce((a, b) => (b.getSize(size).x * size.z < a.getSize(new THREE.Vector3()).x * a.getSize(new THREE.Vector3()).z ? b : a));
+    const foot = stick.getCenter(new THREE.Vector3()).setY(all.min.y);
+    const k = 0.5 / (all.max.y - all.min.y);
+    const wrap = new THREE.Group();
+    m.position.sub(foot);
+    m.traverse((o) => { o.castShadow = true; });
+    wrap.add(m);
+    wrap.scale.setScalar(k);
+    return wrap;
+  });
+  return (await cotton).clone();
 }

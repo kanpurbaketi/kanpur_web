@@ -438,7 +438,7 @@ async function lotaScene(d: Director, ramu: Ramu, s: Sammelan): Promise<boolean>
     const r = d.front(ramu, { dist: 1.5, side: 0.4, up: 0, drop: 0.2, fov: 36 });
     d.shot(r, 0, d.pushIn(r, 0.03));
     void playSfx('stomach');
-    ramu.gesture('stomach');
+    if (!ramu.gesture('hungry')) ramu.gesture('stomach');
     await d.wait(0.6);
     await d.say('ramu', ramu.face, 'peek');
     ramu.stopGesture();

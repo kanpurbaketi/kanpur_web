@@ -44,7 +44,9 @@ KEEP_ROOT = {'fall', 'fall2', 'get_up'}
 # clips in the folder that nothing plays yet (every clip baked goes into every character's file): left out until used
 UNUSED = {'gunplay', 'sweep fall'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
 # clips only Ramu plays (stage 1, part 3: hanging from the giant wheel, flying off it, the leap from the well): not baked into the others
-RAMU_ONLY = {'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling'}
+# clips whose left arm the FBX leaves in the T-pose: that arm comes from the idle instead
+LEFT_ARM_FROM_IDLE = {'hungry'}
+RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling'}
 
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
@@ -619,6 +621,7 @@ CLIP_RULES = (
     (('hanging', 'idle'), 'hang_idle'), (('stand', 'freehang'), 'hang_start'), (('braced', 'free'), 'hang_braced'), (('braced', 'drop'), 'hang_drop'),
     (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
     (('throw',), 'throw'),                          # the audience pelting a bad poet
+    (('hungry',), 'hungry'),                        # Ramu holding his empty stomach (stage 1)
     (('stomach',), 'stomach_hit'),
     (('crouch', 'walk'), 'crouch_walk'), (('crouched',), 'crouch_walk'), (('crouch',), 'crouch'), (('sneak',), 'crouch'),
     (('fighting idle',), 'fight_idle'), (('fight idle',), 'fight_idle'), (('boxing idle',), 'fight_idle'),
@@ -688,9 +691,14 @@ def import_mixamo_clips():
         keep = name in KEEP_ROOT
         for i, m in enumerate(samples):
             pose_rest()                             # bones the clip does not have (fingers, on a lighter rig) stay at rest
+            left_idle = name in LEFT_ARM_FROM_IDLE
+            if left_idle:
+                idle(i / max(1, len(samples) - 1))
             for pb in P:
                 short = pb.name.split(':')[-1]
                 if short not in m:
+                    continue
+                if left_idle and short.startswith(('LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand')):
                     continue
                 mb = m[short]
                 pb.rotation_quaternion = mb.to_quaternion()

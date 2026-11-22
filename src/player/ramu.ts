@@ -123,8 +123,9 @@ export class Ramu {
     return this.model.rotation.y;
   }
 
-  /** play a clip once while he stands (a scene's gesture); its length in seconds (0: no such clip). Moving ends it. */
-  gesture(name: string, timeScale = 1): number {
+  /** play a clip once while he stands (a scene's gesture); its length in seconds (0: no such clip). Moving ends it.
+   `hold`: seconds more on its last frame (stopGesture ends it sooner) */
+  gesture(name: string, timeScale = 1, hold = 0): number {
     const a = this.actions[name];
     if (!a) return 0;
     a.setLoop(THREE.LoopOnce, 1);
@@ -132,7 +133,7 @@ export class Ramu {
     a.timeScale = timeScale;
     if (this.current === a) this.current = null;     // replayed: start it over
     this.gestureName = name;
-    this.gestureT = a.getClip().duration / timeScale;
+    this.gestureT = a.getClip().duration / timeScale + hold;
     return this.gestureT;
   }
 

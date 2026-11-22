@@ -44,7 +44,7 @@ export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queu
     d.shot(wide, 1.1, d.pushIn(wide, 0.15));
     await d.wait(1.0);
     void playSfx('stomach');
-    if (!ramu.gesture('hungry')) ramu.gesture('stomach');
+    if (!ramu.gesture('hungry', 1, 8)) ramu.gesture('stomach');   // the hand stays on the stomach till the line is said
     await d.wait(1.6);
     const close = d.front(ramu, { dist: 1.45, side: 0.38, up: 0, drop: 0.2, fov: 35 });
     d.shot(close, 0.7, d.pushIn(close, 0.03));

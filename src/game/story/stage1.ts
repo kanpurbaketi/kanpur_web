@@ -36,7 +36,32 @@ export interface StoryHooks {
 
 const CART_R = 4.5;
 
-export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queue: GateQueue, mela: Mela | null, hooks: StoryHooks): Promise<void> {
+/** `from`: the mission to start at (a test start, from the Testing menu): Ramu is put where the one before leaves him */
+export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queue: GateQueue, mela: Mela | null, hooks: StoryHooks, from = 1): Promise<void> {
+  if (from >= 4 && mela) return stage1Part2(d, ramu, mela, hooks, from);
+  if (from <= 1) await part1Food(d, ramu, keepers, hooks);
+  else if (from === 2) {
+    const k = keepers.keepers[0];
+    if (k) ramu.standAt(k.front.x, k.front.y);
+    void refusals(d, ramu, keepers);
+  }
+  if (from <= 2) await part1Gate(d, ramu, queue, hooks);
+  else {
+    const [bx, bz] = queue.backSpot();
+    ramu.standAt(bx, bz);
+    void turnedBack(d, ramu, queue);
+  }
+
+  // ---- mission 3: another way in ----
+  const search = searchArea(ramu);
+  await d.mission(3, 'm.s1.way', [{ at: search.at, hint: search.hint, radius: search.radius, done: (x, z) => { search.tick(); return inMela(x, z); } }]);
+  hooks.step(3);
+  if (mela) await stage1Part2(d, ramu, mela, hooks);
+  else hooks.done('story.s1.part1');
+}
+
+/** beat 1 and mission 1: hungry at the chowk; to the carts; turned away */
+async function part1Food(d: Director, ramu: Ramu, keepers: CartKeepers, hooks: StoryHooks): Promise<void> {
   // ---- beat 1: hungry at the chowk ----
   await d.scene(async () => {
     await d.wait(0.3);
@@ -69,8 +94,10 @@ export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queu
   if (keeper) await samosa(d, ramu, keeper);
   hooks.step(1);
   void refusals(d, ramu, keepers);
+}
 
-  // ---- mission 2: the mela's main gate, and the line ----
+/** mission 2: the mela's main gate, the line, no ticket */
+async function part1Gate(d: Director, ramu: Ramu, queue: GateQueue, hooks: StoryHooks): Promise<void> {
   const back = () => { const [x, z] = queue.backSpot(); return Math.hypot(ramu.position.x - x, ramu.position.z - z); };
   let joined = false;
   d.prompt = { key: 'act.line', when: () => back() < 2.2, act: () => { joined = true; } };
@@ -83,13 +110,6 @@ export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queu
   await ticket(d, ramu, queue);
   hooks.step(2);
   void turnedBack(d, ramu, queue);
-
-  // ---- mission 3: another way in ----
-  const search = searchArea(ramu);
-  await d.mission(3, 'm.s1.way', [{ at: search.at, hint: search.hint, radius: search.radius, done: (x, z) => { search.tick(); return inMela(x, z); } }]);
-  hooks.step(3);
-  if (mela) await stage1Part2(d, ramu, mela, hooks);
-  else hooks.done('story.s1.part1');
 }
 
 /**

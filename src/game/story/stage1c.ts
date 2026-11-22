@@ -97,7 +97,9 @@ async function extra(mela: Mela, kind: RigName, x: number, z: number, ry: number
 
 // ---- part 3 ----
 
-export type Part3From = 'start' | 'wheel' | 'kuan';
+export type Part3From = 'start' | 'flee' | 'wheel' | 'hang' | 'kuan' | 'gallery';
+/** a test start's mission (the Testing menu) -> where part 3 begins; 11 is mission 10 from the gallery (Anaya) */
+export const PART3_FROM: Record<number, Part3From> = { 6: 'start', 7: 'flee', 8: 'wheel', 9: 'hang', 10: 'kuan', 11: 'gallery' };
 
 export async function stage1Part3(d: Director, ramu: Ramu, mela: Mela, hooks: StoryHooks, from: Part3From = 'start'): Promise<void> {
   const s = await mela.sammelan;
@@ -110,31 +112,39 @@ export async function stage1Part3(d: Director, ramu: Ramu, mela: Mela, hooks: St
     await sendGuards(mela, s, ramu);
   }
 
-  if (from === 'start') {
-    // ---- mission 6, run: they have him soon enough ----
-    let caught = false;
-    c.onCatch = () => { caught = true; };
-    if (!c.on) { c.resetTrail([]); c.hard = true; c.go(); }
-    await d.mission(6, 'm.s1.run', [{ at: null, hint: 'm.s1.run.h1', done: () => caught }]);
-    await firstCatch(d, ramu, c, s);
-    hooks.step(6);
+  if (from === 'start' || from === 'flee') {
+    const fromA: Restart = { at: A, ry: -Math.PI / 2, behind: [[SAMMELAN.x1 - 1.4, EAST.z - 1.2], [SAMMELAN.x1 - 1.4, EAST.z + 1.2], [SAMMELAN.x1 - 2.6, EAST.z], [SAMMELAN.x1 - 3.4, EAST.z + 0.6]] };
+    if (from === 'start') {
+      // ---- mission 6, run: they have him soon enough ----
+      let caught = false;
+      c.onCatch = () => { caught = true; };
+      if (!c.on) { c.resetTrail([]); c.hard = true; c.go(); }
+      await d.mission(6, 'm.s1.run', [{ at: null, hint: 'm.s1.run.h1', done: () => caught }]);
+      await firstCatch(d, ramu, c, s);
+      hooks.step(6);
+    } else restartAt(ramu, c, fromA);
 
     // ---- mission 7: A, B, C ----
-    await leg(d, ramu, c, 7, 'm.s1.flee', [step(A, 'm.s1.flee.h1', 2.6), step(B, 'm.s1.flee.h2'), step(C, 'm.s1.flee.h3')],
-      { at: A, ry: -Math.PI / 2, behind: [[SAMMELAN.x1 - 1.4, EAST.z - 1.2], [SAMMELAN.x1 - 1.4, EAST.z + 1.2], [SAMMELAN.x1 - 2.6, EAST.z], [SAMMELAN.x1 - 3.4, EAST.z + 0.6]] });
+    await leg(d, ramu, c, 7, 'm.s1.flee', [step(A, 'm.s1.flee.h1', 2.6), step(B, 'm.s1.flee.h2'), step(C, 'm.s1.flee.h3')], fromA);
     await rockScene(d, ramu, c, mela);
     hooks.step(7);
   }
 
   // ---- mission 8: D, E, the wheel; mission 9: hold on (a miss: from D again) ----
-  if (from !== 'kuan') {
+  if (from !== 'kuan' && from !== 'gallery') {
     const fromD = { at: D, ry: 0, behind: [[-149.6, 293], [-148.4, 293.6], [-149.2, 295], [-148.6, 296]] as P2[] };
-    let restart = from === 'wheel' ? fromD : { at: LAND_AT, ry: -Math.PI / 2, behind: [[-166, 298.0], [-166.5, 299.2], [-168, 298.4], [-169, 299]] as P2[] };
-    if (from === 'wheel') restartAt(ramu, c, fromD);
+    let restart = from === 'wheel' || from === 'hang' ? fromD : { at: LAND_AT, ry: -Math.PI / 2, behind: [[-166, 298.0], [-166.5, 299.2], [-168, 298.4], [-169, 299]] as P2[] };
+    if (from === 'wheel' || from === 'hang') restartAt(ramu, c, fromD);
+    let toHang = from === 'hang';                    // a test start at mission 9: straight onto the wheel
     for (;;) {
-      await leg(d, ramu, c, 8, 'm.s1.wheel', [step(D, 'm.s1.wheel.h1', 3.5), step(E, 'm.s1.wheel.h2', 3.5)], restart);
-      hooks.step(8);
+      if (!toHang) {
+        await leg(d, ramu, c, 8, 'm.s1.wheel', [step(D, 'm.s1.wheel.h1', 3.5), step(E, 'm.s1.wheel.h2', 3.5)], restart);
+        hooks.step(8);
+      }
+      d.fastForward = toHang;
+      toHang = false;
       await grabWheel(d, ramu, c, mela);
+      d.fastForward = false;
       if (await holdOn(d, ramu, mela)) break;
       await fell(d, ramu, c, mela, hooks);
       restart = fromD;
@@ -143,16 +153,20 @@ export async function stage1Part3(d: Director, ramu: Ramu, mela: Mela, hooks: St
     }
     hooks.step(9);
     await flung(d, ramu, c, mela);
-  } else {
+  } else if (from === 'kuan') {
     ramu.standAt(...F, 0);
     ramu.yaw = ramu.facing;
     c.place([[-134, 265.5], [-134.6, 267], [-136, 266], [-136.5, 267.5]]);
     c.resetTrail([[-134, 266]]);
     void d.wait(1.2).then(() => c.go());
+  } else {                                           // the gallery: at the stair's top, the guards on the stair below
+    ramu.standAt(LANDING[0], LANDING[1], GALLERY.y - 0.01);
+    ramu.yaw = ramu.facing;
+    c.place([FOOT, FOOT, FOOT, FOOT]);
   }
 
   // ---- mission 10: out of the castle, G, H, the well's stair, the gallery ----
-  await leg(d, ramu, c, 10, 'm.s1.kuan', [step(F, 'm.s1.kuan.h1', 2.2), step(G, 'm.s1.kuan.h1'), step(H, 'm.s1.kuan.h2'), step(FOOT, 'm.s1.kuan.h3', 3.5),
+  if (from !== 'gallery') await leg(d, ramu, c, 10, 'm.s1.kuan', [step(F, 'm.s1.kuan.h1', 2.2), step(G, 'm.s1.kuan.h1'), step(H, 'm.s1.kuan.h2'), step(FOOT, 'm.s1.kuan.h3', 3.5),
     { at: LANDING, hint: 'm.s1.kuan.h4', done: () => ramu.position.y > GALLERY.y - 0.6 }],
     { at: F, ry: Math.PI, behind: [[-134, 265.5], [-134.6, 267], [-136, 266], [-136.5, 267.5]] });
   await gallery(d, ramu, c, mela);

@@ -249,6 +249,11 @@ const EN = {
   'menu.places': 'Places',
   'menu.stats': 'Statistics',
   'menu.controls': 'Controls',
+  'menu.testing': 'Testing',
+  'test.pick': 'Start a stage at any mission (development only). The missions before it are skipped.',
+  'test.stage': 'Stage {n}: {title}',
+  'test.gallery': 'on the gallery, at Anaya',
+  'test.none': 'No missions yet.',
   'menu.stages': 'Stages',
   'menu.settings': 'Settings',
 
@@ -618,6 +623,11 @@ const HI: Record<Key, string> = {
   'menu.places': 'जगहें',
   'menu.stats': 'आँकड़े',
   'menu.controls': 'कंट्रोल',
+  'menu.testing': 'टेस्टिंग',
+  'test.pick': 'किसी भी मिशन से स्टेज शुरू करो (सिर्फ़ डेवलपमेंट में)। उससे पहले के मिशन छोड़ दिए जाते हैं।',
+  'test.stage': 'स्टेज {n}: {title}',
+  'test.gallery': 'गैलरी पर, अनाया के पास',
+  'test.none': 'अभी कोई मिशन नहीं।',
   'menu.stages': 'स्टेज',
   'menu.settings': 'सेटिंग्स',
 

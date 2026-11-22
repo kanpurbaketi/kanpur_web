@@ -63,6 +63,8 @@ import { onLang, t, tk } from './i18n';
 */
 interface Play { stage: Stage; run: number | null }
 const params = new URLSearchParams(location.search);
+/** a test start (menu → Testing, development only): the mission to begin the stage at (11: mission 10 at the gallery) */
+const TEST_FROM = import.meta.env.DEV && params.has('debug') ? Number(params.get('from')) || 0 : 0;
 
 async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> {
   const status = document.getElementById('status')!;
@@ -205,7 +207,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
     spawn = project(map, lat, lon);
   }
   // a stage starts where it starts (stage 1: the chowk); roaming free, where menu → Places says (the chowk unless changed)
-  const part2 = import.meta.env.DEV && params.has('debug') && ['2', '3'].includes(params.get('part') ?? '');   // test scripts: stage 1's parts 2, 3
+  const part2 = (import.meta.env.DEV && params.has('debug') && ['2', '3'].includes(params.get('part') ?? '')) || TEST_FROM >= 4;   // test starts inside the mela: stage 1's parts 2, 3
   const spawnMode = play ? (part2 ? 'inside' : 'shivaji') : params.get('spawn') ?? (map.area === 'moti_jheel' ? startChoice() : null);
   if (spawnMode === 'shivaji') spawn = SHIVAJI_START;   // by the statue, the Shivaji Putla gate ahead (the real start of stage 1)
   if (spawnMode === 'mela') spawn = [TEAR.x - 3.5, TEAR.z]; // in the alley outside the torn place in the cloth wall
@@ -526,7 +528,7 @@ void main() {
     begin: async () => {
       if (!play || !director || !keepers) return;
       paused = true;
-      await introCard(play.stage.n, STAGE1_STEPS);
+      if (!TEST_FROM) await introCard(play.stage.n, STAGE1_STEPS);     // (a test start from the Testing menu: straight in)
       paused = false;
       const hooks = {
         step: (n: number) => { step = n; if (play.run !== null) account.runBeat(play.run, run.played, runStats()); },
@@ -538,7 +540,7 @@ void main() {
       const part = import.meta.env.DEV && params.has('debug') && mela ? params.get('part') : null;
       if (part === '2') void stage1Part2(director, ramu, mela!, hooks);
       else if (part === '3') void stage1Part3(director, ramu, mela!, hooks, (params.get('leg') as Part3From | null) ?? 'start');
-      else void stage1(director, ramu, keepers, queue!, mela, hooks);
+      else void stage1(director, ramu, keepers, queue!, mela, hooks, TEST_FROM || 1);
     },
   };
 }

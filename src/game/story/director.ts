@@ -61,6 +61,8 @@ export class Director {
   private tweens: { t: number; secs: number; f: (k: number) => void; done: () => void }[] = [];
   /** how fast the world's time goes (1: as it is; 0.3: slow motion). The game loop scales its step by it */
   timeScale = 1;
+  /** a test start (the Testing menu): scenes on the way to the chosen mission are skipped as they begin */
+  fastForward = false;
   private black: HTMLDivElement | null = null;
   /** an offer on the use key, while `when()` holds and no scene runs (`key`: its i18n line, with {key}; it may change as he moves) */
   prompt: { key: Live<string>; when: () => boolean; act: () => void } | null = null;
@@ -133,7 +135,7 @@ export class Director {
 
   async scene(body: () => Promise<void>): Promise<void> {
     this.inScene = true;
-    this.skipping = false;
+    this.skipping = this.fastForward;
     this.locked = true;
     this.subs.cinema(true);
     try {

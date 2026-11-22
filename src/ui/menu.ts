@@ -1,3 +1,4 @@
+import { STAGES, TEST_STARTS } from '../game/stages';
 import { injured, Score, Stats } from '../game/stats';
 import { setStartChoice, startChoice, STARTS } from '../game/start';
 import type { Part } from '../game/parts';
@@ -8,10 +9,11 @@ import { account, type Run } from '../game/account';
 import { fmtNum, onLang, t, tk } from '../i18n';
 import { goFree, settingsView, stagesView } from './shell';
 
-type Item = 'stages' | 'settings' | 'profile' | 'map' | 'places' | 'stats' | 'controls';
-const ITEMS: Item[] = ['stages', 'settings', 'profile', 'map', 'places', 'stats', 'controls'];
+type Item = 'stages' | 'settings' | 'profile' | 'map' | 'places' | 'stats' | 'controls' | 'testing';
+// Testing (start a stage at any mission) only on the development server
+const ITEMS: Item[] = ['stages', 'settings', 'profile', 'map', 'places', 'stats', 'controls', ...(import.meta.env.DEV ? ['testing' as const] : [])];
 const TITLE: Record<Item, Parameters<typeof t>[0]> = {
-  stages: 'menu.stages', settings: 'menu.settings', profile: 'menu.profile', map: 'menu.map', places: 'menu.places', stats: 'menu.stats', controls: 'menu.controls',
+  stages: 'menu.stages', settings: 'menu.settings', profile: 'menu.profile', map: 'menu.map', places: 'menu.places', stats: 'menu.stats', controls: 'menu.controls', testing: 'menu.testing',
 };
 
 export interface MenuDeps {
@@ -134,6 +136,7 @@ export class Menu {
     else if (it === 'map') { if (this.d.hud.guide) this.cityView = false; this.renderMap(); }
     else if (it === 'controls') this.renderControls();
     else if (it === 'places') this.renderPlaces();
+    else if (it === 'testing') this.renderTesting();
     else this.renderStats();
   }
 
@@ -150,6 +153,35 @@ export class Menu {
     const note = text('p', '', 'muted');
     note.setAttribute('role', 'status');
     this.body.append(text('p', t('stage.pick'), 'muted'), stagesView({ current: this.d.stage, onMsg: (m) => (note.textContent = m) }), note);
+  }
+
+  // ---------- Testing (development only) ----------
+  private renderTesting(): void {
+    this.body.append(text('p', t('test.pick'), 'muted'));
+    const now = new URLSearchParams(location.search);
+    const here = now.has('debug') ? `${now.get('stage')}:${now.get('from') ?? ''}` : '';
+    for (const st of STAGES) {
+      if (!st.built) continue;
+      this.body.append(text('h3', t('test.stage', { n: st.n, title: tk(`stage.${st.n}.title`) }), 'test-head'));
+      const list = el('div', 'place-list');
+      for (const s of TEST_STARTS[st.n] ?? []) {
+        const b = el('button', 'place-row');
+        b.innerHTML = `<span class="place-name"></span><span class="place-meta"></span>`;
+        (b.querySelector('.place-name') as HTMLElement).textContent = `${s.n}. ${tk(s.key)}${s.sub ? ` (${tk(s.sub)})` : ''}`;
+        (b.querySelector('.place-meta') as HTMLElement).textContent = here === `${st.n}:${s.from}` ? t('places.here') : t('places.go');
+        b.addEventListener('click', () => {
+          const u = new URL(location.href);
+          for (const k of ['part', 'leg', 'beat', 'spawn', 'cam', 'at', 'area', 'msg', 'n']) u.searchParams.delete(k);
+          u.searchParams.set('debug', '');
+          u.searchParams.set('stage', String(st.n));
+          u.searchParams.set('from', String(s.from));
+          location.href = u.toString();
+        });
+        list.append(b);
+      }
+      if (!list.children.length) list.append(text('p', t('test.none'), 'muted'));
+      this.body.append(list);
+    }
   }
 
   // ---------- Profile ----------
@@ -804,5 +836,6 @@ const ICONS: Record<Item, string> = {
   map: svg('<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/>'),
   stats: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
   places: svg('<path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>'),
+  testing: svg('<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 14h9"/>'),
   controls: svg('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>'),
 };

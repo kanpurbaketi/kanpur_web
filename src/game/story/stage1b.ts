@@ -10,7 +10,7 @@ import { RhymeQuiz } from '../../ui/rhyme';
 import { Throwers } from '../../world/throwers';
 import type { StoryHooks } from './stage1';
 import { playSfx } from './sfx';
-import { sendGuards, stage1Part3 } from './stage1c';
+import { PART3_FROM, sendGuards, stage1Part3 } from './stage1c';
 
 /*
  Stage 1, part 2 (plans/09-stage1-part2.md): inside the mela, at the kavi sammelan. Built so far:
@@ -24,18 +24,26 @@ import { sendGuards, stage1Part3 } from './stage1c';
 
 const DOOR_R = 3;
 
-export async function stage1Part2(d: Director, ramu: Ramu, mela: Mela, hooks: StoryHooks): Promise<void> {
+/** `from`: the mission to start at (a test start); 6 and on are part 3's (see PART3_FROM) */
+export async function stage1Part2(d: Director, ramu: Ramu, mela: Mela, hooks: StoryHooks, from = 4): Promise<void> {
   theMela = mela;
+  if (from >= 6) return stage1Part3(d, ramu, mela, hooks, PART3_FROM[from] ?? 'start');
   const s = await mela.sammelan;
 
   // ---- mission 4: behind the stage ----
   const [dx, dz] = s.door;
-  await d.mission(4, 'm.s1.stage', [{ at: s.door, hint: 'm.s1.stage.h1', done: (x, z) => Math.hypot(x - dx, z - dz) < DOOR_R }]);
-  hooks.step(4);
+  if (from <= 4) {
+    await d.mission(4, 'm.s1.stage', [{ at: s.door, hint: 'm.s1.stage.h1', done: (x, z) => Math.hypot(x - dx, z - dz) < DOOR_R }]);
+    hooks.step(4);
+  } else {
+    ramu.standAt(dx, dz);
+    d.fastForward = true;                            // the scene at the door, skipped
+  }
 
   // ---- beats 1-2: the poets eat; Kumar's stomach; the lota; Kumar goes ----
   eating(s);
   const skipped = await lotaScene(d, ramu, s);
+  d.fastForward = false;
   void kumarGoes(d, s, skipped);
 
   // ---- mission 5: the empty seat ----

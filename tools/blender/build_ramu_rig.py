@@ -31,6 +31,7 @@ CHARS = {
     'kumar': ('kumar/kumar_rigged.fbx', 'kumar_rig.glb', 1.68, 1024),          # the young poet on the stage
     'anchor': ('anchor/anchor_rigged.fbx', 'anchor_rig.glb', 1.70, 1024),      # the kavi sammelan's anchor, at the mic
     'buddha': ('budda/buddha_rigged.fbx', 'buddha_rig.glb', 1.63, 1024),       # the old poet with the white beard
+    'anaya': ('anaya/anaya_rigged.fbx', 'anaya_rig.glb', 1.60, 1024),         # the girl with the candy floss on the well's gallery
 }
 CHAR = argv[argv.index('--char') + 1] if '--char' in argv else 'ramu'
 SRC, OUT_NAME, HEIGHT, TEX = CHARS[CHAR]
@@ -48,7 +49,7 @@ RAMU_ONLY = {'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling'}
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
 # to the uncle's rest orientations (the same T-pose, the same bone rolls) and that pose made their rest (to_tpose below).
-APOSE = {'kumar', 'anchor', 'buddha'}
+APOSE = {'kumar', 'anchor', 'buddha', 'anaya'}
 REF_REST = None
 bpy.ops.wm.read_factory_settings(use_empty=True)
 if CHAR in APOSE:
@@ -204,6 +205,7 @@ FACE = {
     'kumar': dict(eyes=[(200, 373), (368, 373)], ew=54, mouth=(290, 562), mw=118),
     'anchor': dict(eyes=[(222, 333), (365, 333)], ew=50, mouth=(300, 482), mw=110),
     'buddha': dict(eyes=[(220, 320), (365, 320)], ew=50, mouth=(302, 462), mw=100),
+    'anaya': dict(eyes=[(240, 318), (380, 318)], ew=54, mouth=(308, 445), mw=105),
 }
 
 

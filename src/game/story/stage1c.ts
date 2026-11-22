@@ -590,7 +590,7 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
   const girlAt = onWell(GIRL_A, rIn), meetAt = onWell(GIRL_A + 0.075, rIn);
   const rail = onWell(GIRL_A + 0.075, WELL_R + 0.22);
   const toWell = Math.atan2(-(KUAN.x - meetAt[0]), -(KUAN.z - meetAt[1]));
-  const girl = await extra(mela, 'girl', girlAt[0], girlAt[1], Math.atan2(-(meetAt[0] - girlAt[0]), -(meetAt[1] - girlAt[1])), 0.66);
+  const girl = await extra(mela, 'anaya', girlAt[0], girlAt[1], Math.atan2(-(meetAt[0] - girlAt[0]), -(meetAt[1] - girlAt[1])));
   girl.position.y = Y;
   girl.face.laughing = true;
   const floss = candyFloss(), held = new HandProp(floss, 'mic', 0.05);
@@ -607,9 +607,9 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
     ramu.standAt(LANDING[0], LANDING[1], Y);
     ramu.faceTowards(...girlAt);
     const [ix, iz] = fromWell(LANDING);
-    d.shot({ pos: v(LANDING[0] - ix * 0.2 + Math.sin(ramu.facing) * 1.6, Y + 1.8, LANDING[1] - iz * 0.2 + Math.cos(ramu.facing) * 1.6), look: at3(girlAt, Y + 0.8), fov: 42 }, 0);
+    d.shot({ pos: v(LANDING[0] - ix * 0.2 + Math.sin(ramu.facing) * 1.6, Y + 1.8, LANDING[1] - iz * 0.2 + Math.cos(ramu.facing) * 1.6), look: at3(girlAt, Y + 1.3), fov: 42 }, 0);
     await d.wait(0.9);
-    const on = { pos: overWell(GIRL_A - 0.05, Y + 1.2), look: at3(girlAt, Y + 0.75), fov: 30 };
+    const on = { pos: overWell(GIRL_A - 0.05, Y + 1.5), look: at3(girlAt, Y + 1.35), fov: 30 };
     d.shot(on, 0, d.pushIn(on, 0.08));
     await d.wait(1.2);
     d.shot(d.front(ramu, { dist: 1.5, side: 0.3, up: 0.05, drop: 0.12, fov: 38 }), 0);
@@ -625,7 +625,7 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
     ramu.sitAt(meetAt[0], Y, meetAt[1], Math.atan2(-(girlAt[0] - meetAt[0]), -(girlAt[1] - meetAt[1])), 'idle');
     girl.faceTowards(...meetAt);
     d.timeScale = 0.4;
-    const two = { pos: overWell(GIRL_A + 0.04, Y + 1.25), look: at3(onWell(GIRL_A + 0.04, rIn), Y + 0.8), fov: 34 };
+    const two = { pos: overWell(GIRL_A + 0.04, Y + 1.45), look: at3(onWell(GIRL_A + 0.04, rIn), Y + 1.2), fov: 34 };
     d.shot(two, 0, d.pushIn(two, 0.05));
     await d.wait(0.6);
     await d.say('girl', girl.face, 'khaoge');

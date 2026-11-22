@@ -579,19 +579,29 @@ async function flung(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<voi
 
 // ---- the gallery ----
 
-/** along the gallery's ring (not across the well) from angle a0 to a1 (going the shorter way), at `speed` */
-async function round(d: Director, p: Person, a0: number, a1: number, speed: number, lane = 0): Promise<void> {
+/**
+ along the gallery's ring (not across the well) from angle a0 to a1, at `speed`: the shorter way, or with `dir` (+1 / -1)
+ the way round the angle grows / falls. Running again (or `halt`) stops the run before.
+*/
+async function round(d: Director, p: Person, a0: number, a1: number, speed: number, lane = 0, dir = 0): Promise<void> {
+  const me = (runs.get(p) ?? 0) + 1;
+  runs.set(p, me);
+  const TAU = Math.PI * 2;
   let da = a1 - a0;
-  da = Math.atan2(Math.sin(da), Math.cos(da));
+  if (dir > 0) da = ((da % TAU) + TAU) % TAU;
+  else if (dir < 0) da = -((((-da) % TAU) + TAU) % TAU);
+  else da = Math.atan2(Math.sin(da), Math.cos(da));
   const n = Math.max(1, Math.ceil(Math.abs(da) / 0.15)), r = (GALLERY.r0 + GALLERY.r1) / 2 + lane;
   for (let i = 1; i <= n; i++) {
     const [x, z] = onWell(a0 + (da * i) / n, r);
     p.walkTo(x, z, speed);
     // near is enough: the others (or the crowd) may keep them off the very spot
-    await d.until(() => !p.walking || Math.hypot(p.position.x - x, p.position.z - z) < 0.35);
-    if (d.skipped || !d.locked) return;              // (the scene is over: they are put where it leaves them)
+    await d.until(() => runs.get(p) !== me || !p.walking || Math.hypot(p.position.x - x, p.position.z - z) < 0.35);
+    if (runs.get(p) !== me || d.skipped || !d.locked) return;   // (run again, or the scene is over: they are put where it leaves them)
   }
 }
+const runs = new WeakMap<Person, number>();
+const halt = (p: Person): void => { runs.set(p, (runs.get(p) ?? 0) + 1); };
 
 /** the well's centre, for directions */
 /** how high the floor is under (x, z) up at the well: the gallery, or the round stair winding up outside it */
@@ -605,8 +615,8 @@ const fromWell = (p: P2): P2 => { const dx = p[0] - KUAN.x, dz = p[1] - KUAN.z, 
 /**
  On the gallery: he sees Anaya at the rail with candy floss, right across the well, and goes round to her (the player's
  run); there the guards come up the stair across the well and see him; slow from then on: she holds the candy floss out
- and he takes it as they come round; he climbs the inner rail and jumps into the well:
- slow all the way down, the bikes and cars on the wall going round past him, between him and the camera; down on the
+ and he takes it; they come round at him from both sides; he gets up on the inner rail, his back to the well, facing
+ her; he sways, his foot slips and he goes over backward: slow all the way down, the bikes and cars on the wall going round past him, between him and the camera; down on the
  sand, the candy floss still in his hand. The stage is done.
 */
 async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<void> {
@@ -614,7 +624,13 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
   const Y = GALLERY.y - 0.01, rIn = GALLERY.r0 + 0.45;
   const GIRL_A = GALLERY.girl;
   const girlAt = onWell(GIRL_A, rIn), meetAt = onWell(GIRL_A + 0.075, rIn);
-  const rail = onWell(GIRL_A + 0.075, WELL_R + 0.22);
+  const RAIL_A = GIRL_A + 0.03, rail = onWell(RAIL_A, WELL_R + 0.22);   // where he goes up on the inner rail, beside her
+  const girlBack = onWell(GIRL_A - 0.02, GALLERY.r1 - 0.3);             // where she backs off to
+  const faceGirl = Math.atan2(-(girlBack[0] - rail[0]), -(girlBack[1] - rail[1]));
+  // the guards: 0 and 1 come round with the angle growing, 2 and 3 the other way; where each stops, close by him
+  const side = (i: number): number => (i < 2 ? 1 : -1);
+  const lane = (i: number): number => (i % 2 ? 0.35 : -0.3);
+  const closeTo = (i: number): number => RAIL_A + side(i) * (0.2 + (i % 2) * 0.08) + (side(i) < 0 ? -0.08 : 0);
   const toWell = Math.atan2(-(KUAN.x - meetAt[0]), -(KUAN.z - meetAt[1]));
   const girl = await extra(mela, 'anaya', girlAt[0], girlAt[1], Math.atan2(-(meetAt[0] - girlAt[0]), -(meetAt[1] - girlAt[1])));
   girl.position.y = Y;
@@ -662,7 +678,8 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
     g.gesture('angry_point', 'wr', 1.8);
     d.shot(d.front(g, { dist: 2.4, side: 0.6, up: 0.1, drop: 0.2, fov: 40 }), 0);
     await d.say('guard', g.face, 'wohraha');
-    c.guards.forEach((q, i) => { q.floor = null; void round(d, q, GALLERY.a1 + 0.05, GIRL_A + 0.2 + i * 0.05, 3.8, (i % 2 ? 0.35 : -0.3)); });
+    // they split: two round one way, two the other (the stair's top is right across from her: as far either way)
+    c.guards.forEach((q, i) => { q.floor = null; void round(d, q, GALLERY.a1 + 0.05, closeTo(i), 3.8, lane(i), side(i)); });
     // slow from here: she holds out the candy floss as they come round
     d.timeScale = 0.4;
     const two = { pos: overWell(GIRL_A + 0.04, Y + 1.45), look: at3(onWell(GIRL_A + 0.04, rIn), Y + 1.2), fov: 34 };
@@ -685,28 +702,66 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
     if (ramu.face) ramu.face.laughing = true;
     d.shot({ ...two, pos: overWell(GIRL_A + 0.04, Y + 1.3, 2.8), fov: 36 }, 0);
     await d.say('ramu', ramu.face, 'shrota');
-    await d.wait(0.3);
-    // onto the inner rail, facing the well
     if (ramu.face) ramu.face.laughing = false;
-    ramu.model.rotation.y = toWell;
-    d.shot({ pos: overWell(GIRL_A + 0.3, Y + 0.6, 3.5), look: at3(rail, Y + 1.6), fov: 46 }, 0);
-    await d.tween(0.5, (k) => ramu.position.set(meetAt[0] + (rail[0] - meetAt[0]) * k, Y + 1.1 * Math.sin(k * Math.PI / 2), meetAt[1] + (rail[1] - meetAt[1]) * k));
-    await d.wait(0.3);
-    // the jump: slow; the camera falls with him from inside the well, the show going round between
+
+    // ---- from both sides at once (the half-way round they ran while the two of them were on screen) ----
+    d.timeScale = 0.7;
+    c.guards.forEach((q, i) => {
+      const [x, z] = onWell(GIRL_A + side(i) * (0.48 + (i % 2) * 0.08), (GALLERY.r0 + GALLERY.r1) / 2 + lane(i));
+      q.place(x, z); q.position.y = Y;
+      void round(d, q, GIRL_A + side(i) * (0.48 + (i % 2) * 0.08), closeTo(i), 3.8, lane(i), -side(i));
+    });
+    girl.walkTo(...girlBack, 0.8);                   // she backs off from the rail, scared
+    // high, from outside, down onto the gallery: him in the middle, a pair coming round at him from each side
+    const wide = { pos: at3(onWell(RAIL_A, GALLERY.r1 + 6), Y + 8), look: at3(onWell(RAIL_A, rIn), Y + 0.6), fov: 50 };
+    d.shot(wide, 0, d.pushIn(wide, 0.05));
+    await d.wait(1.5);
+    // he looks one way, then the other: nowhere to go
+    d.shot(d.front(ramu, { dist: 1.6, side: 0.2, up: 0.05, drop: 0.12, fov: 40 }), 0);
+    for (const s of [1, -1]) {
+      const q = c.guards[s > 0 ? 0 : 2];
+      ramu.faceTowards(q.position.x, q.position.z);
+      await d.wait(0.55);
+    }
+    ramu.model.rotation.y = faceGirl;
+    await d.wait(0.25);
+
+    // ---- up onto the inner rail, his back to the well, facing her ----
+    const outside = { pos: at3(onWell(RAIL_A + 0.1, GALLERY.r1 + 1.4), Y + 2.0), look: at3(rail, Y + 1.85), fov: 46 };   // from out past her, the well behind him
+    d.shot(outside, 0);
+    const [sx, sz] = [ramu.position.x, ramu.position.z];
+    await d.tween(0.55, (k) => ramu.position.set(sx + (rail[0] - sx) * k, Y + 1.1 * Math.sin(k * Math.PI / 2), sz + (rail[1] - sz) * k));
+    c.guards.forEach((q) => q.faceTowards(...rail));
+    // he sways up there
+    ramu.model.rotation.order = 'YXZ';               // (pitch and roll about his own axes)
+    await d.tween(1.1, (k) => { ramu.model.rotation.z = 0.09 * Math.sin(k * Math.PI * 3) * (1 - k * 0.4); ramu.model.rotation.x = 0.05 * Math.sin(k * Math.PI * 2); });
+    // ---- his foot slips: slow, he goes over backward ----
     d.timeScale = 0.3;
+    girl.gesture('offer', 'reach', 2);               // her hand out after him, too late
+    const close = { pos: at3(onWell(RAIL_A + 0.05, GALLERY.r1 + 0.6), Y + 1.9), look: at3(rail, Y + 1.9), fov: 44 };
+    d.shot(close, 0, d.pushIn(close, 0.06));
+    ramu.gesture('fall', 1.3);
+    await d.tween(0.45, (k) => { ramu.model.rotation.z = 0.06 * (1 - k); ramu.model.rotation.x = 0.35 * k * k; });
+    ramu.stopGesture();
     ramu.holdClip('falling');
-    const fall = jumpIn(ramu, GIRL_A + 0.075);
+    // down, back first; the camera falls with him from inside the well, the show going round between
+    const fall = jumpIn(ramu, RAIL_A, true);
+    let turn = toWell - faceGirl;
+    turn = Math.atan2(Math.sin(turn), Math.cos(turn));
     await d.tween(fall.T, (k) => {
       fall.at(k);
+      // he twists round as he goes down, to land facing the middle (and the camera)
+      const e = Math.min(1, Math.max(0, (k - 0.15) / 0.5));
+      ramu.model.rotation.y = faceGirl + turn * e * e * (3 - 2 * e);
       const p = ramu.position, [ix, iz] = fromWell([p.x, p.z]);
       // in from him (toward the middle), a little round the ring, level with him
       d.shot({ pos: v(p.x - ix * 4.6 - iz * 1.3, p.y + 0.5, p.z - iz * 4.6 + ix * 1.3), look: v(p.x, p.y + 0.7, p.z), fov: 50 }, 0);
     });
     d.timeScale = 1;
-    ramu.model.rotation.x = 0;
+    ramu.model.rotation.set(0, ramu.model.rotation.y, 0);
     void playSfx('thud', 1);
     ramu.holdClip('idle');
-    ramu.model.rotation.y = toWell + Math.PI;    // the clip falls him backward: out from the wall, not into it
+    ramu.model.rotation.y = toWell;              // facing the middle: the clip throws him back toward the wall, with room to
     ramu.gesture('fall');
     const p = ramu.position, [ix, iz] = fromWell([p.x, p.z]);
     d.shot({ pos: v(p.x - ix * 1.6 - iz * 2.8, 1.1, p.z - iz * 1.6 + ix * 2.8), look: v(p.x - ix * 0.3, 0.3, p.z - iz * 0.3), fov: 46 }, 0);   // side on, along the wall
@@ -716,34 +771,39 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<v
   });
   // watched or skipped: down on the sand at the foot of the wall, the candy floss in his hand, the guards at the rail above
   d.timeScale = 1;
-  const end = jumpIn(ramu, GIRL_A + 0.075);
+  const end = jumpIn(ramu, RAIL_A, true);
   end.at(1);
-  ramu.model.rotation.x = 0;
+  ramu.model.rotation.set(0, 0, 0, 'XYZ');
   if (ramu.face) ramu.face.laughing = false;
   held.holder(ramu.model);
   ramu.stopGesture();
   ramu.standUp(ramu.position.x, ramu.position.z, 0.1);
   ramu.model.rotation.y = toWell;
   ramu.yaw = toWell;
-  c.guards.forEach((q, i) => { q.floor = null; q.idle(); const [x, z] = onWell(GIRL_A + 0.16 + i * 0.06, GALLERY.r0 + 0.4); q.place(x, z); q.position.y = Y; q.faceTowards(KUAN.x, KUAN.z); });
+  girl.idle();
+  girl.place(...girlBack);
+  girl.position.y = Y;
+  girl.faceTowards(KUAN.x, KUAN.z);
+  c.guards.forEach((q, i) => { halt(q); q.floor = null; q.idle(); const [x, z] = onWell(RAIL_A + side(i) * (0.12 + (i % 2) * 0.07), GALLERY.r0 + 0.4); q.place(x, z); q.position.y = Y; q.faceTowards(KUAN.x, KUAN.z); });
 }
 
 /**
- The leap from the inner rail at angle `a` into the well, as a path: off the rail a little up, then down the wall's
- face to the sand (`at(k)`, k 0..1 over T seconds). On the way down three of the show (two bikes and a car) are moved
+ The fall from the inner rail at angle `a` into the well, as a path: off the rail a little up (a leap; with `slip`,
+ barely, and over backward), then down the wall's face to the sand (`at(k)`, k 0..1 over T seconds). On the way down three of the show (two bikes and a car) are moved
  round the wall so each comes past him just as he is at its height: one under his feet, one over his head, one
  between them and the camera.
 */
-function jumpIn(ramu: Ramu, a: number): { T: number; at: (k: number) => void } {
-  const y0 = GALLERY.y + 1.1, vy = 1.6, g = 9.8, floor = 0.1;
+function jumpIn(ramu: Ramu, a: number, slip = false): { T: number; at: (k: number) => void } {
+  const y0 = GALLERY.y + 1.1, vy = slip ? 0.5 : 1.6, g = 9.8, floor = 0.1;
   const T = (vy + Math.sqrt(vy * vy + 2 * g * (y0 - floor))) / g;
-  const r0 = WELL_R + 0.22, r1 = WELL_R - 0.75;
+  const r0 = WELL_R + 0.22, r1 = WELL_R - (slip ? 1.9 : 0.75);
   const yAt = (t: number) => y0 + vy * t - 0.5 * g * t * t;
   const at = (k: number) => {
     const t = k * T, r = r0 + (r1 - r0) * Math.min(1, k * 2.5);
     const [x, z] = onWell(a, r);
     ramu.position.set(x, Math.max(floor, yAt(t)), z);
-    ramu.model.rotation.x = -0.35 * Math.sin(Math.min(1, k * 1.4) * Math.PI);
+    // the leap: head first, then upright; the slip: over on his back, coming round to upright near the sand
+    ramu.model.rotation.x = slip ? 0.35 + 0.75 * Math.sin(Math.min(1, k * 1.25) * Math.PI) - 0.35 * k : -0.35 * Math.sin(Math.min(1, k * 1.4) * Math.PI);
   };
   // when he is at a height (falling): the time
   const when = (y: number) => (vy + Math.sqrt(Math.max(0, vy * vy + 2 * g * (y0 - y)))) / g;

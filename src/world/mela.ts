@@ -17,8 +17,8 @@ import { buildInflatable } from './inflatable';
 import { buildMautKuan } from './mautKuan';
 import { MapData } from './types';
 
-/** a sitting clip's body set on a sofa cushion: how much to lift it and move it back (tuned by eye: scripts/stageshot.mjs) */
-const SIT_Y = 0, SIT_Z = -0.12;
+/** a sitting clip's body set on a sofa cushion: how much to lift it and move it forward (tuned by eye: the shins hang in front of the seat's frame, not through it) */
+const SIT_Y = 0, SIT_Z = 0.05;
 /** the top of the dari sheets under the audience, and of the mela's dirt and its packed aisle from the gate (Ramu stands on them) */
 const DARI_Y = 0.11, DIRT_Y = 0.05, AISLE_Y = 0.08;
 

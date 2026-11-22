@@ -19,8 +19,13 @@ const H = 13;                  // wall height (the gallery floor)
  -90 degrees in the mela, so a point (a, r) is at (x - sin a r, z + cos a r) in the world). The stair rises from its foot
  at a0 as the angle falls, to the landing at a1 (a0 - span); the last `land` of it is the landing, level with the gallery.
 */
-export const GALLERY = { y: H, r0: WELL_R + 0.05, r1: WELL_R + 1.8, stairR0: WELL_R + 1.9, stairR1: WELL_R + 3.9, a0: 2.356, span: 3.5, land: 0.17, a1: 2.356 - 3.5 };
-const YK = H / 8.2;            // the vehicles' heights on the wall were set for a wall 8.2 m high
+export const GALLERY = { y: H, r0: WELL_R + 0.05, r1: WELL_R + 1.8, stairR0: WELL_R + 1.9, stairR1: WELL_R + 3.9, a0: 2.356, span: 3.5, land: 0.17, a1: 2.356 - 3.5, girl: 2.356 - 3.5 - 0.6 };
+const YK = H / 8.2;
+/**
+ The story's hold on the show (stage 1, part 3: the bikes and cars come past Ramu as he falls): a turn added to each
+ vehicle round the wall, the show's clock as last seen, and the vehicles' rounds (angle a0 + w t, height (y0 + ...) yk).
+*/
+export const WELL_SHOW = { t: 0, shift: [0, 0, 0, 0, 0, 0], ride: [] as { a0: number; w: number; y0: number }[], yk: H / 8.2 };            // the vehicles' heights on the wall were set for a wall 8.2 m high
 const TAU = Math.PI * 2;
 
 const wallPoint = (a: number, r: number, y: number) => new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
@@ -255,6 +260,7 @@ export function buildMautKuan() {
   for (let i = 0; i < 112; i++) {
     const a = ((i + 0.5) / 112) * TAU + (rnd(i) - 0.5) * 0.03;
     if (inGap(a, 0.06)) continue;                     // the way in from the stair is kept clear
+    if (wrap(a - GALLERY.girl + 0.25) < 0.85) continue; // and the rail from there round to the little girl's spot (stage 1's end)
     if (rnd(i * 3 + 1) < 0.12) continue;
     const r = R + 0.55 + rnd(i * 5) * 0.35, p = wallPoint(a, r, H - 0.01);
     const kid = rnd(i * 9 + 2) < 0.12;
@@ -308,9 +314,11 @@ export function buildMautKuan() {
     return m;
   });
   const f = new THREE.Vector3(), n = new THREE.Vector3(), u = new THREE.Vector3(), r = new THREE.Vector3(), mm = new THREE.Matrix4();
+  WELL_SHOW.ride = vehicles;
   const place = (t: number) => {
+    WELL_SHOW.t = t;
     for (const v of vehicles) {
-      const a = v.a0 + v.w * t, y = (v.y0 + Math.sin(t * v.sp + v.ph) * v.amp) * YK;
+      const a = v.a0 + v.w * t + WELL_SHOW.shift[vehicles.indexOf(v)], y = (v.y0 + Math.sin(t * v.sp + v.ph) * v.amp) * YK;
       f.set(-Math.sin(a), 0, Math.cos(a));
       n.set(-Math.cos(a), 0, -Math.sin(a));
       u.copy(n).multiplyScalar(Math.cos(v.phi)).addScaledVector(new THREE.Vector3(0, 1, 0), Math.sin(v.phi)).normalize();

@@ -110,6 +110,9 @@ export class Ramu {
     return this.root.position;
   }
 
+  /** on his feet on something (not in the air) */
+  get onGround(): boolean { return this.grounded; }
+
   /** horizontal speed, m/s */
   get speed(): number {
     return Math.hypot(this.vel.x, this.vel.z);

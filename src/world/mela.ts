@@ -47,8 +47,19 @@ const boxRing = (hx: number, hz: number): [number, number][] => [[-hx, -hz], [hx
 const roundRing = (r: number, n = 24): [number, number][] => Array.from({ length: n }, (_, k) => [Math.cos((k / n) * Math.PI * 2) * r, Math.sin((k / n) * Math.PI * 2) * r] as [number, number]);
 const solid = (ring: [number, number][]) => ({ ring, h: 10 });
 
+/** The giant wheel's controls, for the story (stage 1, part 3: Ramu hangs from a cabin; the operator stops it dead) */
+export interface GiantWheel {
+  /** turning speed, rad/s (it turns at 0.22; 0: stopped) */
+  speed: number;
+  /** the cabins (each hangs from its pivot on the rim; its floor is 1.35 m below it) */
+  cabins: THREE.Group[];
+  /** the hub, world */
+  hub: THREE.Vector3;
+  R: number;
+}
+
 /** Giant wheel: legs, two rims with chasing bulbs, 16 hanging cabins that stay upright. Wheel plane = the z-y plane. */
-function giantWheel(): Ride {
+function giantWheel(ctl: GiantWheel): Ride {
   const R = 11, HUB = 13.2, N = 16, group = new THREE.Group();
   const frame = new Geo();
   for (const sx of [-1.7, 1.7]) {
@@ -124,10 +135,13 @@ function giantWheel(): Ride {
     wheel.add(g);
     cabins.push(g);
   }
+  ctl.cabins = cabins;
+  ctl.R = R;
+  ctl.hub.set(0, HUB, 0);
   return {
     group, post: [], rails: [solid(boxRing(2.5, 9.0))], light: [0, 4, 0, '#ffb060'],      // the footing: the low cabins swing down to it
     update: (t, dt) => {
-      wheel.rotation.x += dt * 0.22;
+      wheel.rotation.x += dt * ctl.speed;
       for (const c of cabins) c.rotation.x = -wheel.rotation.x;
     },
   };
@@ -463,8 +477,9 @@ export interface Sammelan {
   ticks: Set<(dt: number) => void>;
   /** just outside the sammelan's two gates (east, then north: two places at each) */
   gates: [number, number][];
-  /** security men at `spots` sent after Ramu (at px, pz) from anywhere, for good (the mela's crowd's fighting) */
-  spawnGuards: (n: number, spots: [number, number][], px: number, pz: number) => Promise<void>;
+  /** the way from (x, z) (anywhere in or about the sammelan) to the gap in front of the stage, about level with toZ, round
+   * the audience: in at a gate if outside the fence */
+  route: (x: number, z: number, toZ: number) => [number, number][];
 }
 
 /** somebody in the audience, and how they sit (their floor clip and its speed) */
@@ -481,12 +496,18 @@ export class Mela {
   /** collision rings for the boundary cloth (thin quads; none across the tear) */
   readonly walls: [number, number][][] = [];
   readonly crowd: Pedestrians;
+  /** the giant wheel, for the story */
+  readonly giant: GiantWheel = { speed: 0.22, cabins: [], hub: new THREE.Vector3(), R: 11 };
+  /** run every frame while the mela is near (the story's own: its chasing guards) */
+  readonly always = new Set<(dt: number) => void>();
   private rides: Ride[] = [];
   private t = 0;
 
   constructor(map: MapData, lights: LightPool | null, desktop: boolean) {
     this.buildGround();
-    this.addRide(giantWheel(), WHEEL.x, WHEEL.z, Math.PI / 2, lights);
+    this.addRide(giantWheel(this.giant), WHEEL.x, WHEEL.z, Math.PI / 2, lights);
+    this.giant.hub.x += WHEEL.x;
+    this.giant.hub.z += WHEEL.z;
     this.addRide(columbus(), COLUMBUS.x, COLUMBUS.z, 0, lights);
     this.addRide(chairSwing(), CHAIR_SWING.x, CHAIR_SWING.z, 0, lights);
     this.addRide(carousel(), CAROUSEL.x, CAROUSEL.z, 0, lights);
@@ -563,6 +584,7 @@ export class Mela {
     for (const r of this.rides) r.update(this.t, dt);
     grassWind(this.t);
     for (const o of this.operators) this.operate(o, dt, Math.hypot(fx - o.x, fz - o.z) < 90);
+    for (const f of this.always) f(dt);
     this.crowd.update(dt, fx, fz, dirX, dirZ, px, pz, py);
   }
 
@@ -846,7 +868,7 @@ export class Mela {
         centre: toW(cx, cz), props: this.props, quiet: this.quiet, group: this.group, audience: this.seated, ticks: this.ticks,
         gates: [[SAMMELAN.x1 + 1.6, SAMMELAN_GATES.east.z - 0.8], [SAMMELAN.x1 + 2.4, SAMMELAN_GATES.east.z + 0.8],
           [SAMMELAN_GATES.north.x - 0.7, SAMMELAN.z0 - 1.6], [SAMMELAN_GATES.north.x + 0.7, SAMMELAN.z0 - 2.4]] as [number, number][],
-        spawnGuards: (n: number, spots: [number, number][], px: number, pz: number) => this.crowd.spawnHunters(n, spots, px, pz, (x, z) => this.roundDari(x, z, pz)),
+        route: (x: number, z: number, toZ: number) => this.roundDari(x, z, toZ),
       };
     });
     this.sammelan.catch((e) => console.error('the sammelan failed to load', e));
@@ -1189,6 +1211,15 @@ export class Mela {
     }).catch((e) => console.error('operators failed to load', e));
   }
   private leverArms: (THREE.Object3D | null)[] = [];
+
+  /** the giant wheel's operator (by his lever), for the story; null until loaded */
+  get wheelMan(): Actor | null { return this.operators.find((o) => o.n === 0)?.a ?? null; }
+
+  /** the giant wheel's operator pulls his lever now (the arm goes over as his hand gets there, ~0.9 s) */
+  pullWheelLever(): void {
+    const o = this.operators.find((p) => p.n === 0);
+    if (o) { o.pull = 0; o.a.once('push_one', 'lever-story' + this.t.toFixed(2), 1, 0.2); }
+  }
 
   /** an operator's few seconds: waiting, now and then the push on the lever (the arm goes over as his hand gets there) */
   private operate(o: Mela['operators'][number], dt: number, near: boolean): void {

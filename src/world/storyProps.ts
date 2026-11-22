@@ -63,3 +63,36 @@ export function shoe(): THREE.Group {
   g.name = 'shoe';
   return g;
 }
+
+/** a fist-sized rock off the mela's ground: a lumpy grey-brown stone, its origin in its middle */
+export function rock(): THREE.Mesh {
+  const geo = new THREE.IcosahedronGeometry(0.075, 1);
+  const p = geo.getAttribute('position');
+  for (let i = 0; i < p.count; i++) {
+    const k = 0.8 + 0.4 * Math.abs(Math.sin(i * 12.9898) * 43758.5453 % 1);
+    p.setXYZ(i, p.getX(i) * k * 1.15, p.getY(i) * k * 0.8, p.getZ(i) * k);
+  }
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#7a7064', roughness: 0.95, flatShading: true }));
+  m.castShadow = true;
+  m.name = 'rock';
+  return m;
+}
+
+/** buddhi ke baal (candy floss) on a thin stick: a soft pink cloud, 30 cm across; its origin at the stick's foot, +y up */
+export function candyFloss(): THREE.Group {
+  const g = new THREE.Group();
+  const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.34, 6).translate(0, 0.17, 0), new THREE.MeshStandardMaterial({ color: '#efe6d2', roughness: 0.8 }));
+  const mat = new THREE.MeshStandardMaterial({ color: '#ff9cc8', roughness: 1, emissive: '#5a1f38', emissiveIntensity: 0.35, transparent: true, opacity: 0.93 });
+  // a cloud of puffs about the stick's top
+  for (let i = 0; i < 9; i++) {
+    const a = i * 2.4, r = i ? 0.06 + (i % 3) * 0.015 : 0;
+    const puff = new THREE.Mesh(new THREE.IcosahedronGeometry(i ? 0.07 + (i % 2) * 0.015 : 0.1, 2), mat);
+    puff.position.set(Math.cos(a) * r, 0.36 + (i % 4) * 0.025 - (i ? 0.02 : 0), Math.sin(a) * r);
+    g.add(puff);
+  }
+  g.add(stick);
+  g.traverse((o) => { o.castShadow = true; });
+  g.name = 'candyfloss';
+  return g;
+}

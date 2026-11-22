@@ -79,8 +79,9 @@ export class RhymeQuiz {
     this.draw();
     this.root.hidden = false;
     if (document.pointerLockElement) document.exitPointerLock();   // the mouse, to click a line
+    const p = new Promise<RhymeAnswer>((done) => { this.done = done; });
     this.tick();
-    return new Promise((done) => { this.done = done; });
+    return p;
   }
 
   private draw(): void {

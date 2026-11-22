@@ -21,7 +21,7 @@ import { CutCam, type Shot } from './cutcam';
  people end up, what is set) still happens. update(dt) runs every frame after Ramu's, while the game is not paused.
 */
 
-export type Who = 'ramu' | 'keeper' | 'guard' | 'kumar' | 'poet' | 'anchor' | 'audience';
+export type Who = 'ramu' | 'keeper' | 'guard' | 'kumar' | 'poet' | 'anchor' | 'audience' | 'customer' | 'girl' | 'operator';
 
 /** a value, or one worked out again every frame (a hint that changes as he gets closer, a search area that shrinks) */
 type Live<T> = T | (() => T);
@@ -59,6 +59,9 @@ export class Director {
   private v = new THREE.Vector3();
   private now: { n: number; textKey: string; steps: Waypoint[]; i: number } | null = null;
   private tweens: { t: number; secs: number; f: (k: number) => void; done: () => void }[] = [];
+  /** how fast the world's time goes (1: as it is; 0.3: slow motion). The game loop scales its step by it */
+  timeScale = 1;
+  private black: HTMLDivElement | null = null;
   /** an offer on the use key, while `when()` holds and no scene runs (`key`: its i18n line, with {key}; it may change as he moves) */
   prompt: { key: Live<string>; when: () => boolean; act: () => void } | null = null;
 
@@ -95,6 +98,18 @@ export class Director {
   tween(secs: number, f: (k: number) => void): Promise<void> {
     if (this.skipping || secs <= 0) { f(1); return Promise.resolve(); }
     return new Promise((done) => this.tweens.push({ t: 0, secs, f, done }));
+  }
+
+  /** the screen to black (1) or back (0) over `secs` */
+  async fade(to: number, secs: number): Promise<void> {
+    if (!this.black) {
+      const b = this.black = document.createElement('div');
+      b.style.cssText = 'position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:40';
+      document.body.append(b);
+    }
+    const b = this.black, from = parseFloat(b.style.opacity || '0');
+    if (this.skipping || secs <= 0) { b.style.opacity = String(to); return; }
+    await this.tween(secs, (k) => { b.style.opacity = String(from + (to - from) * k); });
   }
 
   /** the prompt's line just now (null: none), `key` the use key's label */

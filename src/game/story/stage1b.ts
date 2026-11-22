@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Ramu } from '../../player/ramu';
 import { foodMesh, type FoodName } from '../../world/foods';
 import { HandProp } from '../../world/handProp';
-import type { Sammelan } from '../../world/mela';
+import type { Mela, Sammelan } from '../../world/mela';
 import type { Person } from '../../world/person';
 import type { Director } from './director';
 import { tk } from '../../i18n';
@@ -10,6 +10,7 @@ import { RhymeQuiz } from '../../ui/rhyme';
 import { Throwers } from '../../world/throwers';
 import type { StoryHooks } from './stage1';
 import { playSfx } from './sfx';
+import { sendGuards, stage1Part3 } from './stage1c';
 
 /*
  Stage 1, part 2 (plans/09-stage1-part2.md): inside the mela, at the kavi sammelan. Built so far:
@@ -23,8 +24,9 @@ import { playSfx } from './sfx';
 
 const DOOR_R = 3;
 
-export async function stage1Part2(d: Director, ramu: Ramu, mela: Promise<Sammelan>, hooks: StoryHooks): Promise<void> {
-  const s = await mela;
+export async function stage1Part2(d: Director, ramu: Ramu, mela: Mela, hooks: StoryHooks): Promise<void> {
+  theMela = mela;
+  const s = await mela.sammelan;
 
   // ---- mission 4: behind the stage ----
   const [dx, dz] = s.door;
@@ -53,11 +55,12 @@ export async function stage1Part2(d: Director, ramu: Ramu, mela: Promise<Sammela
 
   // ---- beats 8-10: found out; everyone up; "pakdo!"; the guards; run ----
   foundOut(ramu, s, throwers);
-  hooks.step(6);
-  hooks.done('story.s1.part2');
-  // (part 3 takes it from here: until then the guards just keep after him)
-  await d.mission(6, 'm.s1.run', [{ at: null, hint: 'm.s1.run.h1', done: () => false }]);
+  hooks.note('story.s1.part2');
+  // ---- part 3 (stage1c.ts): the chase across the mela ----
+  await stage1Part3(d, ramu, mela, hooks);
 }
+
+let theMela: Mela | null = null;
 
 /** the couplets (quiz.s1.<n> in i18n): which second line is the right one; the last is rigged */
 const QUIZ = [{ n: 1, right: 1, rigged: false }, { n: 2, right: 0, rigged: false }, { n: 3, right: 3, rigged: true }];
@@ -178,11 +181,9 @@ async function kumarBack(d: Director, ramu: Ramu, s: Sammelan, throwers: Thrower
   await d.wait(2.2);
 }
 
-let guardsSent = false;
+/** the four guards from the sammelan's gates, after him (stage1c.ts: the chase) */
 function guards(ramu: Ramu, s: Sammelan): Promise<void> {
-  if (guardsSent) return Promise.resolve();
-  guardsSent = true;
-  return s.spawnGuards(4, s.gates, ramu.position.x, ramu.position.z).catch((e) => console.error('guards failed', e));
+  return theMela ? sendGuards(theMela, s, ramu).catch((e) => console.error('guards failed', e)) : Promise.resolve();
 }
 
 let stood = false;

@@ -17,6 +17,9 @@ export class Person {
   /** a looping clip held while not walking or gesturing (sitting in a chair, eating): null stands */
   pose: string | null = null;
   private poseScale = 1;
+  /** moved by somebody else (the story's chase sets where they are): the pace their walk or run is played at; null: on
+   * their own */
+  driven: number | null = null;
   /** the ground under them while walking (the stage, its stairs): null keeps their height */
   floor: ((x: number, z: number) => number) | null = null;
 
@@ -35,6 +38,8 @@ export class Person {
   get visible(): boolean { return this.actor.root.visible; }
   set visible(v: boolean) { this.actor.root.visible = v; }
   get walking(): boolean { return this.goal !== null; }
+  /** a gesture is playing */
+  get busy(): boolean { return this.gestureT > 0; }
 
   headPosition(out: THREE.Vector3): boolean {
     if (!this.head) return false;
@@ -84,7 +89,8 @@ export class Person {
 
   update(dt: number): void {
     const p = this.position;
-    if (this.goal) {
+    if (this.driven !== null && this.gestureT <= 0) this.actor.move(this.driven);
+    else if (this.goal) {
       const dx = this.goal.x - p.x, dz = this.goal.y - p.z, d = Math.hypot(dx, dz);
       if (d < 0.04) { this.goal = null; this.actor.move(0); }
       else {
@@ -96,7 +102,7 @@ export class Person {
         this.actor.move(d < 0.15 ? 0.6 : this.speed);
       }
     } else if (this.gestureT > 0) {
-      if ((this.gestureT -= dt) <= 0) this.actor.play(this.pose ?? 'idle', this.pose ? this.poseScale : 1);
+      if ((this.gestureT -= dt) <= 0 && this.driven === null) this.actor.play(this.pose ?? 'idle', this.pose ? this.poseScale : 1);
     } else if (this.pose) this.actor.play(this.pose, this.poseScale);
     else this.actor.move(0);
     if (this.turnTo !== null) {

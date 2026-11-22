@@ -70,8 +70,6 @@ interface Ped {
   ox: number; oz: number; hold: number; bump: number;   // step back when brushed against: offset from their line, pause, time before the next
   linger: number;     // chance of stopping for a while at a junction
   actor: Actor;       // the rigged model
-  hunter?: boolean;   // sent after the player by the story: from anywhere, for good, up a step or a stage too
-  via?: [number, number][];   // ... by way of these first (round the audience on the dari), then straight at him
 }
 
 /** how the rigged kinds carry themselves: walking speed (m/s, from .. to) and how often they stop and stand */
@@ -179,34 +177,6 @@ export class Pedestrians {
     } catch (e) {
       console.error('crowd failed to load', e);
     }
-  }
-
-  /**
-   * The story's guards (stage 1, part 2): `n` security men at `spots` (one each, round again if fewer), after the player
-   * from anywhere and for good (as a grudge that never runs out), however high he stands. They join the crowd's active
-   * people (the crowd grows by them).
-   */
-  async spawnHunters(n: number, spots: [number, number][], px: number, pz: number, via?: (x: number, z: number) => [number, number][]): Promise<void> {
-    const made = await makeActors('security', n);
-    const fresh = made.map((actor, i) => {
-      this.group.add(actor.root);
-      const p = this.makePerson('security', actor);
-      const [x, z] = spots[i % spots.length];
-      p.x = x; p.z = z; p.y = 0.05; p.fresh = false;
-      p.heading = Math.atan2(-(px - x), -(pz - z));
-      p.grudge = Infinity; p.hunter = true; p.moving = 1; p.via = via?.(x, z);
-      this.snapToGraph(p);
-      return p;
-    });
-    this.peds.splice(this.active, 0, ...fresh);                 // among the active ones (everybody after them moves up)
-    this.rigged = this.peds.map((_, i) => i);
-    this.active += n;
-    this.want += n;
-  }
-
-  /** where the story's guards are */
-  hunters(): { x: number; z: number }[] {
-    return this.peds.slice(0, this.active).filter((p) => p.hunter).map((p) => ({ x: p.x, z: p.z }));
   }
 
   /** Street network: one node per distinct road vertex, links along the roads. */
@@ -644,26 +614,13 @@ export class Pedestrians {
       return true;
     }
     const dx = px - p.x, dz = pz - p.z, d = Math.hypot(dx, dz);
-    const range = p.hunter ? Infinity : p.grudge > 0 ? GRUDGE_RANGE : p.angry > 0 ? (p.hostile ? AGGRO : ANGRY_RANGE) : p.hostile && this.hunt ? this.huntRange : 0;
-    if (!(d < range) || Math.abs(py - p.y) > (p.hunter ? 1.6 : 1.0)) {   // nobody to chase (or he is out of reach, up on the gallery)
+    const range = p.grudge > 0 ? GRUDGE_RANGE : p.angry > 0 ? (p.hostile ? AGGRO : ANGRY_RANGE) : p.hostile && this.hunt ? this.huntRange : 0;
+    if (!(d < range) || Math.abs(py - p.y) > 1.0) {   // nobody to chase (or he is out of reach, up on the gallery)
       if (p.mode) { p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; this.snapToGraph(p); }
       return false;
     }
     p.mode = 1;
     p.guard = 1;
-    // a story guard on his way round: to the next place on it, running
-    if (p.via?.length) {
-      const [vx, vz] = p.via[0], wx = vx - p.x, wz = vz - p.z, wd = Math.hypot(wx, wz);
-      if (wd < 0.9) p.via.shift();
-      else {
-        p.heading += Math.atan2(Math.sin(Math.atan2(-wx, -wz) - p.heading), Math.cos(Math.atan2(-wx, -wz) - p.heading)) * Math.min(1, dt * 9);
-        let nx = p.x + (wx / wd) * CHASE * dt, nz = p.z + (wz / wd) * CHASE * dt;
-        if (this.resolve) [nx, nz] = this.resolve(nx, nz);
-        p.x = nx; p.z = nz; p.y = 0.05;
-        p.moving += (1 - p.moving) * Math.min(1, dt * 8);
-        return true;
-      }
-    }
     const want = Math.atan2(-dx, -dz);
     p.heading += Math.atan2(Math.sin(want - p.heading), Math.cos(want - p.heading)) * Math.min(1, dt * 9);
     if (p.atkKind) {
@@ -682,17 +639,6 @@ export class Pedestrians {
       const s = Math.min((p.hostile || p.grudge > 0 ? CHASE : ANGRY_CHASE) * dt, d - 1.0);
       let nx = p.x + (dx / d) * s, nz = p.z + (dz / d) * s;
       if (this.resolve) [nx, nz] = this.resolve(nx, nz);
-      // the story's guards go round what is in the way (people standing about): the straight step if it gets them on,
-      // else whichever of a few turned ones gets them furthest toward him
-      if (p.hunter && this.resolve && ((nx - p.x) * dx + (nz - p.z) * dz) / d < s * 0.5) {
-        let best = ((nx - p.x) * dx + (nz - p.z) * dz) / d;
-        for (const turn of [0.7, -0.7, 1.3, -1.3]) {
-          const c = Math.cos(turn), sn = Math.sin(turn), ux = (dx * c - dz * sn) / d, uz = (dx * sn + dz * c) / d;
-          const [tx, tz] = this.resolve(p.x + ux * s, p.z + uz * s);
-          const got = ((tx - p.x) * dx + (tz - p.z) * dz) / d;
-          if (got > best + 1e-4) { best = got; nx = tx; nz = tz; }
-        }
-      }
       p.x = nx; p.z = nz; p.y = 0.05;
       p.moving += (1 - p.moving) * Math.min(1, dt * 8);
       return true;

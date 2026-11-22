@@ -41,7 +41,9 @@ BODY_LIFT = 0.92       # <1 lightens everything a little
 ANIMS = os.path.join(ROOT, 'assets', 'anims')   # Mixamo FBX clips, shared by every character (see import_mixamo_clips)
 KEEP_ROOT = {'fall', 'fall2', 'get_up'}
 # clips in the folder that nothing plays yet (every clip baked goes into every character's file): left out until used
-UNUSED = {'falling', 'gunplay', 'sweep fall'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
+UNUSED = {'gunplay', 'sweep fall'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
+# clips only Ramu plays (stage 1, part 3: hanging from the giant wheel, flying off it, the leap from the well): not baked into the others
+RAMU_ONLY = {'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling'}
 
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
@@ -611,6 +613,8 @@ CLIP_RULES = (
     # on the floor (the kavi sammelan's audience on the dari): "Sitting Idle" is not the standing idle
     (('sitting', 'idle'), 'floor_idle'), (('sitting', 'pose1'), 'floor_cross'), (('sitting', 'pose'), 'floor_knees'),
     # the show-offs on the cars in the maut ka kuan
+    # Ramu on the giant wheel (stage 1, part 3); "Hanging Idle" is not the standing idle
+    (('hanging', 'idle'), 'hang_idle'), (('stand', 'freehang'), 'hang_start'), (('braced', 'free'), 'hang_braced'), (('braced', 'drop'), 'hang_drop'),
     (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
     (('throw',), 'throw'),                          # the audience pelting a bad poet
     (('stomach',), 'stomach_hit'),
@@ -620,7 +624,7 @@ CLIP_RULES = (
     (('block',), 'block'),
     (('getting up',), 'get_up'), (('get up',), 'get_up'), (('stand up',), 'get_up'),
     (('forward', 'death'), 'fall2'), (('falling forward',), 'fall2'),
-    (('knocked',), 'fall'), (('death',), 'fall'), (('dying',), 'fall'), (('falling',), 'fall'),
+    (('knocked',), 'fall'), (('death',), 'fall'), (('dying',), 'fall'), (('falling',), 'falling'),
     (('taking punch',), 'hit'), (('hit to body',), 'hit2'), (('body hit',), 'hit2'), (('reaction',), 'hit'), (('hit',), 'hit'),
     (('kick',), 'kick'), (('punch',), 'punch'), (('jump',), 'jump'), (('run',), 'run'), (('walk',), 'walk'),
     (('looking around',), 'look_around'), (('arguing',), 'argue'), (('phone',), 'phone'),
@@ -648,6 +652,8 @@ def import_mixamo_clips():
     sc = bpy.context.scene
     for f in files:
         name = clip_name(os.path.splitext(os.path.basename(f))[0])
+        if name in RAMU_ONLY and CHAR != 'ramu':
+            continue
         before = set(bpy.data.objects)
         bpy.ops.import_scene.fbx(filepath=f)
         new = set(bpy.data.objects) - before

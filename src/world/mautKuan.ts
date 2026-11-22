@@ -14,6 +14,12 @@ import { Actor, makeActors, RigName } from './actors';
 
 export const WELL_R = 12.0;    // inner radius of the drum
 const H = 13;                  // wall height (the gallery floor)
+/**
+ The gallery and the round stair, for the story (the well's own frame: angle a from +x toward +z; the well is turned
+ -90 degrees in the mela, so a point (a, r) is at (x - sin a r, z + cos a r) in the world). The stair rises from its foot
+ at a0 as the angle falls, to the landing at a1 (a0 - span); the last `land` of it is the landing, level with the gallery.
+*/
+export const GALLERY = { y: H, r0: WELL_R + 0.05, r1: WELL_R + 1.8, stairR0: WELL_R + 1.9, stairR1: WELL_R + 3.9, a0: 2.356, span: 3.5, land: 0.17, a1: 2.356 - 3.5 };
 const YK = H / 8.2;            // the vehicles' heights on the wall were set for a wall 8.2 m high
 const TAU = Math.PI * 2;
 

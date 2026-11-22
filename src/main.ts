@@ -36,6 +36,7 @@ import { goFree, introCard, loadingFailed, loadingScreen, toast, UserChip } from
 import { Director } from './game/story/director';
 import { stage1, STAGE1_STEPS } from './game/story/stage1';
 import { stage1Part2 } from './game/story/stage1b';
+import { type Part3From, stage1Part3 } from './game/story/stage1c';
 import { CartKeepers } from './world/cartKeepers';
 import { GateQueue } from './world/gateQueue';
 import { CityAmbience } from './game/ambience';
@@ -204,7 +205,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
     spawn = project(map, lat, lon);
   }
   // a stage starts where it starts (stage 1: the chowk); roaming free, where menu → Places says (the chowk unless changed)
-  const part2 = import.meta.env.DEV && params.has('debug') && params.get('part') === '2';   // test scripts: stage 1's part 2
+  const part2 = import.meta.env.DEV && params.has('debug') && ['2', '3'].includes(params.get('part') ?? '');   // test scripts: stage 1's parts 2, 3
   const spawnMode = play ? (part2 ? 'inside' : 'shivaji') : params.get('spawn') ?? (map.area === 'moti_jheel' ? startChoice() : null);
   if (spawnMode === 'shivaji') spawn = SHIVAJI_START;   // by the statue, the Shivaji Putla gate ahead (the real start of stage 1)
   if (spawnMode === 'mela') spawn = [TEAR.x - 3.5, TEAR.z]; // in the alley outside the torn place in the cloth wall
@@ -435,7 +436,7 @@ void main() {
   const clock = new THREE.Clock();
   let frames = 0, acc = 0;
   renderer.setAnimationLoop(() => {
-    const dt = Math.min(0.05, clock.getDelta());
+    const dt = Math.min(0.05, clock.getDelta()) * (director?.timeScale ?? 1);   // (a scene's slow motion)
     if (!fixed && ramu.punches !== punchesSeen) {
       punchesSeen = ramu.punches;
       const t = punchTarget();
@@ -530,10 +531,14 @@ void main() {
       const hooks = {
         step: (n: number) => { step = n; if (play.run !== null) account.runBeat(play.run, run.played, runStats()); },
         done: finish,
+        note: (key: string) => toast(tk(key), 5),
       };
-      // test scripts: ?debug&stage=1&part=2 starts at part 2, just inside the tear
-      if (import.meta.env.DEV && params.has('debug') && params.get('part') === '2' && mela) void stage1Part2(director, ramu, mela.sammelan, hooks);
-      else void stage1(director, ramu, keepers, queue!, mela?.sammelan ?? null, hooks);
+      // test scripts: ?debug&stage=1&part=2 starts at part 2, just inside the tear; &part=3 at part 3 (&leg=wheel: at the
+      // main aisle, for the giant wheel; &leg=kuan: out of the bouncy castle, for the well)
+      const part = import.meta.env.DEV && params.has('debug') && mela ? params.get('part') : null;
+      if (part === '2') void stage1Part2(director, ramu, mela!, hooks);
+      else if (part === '3') void stage1Part3(director, ramu, mela!, hooks, (params.get('leg') as Part3From | null) ?? 'start');
+      else void stage1(director, ramu, keepers, queue!, mela, hooks);
     },
   };
 }

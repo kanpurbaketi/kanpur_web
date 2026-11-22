@@ -15,6 +15,14 @@ const CRUMB = 0.6, CATCH = 0.95;
 
 interface Guard { p: Person; via: [number, number][]; k: number; pace: number; off: number }
 
+/** the four of them, each his own man: the bearded one as built; tall and dark; no beard, a little shorter; thin, a grey beard */
+const GUARD_BUILDS = [
+  { look: '', tall: 1, wide: 1 },
+  { look: 'security_b', tall: 1.1, wide: 1.02 },
+  { look: 'security_c', tall: 0.96, wide: 1.04 },
+  { look: 'security_d', tall: 1.03, wide: 0.8 },
+];
+
 export class Chase {
   readonly guards: Person[] = [];
   /** chasing (false: standing where the story puts them) */
@@ -33,8 +41,10 @@ export class Chase {
 
   /** `n` guards at `spots` (one each), facing (px, pz); each goes `via` first, when the chase is on */
   async spawn(n: number, spots: [number, number][], px: number, pz: number, via?: (x: number, z: number) => [number, number][]): Promise<void> {
-    const made = await makeActors('security', n);
+    const made = await makeActors('security', n, false, GUARD_BUILDS.map((b) => b.look));
     made.forEach((a, i) => {
+      const b = GUARD_BUILDS[i % GUARD_BUILDS.length];
+      a.shape(b.tall, b.wide);
       const [x, z] = spots[i % spots.length];
       const p = new Person(a, x, 0.05, z, Math.atan2(-(px - x), -(pz - z)));
       this.parent.add(a.root);

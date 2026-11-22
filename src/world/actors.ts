@@ -34,7 +34,7 @@ const RIGS: Record<RigName, { file: string; height: number; step?: number }> = {
 /** the looks of each kind: '' is the model as built, the rest are textures in models/looks/<name>.jpg (.webp when built) */
 const LOOKS: Record<RigName, string[]> = {
   uncle: ['', 'uncle_b', 'uncle_c', 'uncle_d', 'uncle_e', 'uncle_f', 'uncle_g', 'uncle_h'],
-  security: [''],                  // the guard keeps his blue uniform
+  security: ['', 'security_b', 'security_c', 'security_d'],   // the uniform stays: dark skinned; no beard; a grey beard
   goon: ['goon_a', 'goon_b'],
   girl: ['', 'college_girl_b', 'college_girl_c', 'college_girl_d', 'college_girl_e', 'college_girl_f', 'college_girl_g', 'college_girl_h', 'college_girl_i', 'college_girl_j'],
   boy: ['', 'college_boy_b', 'college_boy_c', 'college_boy_d', 'college_boy_e', 'college_boy_f', 'college_boy_g', 'college_boy_h', 'college_boy_i', 'college_boy_j'],
@@ -179,6 +179,12 @@ export class Actor {
     this.mixer.update(Math.random() * 3);        // not everyone breathing in step
   }
 
+  /** a build of their own: `tall` scales the height, `wide` the breadth (0.85: thin); the stride follows the legs */
+  shape(tall: number, wide: number): void {
+    this.root.children[0].scale.set(wide, tall, wide);
+    this.stride *= tall;
+  }
+
   /** Crossfade to a looping clip and set its playback speed. */
   play(name: string, timeScale = 1, fade = 0.25): void {
     if (!this.actions[name]) name = 'idle';
@@ -267,9 +273,10 @@ function loadLite(name: RigName): Promise<Source> {
  * `n` people of one kind (clones of one loaded model), each with the next of that kind's looks. `lite`: the light body
  * (for many at once, seldom seen close: the kavi sammelan's audience).
  */
-export async function makeActors(name: RigName, n: number, lite = false): Promise<Actor[]> {
+export async function makeActors(name: RigName, n: number, lite = false, pick?: string[]): Promise<Actor[]> {
   const src = await (lite ? loadLite(name) : load(name));
   const looks = LOOKS[name];
-  const mats = await Promise.all(Array.from({ length: n }, () => lookMaterial(looks[nextLook[name]++ % looks.length], src.material)));
+  // `pick`: these looks, in order (the story's own people, who must each look different)
+  const mats = await Promise.all(Array.from({ length: n }, (_, i) => lookMaterial(pick ? pick[i % pick.length] : looks[nextLook[name]++ % looks.length], src.material)));
   return mats.map((m) => new Actor(name, src, m));
 }

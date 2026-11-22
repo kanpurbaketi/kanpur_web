@@ -1,6 +1,6 @@
 """
 More people from the ones we have: each rigged character (uncle, college_girl, college_boy, aunty) gets a few "looks" that reuse its mesh,
-skeleton and clips and differ only in the texture: no moustache, a beard, darker skin, grey hair, other clothes. The security guard has no looks: he keeps his blue uniform.
+skeleton and clips and differ only in the texture: no moustache, a beard, darker skin, grey hair, other clothes. The security guard keeps his blue uniform; his looks change his face.
 Output: public/models/looks/<look>.jpg, picked up by src/world/actors.ts (LOOKS there lists the same names).
 
   tools/triposr/.venv/bin/python tools/people/make_variants.py [--preview DIR] [--only NAME]
@@ -339,6 +339,40 @@ def aunty():
     return p, looks
 
 
+# ---- the security guard: a peaked cap, a full black beard, a pale blue uniform ------------------------------------
+def security():
+    """The four guards of stage 1's chase must not be one man four times: the uniform stays, the face changes (with
+    actors.ts making one taller and one thinner)."""
+    p = Painter('security', dict(hair_from=0.12, eyes=0.146, nose=0.183, lips=0.219, lip_w=0.032, lip_h=0.010, neck=0.30))
+    ax = np.abs(p.x)
+    dark = ramp(p.lum, 0.30, 0.20) * ramp(p.warm, 0.12, 0.06)              # the beard: near black, not warm like skin
+    lips = (p.x / 0.024) ** 2 + ((p.d - 0.221) / 0.0075) ** 2
+    # under the nose to below the jaw, out to the sideburns (which climb to the cap)
+    face = p.b.on * (p.z > -0.07) * ramp(ax, 0.12, 0.105) * ramp(p.d, 0.125, 0.135) * ramp(p.d, 0.345, 0.33)
+    upper = ramp(p.d, 0.188, 0.196) + ramp(ax, 0.052, 0.062) * ramp(p.d, 0.13, 0.14)      # below the nose in the middle; the cheeks' sides higher up
+    beard_all = face * np.clip(upper, 0, 1) * dark * ramp(lips, 0.7, 1.0)
+    moustache = beard_all * ramp(p.d, 0.214, 0.206) * ramp(ax, 0.056, 0.046)
+    chin = np.clip(beard_all - moustache, 0, 1)
+    looks = [('security', np.asarray(p.b.image))]
+
+    o = p.src.copy()                    # dark skinned (the tall one)
+    p.tan(o, 0.60)
+    looks.append(('security_b', p.save(o, 'security_b')))
+
+    o = p.src.copy()                    # no beard: a moustache only
+    p.shave(o, chin, bright=0.30)
+    stubble = (chin * (0.10 + 0.10 * p.grain))[..., None]           # a shaven chin is a little blue-grey, not bare pink
+    o += (col(70, 62, 60) - o) * stubble
+    p.tan(o, 0.92)
+    looks.append(('security_c', p.save(o, 'security_c')))
+
+    o = p.src.copy()                    # the older one (the thin one): a beard gone grey, fairer
+    p.grey(o, 1.0, beard_all * (0.55 + 0.45 * (p.grain > 0.35)))     # salt and pepper
+    p.tan(o, 1.05)
+    looks.append(('security_d', p.save(o, 'security_d')))
+    return p, looks
+
+
 def burqa():
     """The aunty's body in a burqa: dark cloth over everything, her head too, but an eye slit and her hands; the cloth's
     folds kept, softly (her face and sari are not cloth-shaded alike, so only a little of the old shading is used)."""
@@ -372,7 +406,7 @@ def burqa():
     return p, looks
 
 
-for make in (uncle, college_girl, college_boy, aunty, burqa):
+for make in (uncle, college_girl, college_boy, aunty, burqa, security):
     if ONLY and make.__name__ != ONLY:
         continue
     p, looks = make()

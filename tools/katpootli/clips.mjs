@@ -17,15 +17,39 @@ const SEAT = M(legs(85, 85, 85, 85, 6));
 const WHEEL = M(body(-4, 0, -4), arms(26, 60, 58));
 
 const C = {
-  // ---- Ramu at a car's door lock: bent to it, hands at work (the game's IK puts them on the lock), weight shifting, a glance round
-  pick_lock: { len: 4, keys: [
-    [0, M(STAND, body(14, 10, 24), arms(22, 52, 82), legs(12, 16, -3, 6, 6))],
-    [1.0, M(body(16, 11, 26, -4), legs(14, 20, -4, 6, 6))],
-    [1.9, M(body(13, 9, 22, 3), legs(10, 14, -2, 8, 6))],
-    [2.4, M(body(10, 8, 6, 48))],          // a look over the shoulder
-    [2.9, M(body(10, 8, 6, 52))],
-    [3.3, M(body(14, 10, 24, 0))],
-    [4, M(body(14, 10, 24), legs(12, 16, -3, 6, 6))]] },
+  // ---- a car's lock, in four parts (the game plays them in turn and puts the hands on the lock, with the tools in them)
+  // first a try of the door: a hand to the handle, a tug, a second harder one, let go, a look at it
+  pick_try: { len: 1.4, keys: [
+    [0, STAND],
+    [0.35, M(body(6, 4, 14), ra(20, 62, 38), { rightHand: { bend: 20 } }, legs(4, 6, 0, 2, 5))],
+    [0.55, M(body(-2, 0, 12, 0, -3), ra(18, 48, 62), legs(-2, 2, 6, 10, 5))],
+    [0.75, M(body(4, 3, 14), ra(20, 60, 42))],
+    [0.92, M(body(-4, -1, 10, 0, -4), ra(18, 44, 68), legs(-4, 2, 8, 12, 5))],
+    [1.15, M(body(4, 2, 18, -6), ra(14, 30, 40), { rightHand: { bend: 0 } }, legs(2, 4, 0, 2, 5))],
+    [1.4, M(body(6, 3, 16, 0), ra(12, 14, 24), legs(2, 4, 0, 2, 5))]] },
+  // the tools out of the bag at his left hip, a look at them at the chest, bent down to the lock and in
+  pick_start: { len: 1.3, keys: [
+    [0, M(STAND, body(6, 3, 16, 0), ra(12, 14, 24), legs(2, 4, 0, 2, 5))],
+    [0.35, M(body(6, 3, 26, 14), { chest: { turn: 16 } }, ra(6, 20, 48), { rightHand: { bend: 30 } })],
+    [0.7, M(body(8, 6, 30, 0), { chest: { turn: 0 } }, ra(14, 24, 96), la(14, 24, 92), { rightHand: { bend: 0 } }, legs(6, 10, 0, 4, 6))],
+    [1.0, M(body(14, 10, 26), arms(22, 52, 86), legs(12, 18, -3, 8, 6))],
+    [1.3, M(body(16, 11, 26), arms(22, 52, 82), legs(14, 20, -3, 8, 6))]] },
+  // at it (the loop): bent close, still from the waist up, weight shifting now and then, a pause and a quick look round
+  pick_lock: { len: 3.2, keys: [
+    [0, M(STAND, body(16, 11, 26), arms(22, 52, 82), legs(14, 20, -3, 8, 6))],
+    [0.9, M(body(17, 11, 28, -3), legs(15, 22, -4, 8, 6))],
+    [1.6, M(body(15, 10, 24, 2, 2), legs(12, 18, -2, 10, 6))],
+    [2.0, M(body(13, 9, 10, 40))],          // a quick look over the shoulder
+    [2.3, M(body(13, 9, 10, 44))],
+    [2.6, M(body(16, 11, 26, 0, 0))],
+    [3.2, M(body(16, 11, 26), legs(14, 20, -3, 8, 6))]] },
+  // open: the turn, the tools out and back in the bag, up straight, a hand out to the handle
+  pick_open: { len: 1.1, keys: [
+    [0, M(STAND, body(16, 11, 26), arms(22, 52, 82), legs(14, 20, -3, 8, 6))],
+    [0.25, M(body(14, 10, 22, 0, -3), { rightHand: { turn: -25 } })],
+    [0.5, M(body(8, 5, 20), ra(14, 24, 92), la(14, 20, 60), { rightHand: { turn: 0 } }, legs(6, 10, 0, 4, 6))],
+    [0.75, M(body(5, 3, 24, 12), { chest: { turn: 14 } }, ra(6, 20, 48), { rightHand: { bend: 30 } }, la(10, 8, 18))],
+    [1.1, M(body(6, 4, 12), { chest: { turn: 0 } }, ra(20, 62, 38), { rightHand: { bend: 20 } }, la(10, 6, 14), legs(4, 6, 0, 2, 5))]] },
   // ---- at a bike's lock, down by the front wheel: crouched (Mixamo crouch for the legs), leaning in, a glance round
   pick_low: { len: 4, import: { file: 'Crouch Idle.fbx', part: 'lower' }, keys: [
     [0, M(body(26, 14, 22), arms(16, 62, 60))],

@@ -7,6 +7,7 @@ import { loadSettings, onSettingsChange, Settings } from '../game/settings';
 import { skinParams } from '../game/skin';
 import { CLIP_SECS, ONCE, prepareClips, PUNCH_LANDS } from '../world/actors';
 import { Rider, RidePose, SEATS } from './rider';
+import { LockTools, pickPhase } from './lockTools';
 import { Face } from '../world/face';
 
 const CROUCH = 1.2, ACCEL = 12, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
@@ -75,10 +76,12 @@ export class Ramu {
   /** on a vehicle: he sits, posed, and the camera follows the vehicle; null on foot */
   ride: Ride | null = null;
   /** at a lock (set by Driving each frame, null when not): where the lock is, where he stands to it, low for a bike's */
-  lockPick: { lock: THREE.Vector3; stand: [number, number]; low: boolean; t: number } | null = null;
+  lockPick: { lock: THREE.Vector3; stand: [number, number]; low: boolean; t: number; need: number } | null = null;
   /** how far into the picking pose (eases in and out), and the last lock (for easing out) */
   private pickW = 0;
-  private lastPick: { lock: THREE.Vector3; low: boolean; t: number } | null = null;
+  private lastPick: { lock: THREE.Vector3; low: boolean; t: number; need: number } | null = null;
+  /** the tension wrench and the pick, in his hands while he is at a car's lock */
+  private tools: LockTools | null = null;
   /** a cutscene has the camera: he does not move it (src/game/story/cutcam.ts does) */
   cinematic = false;
   /** a clip played once while he stands (a scene's gesture: the hand on the stomach, the pockets), and its time left */
@@ -454,12 +457,37 @@ export class Ramu {
     }
     this.animate(dt, hs, crouching);
     // the hands on the lock, over the clip
-    if (lp) this.lastPick = { lock: lp.lock, low: lp.low, t: lp.t };
+    if (lp) this.lastPick = { lock: lp.lock, low: lp.low, t: lp.t, need: lp.need };
     this.pickW = Math.max(0, Math.min(1, this.pickW + (lp && hs < 0.8 ? dt / 0.35 : -dt / 0.2)));
-    if (this.pickW > 0 && this.lastPick && this.rider) this.rider.pick(this.model, this.lastPick.lock, this.lastPick.t, this.lastPick.low, this.pickW, !!this.actions[this.lastPick.low ? 'pick_low' : 'pick_lock']);
+    this.pickHands();
     this.updateBlob();
 
     if (!this.cinematic) this.updateCamera(p.x, p.y + EYE, p.z, CAM_DIST);
+  }
+
+  /**
+   * At a lock, after the clip: the hands put on it (or, at a car's door first, on its handle), the fingers round the
+   * tools, and the tools drawn in them. A car's lock goes in four parts (lockTools.ts): try the door, the tools out,
+   * at it, open.
+   */
+  private pickHands(): void {
+    const k = this.lastPick, tools = this.tools;
+    if (tools && !tools.pick.parent && this.root.parent) tools.addTo(this.root.parent);
+    if (this.pickW <= 0 || !k || !this.rider) { tools?.hide(); return; }
+    if (k.low) {
+      this.rider.pick(this.model, k.lock, k.t, true, this.pickW, !!this.actions.pick_low);
+      tools?.hide();
+      return;
+    }
+    const ph = this.actions.pick_try ? pickPhase(k.t, k.need) : null;
+    const ik = ph ? ph.ik : 1;
+    const stroke = this.rider.pick(this.model, k.lock, ph ? ph.at : k.t, false, this.pickW * ik, !!this.actions.pick_lock, ph ? ph.handle * this.pickW : 0);
+    if (!tools || !ph || this.pickW < 0.5) { tools?.hide(); return; }
+    // in his hand (a look at them) before they go in: the fingers closed on them
+    if (ph.tools === 'hand') this.rider.grip('Right', 0.7, 0.4);
+    const fwd = _pickFwd.set(k.lock.x - this.root.position.x, 0, k.lock.z - this.root.position.z).normalize();
+    this.model.updateMatrixWorld(true);
+    tools.update(ph.tools, k.lock, fwd, stroke);
   }
 
   /** off the ground: up at the jump speed; the flight should take 2 v / g */
@@ -631,6 +659,7 @@ export class Ramu {
       gltf.scene.rotation.y = Math.PI;
       this.model.add(gltf.scene);
       this.rider = new Rider(gltf.scene);
+      this.tools = new LockTools(gltf.scene);
       if (NIGHT) {
         // a soft cool light just above him, so he does not vanish into the dark street
         const glow = new THREE.PointLight('#d8e4ff', 9, 9, 2);
@@ -774,7 +803,16 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
     } else if (this.lockPick && hs < 0.8) {
       // the clips made for it (Katpootli): bent to a car's door, or crouched by a bike's front wheel, a glance round now and then
       if (this.lockPick.low) set(A.pick_low ? 'pick_low' : 'crouch', 'idle', 1);
-      else set('pick_lock', 'idle', A.pick_lock ? 1 : 0.6);
+      else if (A.pick_try) {
+        // a car's: the four parts in turn, each clip held at the time the picking has got to
+        const ph = pickPhase(this.lockPick.t, this.lockPick.need);
+        const a = this.play(ph.clip, 0.15);
+        if (a) {
+          const len = a.getClip().duration;
+          a.timeScale = 0;
+          a.time = ph.clip === 'pick_lock' ? ph.at % len : Math.min(ph.at, len - 0.001);
+        }
+      } else set('pick_lock', 'idle', A.pick_lock ? 1 : 0.6);
     } else if (crouching) {
       if (hs < 0.25) set('crouch', 'idle', 1);
       else set('crouch_walk', 'crouch', Math.max(0.6, hs / 0.9));
@@ -795,3 +833,5 @@ const _bail = new THREE.Vector3();
 function moveToward(v: number, target: number, step: number): number {
   return Math.abs(target - v) <= step ? target : v + Math.sign(target - v) * step;
 }
+
+const _pickFwd = new THREE.Vector3();

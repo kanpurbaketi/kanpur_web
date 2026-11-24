@@ -13,7 +13,7 @@ const MOUNT = 0.75, DISMOUNT = 0.55, MOUNT_CAR = 1.4, DISMOUNT_CAR = 1.2;
 /** faster than this (m/s), getting out is jumping out: he leaps clear and rolls, and the vehicle rolls on without him */
 const BAIL_SPEED = 3.5;
 /** seconds to pick a parked vehicle's lock: a car, a two-wheeler with an engine; a cycle has none worth the name */
-const PICK_CAR = 5, PICK_BIKE = 3;
+const PICK_CAR = 6.5, PICK_BIKE = 3;
 /** how far Ramu can shift while picking before he has let go of it, m */
 /** seconds he has to step over to the lock before keeping still counts */
 const PICK_SETTLE = 0.5;
@@ -188,7 +188,7 @@ export class Driving {
     if (this.shoutT > 0) this.shoutT -= dt;
     if (this.pick) this.picking_(dt);
     const k = this.pick;
-    this.ramu.lockPick = k ? { lock: k.lock, stand: [k.x, k.z], low: k.low, t: k.t } : null;
+    this.ramu.lockPick = k ? { lock: k.lock, stand: [k.x, k.z], low: k.low, t: k.t, need: k.need } : null;
     if (this.car) {
       // getting on or off: the vehicle held still meanwhile; on it: the keys drive
       const busy = this.w < 1 || this.leaving;

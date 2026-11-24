@@ -66,6 +66,8 @@ export interface RidePose {
 
 const ANKLE = 0.07;     // ankle above the sole
 const SIDES = ['Left', 'Right'] as const;
+/** which way about the knuckle line closes the fingers, and turns the thumb in (found by looking) */
+const GRIP_SIGN = -1, THUMB_SIGN = 1;
 
 export class Rider {
   private bone: Record<string, THREE.Bone> = {};
@@ -195,33 +197,49 @@ export class Rider {
   }
 
   /**
-   * Picking a lock (after the mixer has set the standing idle, or the crouch for a low lock): bent toward it, the left
-   * hand holding the tension tool steady in it, the right working the pick: small quick rakes and a twist of the wrist,
-   * a pause now and then to feel, and every few seconds the pick drawn out a little and set again. Head down, watching.
-   * `t`: seconds at it; `w`: 0..1, how far into the pose (eases in as he settles).
+   * Picking a lock (after the mixer has set the clip: pick_lock for a car's door, pick_low by a bike's wheel): the left
+   * hand holding the tension wrench steady in the bottom of the keyhole, the right raking the pick in and out above it in
+   * quick bursts, a twist of the wrist, a pause now and then to feel, the pick drawn out and set again every few seconds.
+   * `t`: seconds at it; `w`: 0..1, the hands on the lock; `handle`: 0..1, the right hand on the door's handle instead
+   * (trying it first). Returns how far the pick is drawn out of the keyhole (m), for the tool drawn in his hand.
    */
-  pick(model: THREE.Object3D, lock: THREE.Vector3, t: number, low: boolean, w: number, clipped = false): void {
-    if (!this.ok) return;
+  pick(model: THREE.Object3D, lock: THREE.Vector3, t: number, low: boolean, w: number, clipped = false, handle = 0): number {
+    if (!this.ok) return 0;
     const b = this.bone;
     model.updateMatrixWorld(true);
     const e = smooth(w);
     const hips = this.world(b.Hips, _v0);
     const fwd = _v1.set(lock.x - hips.x, 0, lock.z - hips.z);
-    if (fwd.lengthSq() < 1e-6) return;
+    if (fwd.lengthSq() < 1e-6) return 0;
     fwd.normalize();
     const up = _v2.set(0, 1, 0), side = _v3.crossVectors(fwd, up).normalize();     // his right
     const tilt = _v4.crossVectors(up, fwd).normalize();                               // turning about this leans him forward
+    const along = _v5.crossVectors(up, fwd).normalize();          // along the vehicle (across his front)
+    if (handle > 0 && e < 0.01) {
+      // trying the door: the right hand on the handle, just in front of the keyhole (the tugs are the clip's)
+      const sh = this.world(b.RightArm, new THREE.Vector3());
+      const hang = sh.clone().addScaledVector(up, -this.arm * 0.95);
+      const at = _v6.copy(lock).addScaledVector(along, -0.08).addScaledVector(up, 0.01).addScaledVector(fwd, -0.08);
+      const pole = sh.clone().addScaledVector(side, 0.4).addScaledVector(up, -0.5).addScaledVector(fwd, -0.1);
+      this.ik(b.RightArm, b.RightForeArm, b.RightHand, hang.lerp(at, smooth(handle)), pole);
+      this.grip('Right', 0.8 * smooth(handle));
+      return 0;
+    }
+    if (e < 0.001) return 0;
     // bend over to it: as far as the hands need, more for a lock down by a wheel
     // (a clip made for it, pick_lock / pick_low, already bends him over and has him glance round: only a little more here)
     const lean = (low ? 0.55 : 0.32) * e * (clipped ? 0.25 : 1);
     this.turn(b.Spine, _q1.setFromAxisAngle(tilt, lean * 0.5));
     this.turn(b.Spine1 ?? b.Spine, _q1.setFromAxisAngle(tilt, lean * 0.5));
-    // the pick's motion: raking strokes (9 a second) in bursts, a pause to feel, a reset every ~3.4 s
-    const burst = 0.5 + 0.5 * Math.sin(t * 1.7), rake = Math.sin(t * 2 * Math.PI * 4.5) * 0.012 * burst;
+    // the pick's strokes (4 a second, in and out of the keyhole) in bursts with a pause to feel, a reset every ~3.4 s
+    const burst = Math.max(0, Math.sin(t * 1.9)) ** 0.5;
+    const stroke = (0.5 - 0.5 * Math.cos(t * 2 * Math.PI * 4)) * 0.014 * burst;
     const cycle = t % 3.4, reset = cycle > 3.0 ? Math.sin(((cycle - 3.0) / 0.4) * Math.PI) : 0;
-    const along = _v5.crossVectors(up, fwd).normalize();          // along the vehicle (across his front)
-    const pickAt = _v6.copy(lock).addScaledVector(along, -0.035).addScaledVector(up, rake).addScaledVector(fwd, -0.02 - reset * 0.06);
-    const holdAt = _v7.copy(lock).addScaledVector(along, 0.04).addScaledVector(up, -0.03).addScaledVector(fwd, -0.03);
+    const out = stroke + reset * 0.03;
+    const jig = Math.sin(t * 2 * Math.PI * 4 + 1.2) * 0.003 * burst;            // the tip working up and down a little
+    // the hands just under and either side of the keyhole, knuckles close to the door (as in the reference)
+    const pickAt = _v6.copy(lock).addScaledVector(along, -0.02).addScaledVector(up, 0.012 + jig).addScaledVector(fwd, -0.05 - out);
+    const holdAt = _v7.copy(lock).addScaledVector(along, 0.035).addScaledVector(up, -0.045).addScaledVector(fwd, -0.04);
     SIDES.forEach((s, i) => {
       const sh = this.world(b[s + 'Arm'], new THREE.Vector3());
       const hang = sh.clone().addScaledVector(up, -this.arm * 0.95).addScaledVector(side, (i ? 1 : -1) * 0.04);
@@ -230,15 +248,64 @@ export class Rider {
       const pole = sh.clone().addScaledVector(side, (i ? 1 : -1) * 0.45).addScaledVector(up, -0.45).addScaledVector(fwd, -0.15);
       this.ik(b[s + 'Arm'], b[s + 'ForeArm'], b[s + 'Hand'], target.addScaledVector(fwd, -0.06), pole);
     });
-    // the right wrist turns the pick (a twist about the forearm), the left holds its turn on the wrench
+    // palms down, knuckles to the door (as the IK leaves them they face up); then the right wrist turns the pick a
+    // little with each stroke, the left holds its turn on the wrench
+    const down = _v0.set(0, -1, 0);
+    this.palmTo('Right', down, e);
+    this.palmTo('Left', down, e);
     const fa = this.world(b.RightHand, _v8).sub(this.world(b.RightForeArm, _v9)).normalize();
-    this.turn(b.RightHand, _q1.setFromAxisAngle(fa, (0.25 + Math.sin(t * 2 * Math.PI * 1.3) * 0.35 * burst) * e));
+    this.turn(b.RightHand, _q1.setFromAxisAngle(fa, Math.sin(t * 2 * Math.PI * 4 + 0.6) * 0.15 * burst * e));
     const fl = this.world(b.LeftHand, _v8).sub(this.world(b.LeftForeArm, _v9)).normalize();
-    this.turn(b.LeftHand, _q1.setFromAxisAngle(fl, -0.3 * e));
+    this.turn(b.LeftHand, _q1.setFromAxisAngle(fl, -0.15 * e));
+    // the fingers round the tools: the pick held like a pen, the wrench between finger and thumb
+    this.grip('Right', 0.75 * e, 0.5);
+    this.grip('Left', 0.65 * e, 0.3);
     // head down, on the lock (and a glance round now and then, in case somebody is watching)
     const glance = clipped ? 0 : Math.max(0, Math.sin(t * 0.55) - 0.82) * 4;     // 0 most of the time, up to ~0.7
     if (!clipped && b.Neck) this.turn(b.Neck, _q1.setFromAxisAngle(tilt, (low ? 0.25 : 0.35) * e * (1 - glance)));
     if (!clipped && b.Head) this.turn(b.Head, _q1.setFromAxisAngle(up, glance * 0.9 * e));
+    return out * e;
+  }
+
+  /** the forearm turned about its length (the hand with it) so the palm faces `dir` (world), by `w` (0..1) */
+  palmTo(side: 'Left' | 'Right', dir: THREE.Vector3, w: number): void {
+    const b = this.bone, fa = b[side + 'ForeArm'], h = b[side + 'Hand'], i1 = b[side + 'HandIndex1'], p1 = b[side + 'HandPinky1'], m1 = b[side + 'HandMiddle1'];
+    if (!fa || !h || !i1 || !p1 || !m1 || w <= 0) return;
+    const axis = this.world(h, new THREE.Vector3()).sub(this.world(fa, _v9)).normalize();
+    const across = this.world(p1, new THREE.Vector3()).sub(this.world(i1, _v9));
+    const along = this.world(m1, new THREE.Vector3()).sub(this.world(h, _v9));
+    // out of the palm (the side the fingers close toward)
+    const n = side === 'Right' ? along.clone().cross(across) : across.clone().cross(along);
+    // both onto the plane across the forearm: the angle between them about it
+    const a = n.addScaledVector(axis, -n.dot(axis)).normalize(), d = dir.clone().addScaledVector(axis, -dir.dot(axis)).normalize();
+    const ang = Math.atan2(new THREE.Vector3().crossVectors(a, d).dot(axis), a.dot(d));
+    this.turn(fa, _q1.setFromAxisAngle(axis, ang * w));
+  }
+
+  /**
+   * The fingers of one hand closed: 0 open .. 1 a fist. `pinch` keeps the index and thumb straighter (a tool held between
+   * them, like a pen). Each finger turns about the line across the knuckles, the thumb across the palm.
+   */
+  grip(side: 'Left' | 'Right', amt: number, pinch = 0): void {
+    const b = this.bone, h = b[side + 'Hand'], i1 = b[side + 'HandIndex1'], p1 = b[side + 'HandPinky1'], m1 = b[side + 'HandMiddle1'];
+    if (!h || !i1 || !p1 || !m1 || amt <= 0) return;
+    const across = this.world(p1, new THREE.Vector3()).sub(this.world(i1, _v9)).normalize();
+    if (side === 'Left') across.negate();
+    for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) {
+      const k = f === 'Index' ? 1 - 0.55 * pinch : 1;
+      for (let j = 1; j <= 3; j++) {
+        const bone = b[side + 'Hand' + f + j];
+        if (bone) this.turn(bone, _q1.setFromAxisAngle(across, amt * k * (j === 1 ? 1.0 : 1.2) * GRIP_SIGN));
+      }
+    }
+    // the thumb in over the palm
+    const along = this.world(m1, _v8).sub(this.world(h, _v9)).normalize();
+    const t1 = b[side + 'HandThumb1'];
+    if (t1) this.turn(t1, _q1.setFromAxisAngle(along, amt * (1 - 0.4 * pinch) * 0.6 * THUMB_SIGN * (side === 'Left' ? -1 : 1)));
+    for (const j of [2, 3]) {
+      const bone = b[side + 'HandThumb' + j];
+      if (bone) this.turn(bone, _q1.setFromAxisAngle(across, amt * 0.5 * GRIP_SIGN));
+    }
   }
 
   /** where the hands hold (vehicle frame): the grips turned about the steering pivot, or on the wheel's rim */

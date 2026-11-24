@@ -35,7 +35,7 @@ export function storeMicPose(scene: THREE.Object3D, clips: THREE.AnimationClip[]
   const pose: Record<string, number[]> = {};
   for (const t of clip.tracks) {
     const [node, prop] = t.name.split('.');
-    if (prop !== 'quaternion' || !/Right(Arm|ForeArm)$/.test(node)) continue;   // (the fingers: grip, all alike)
+    if (prop !== 'quaternion' || !/Right(Arm|ForeArm|Hand)/.test(node)) continue;
     pose[node] = Array.from(t.values.slice(0, 4));
   }
   scene.userData.micPose = pose;
@@ -153,8 +153,7 @@ export class HandProp {
       rig.reach('Right', wrist, pole, w);
       rig.palmTo('Right', m8.copy(f).negate(), w);
       rig.handTo('Right', along, m8.copy(f).negate().addScaledVector(right, -0.2), w);
-      rig.grip('Right', 0.95, 0);
-      rig.thumbOver('Right', w);
+      rig.grip('Right', 0.95, 0, -1);                 // the thumb round from the far side of the handle
       return;
     }
     // the fist is where the hand closes, a little past the wrist: the wrist goes that much short of it

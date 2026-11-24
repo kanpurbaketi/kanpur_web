@@ -169,6 +169,21 @@ export class Ramu {
     this.gestureT = 0;
     this.pose = clip;
     this.poseLast = false;
+    this.snap(clip);
+  }
+
+  /**
+   * Straight into `clip`, no crossfade, the bones put there now: a shot framed on him in the same moment (a skipped scene
+   * landing him at the mic) finds his head where it is, not where the last pose (sitting) had it.
+   */
+  private snap(clip: string): void {
+    const next = this.actions[clip] ?? this.actions.idle;
+    if (!next || !this.mixer) return;
+    this.mixer.stopAllAction();
+    next.reset().setEffectiveWeight(1).play();
+    this.current = next;
+    this.mixer.update(0);
+    this.root.updateMatrixWorld(true);
   }
 
   /** change the held clip (eating, talking) while sitting; `last`: a once-only clip (a fall) held on its last frame */

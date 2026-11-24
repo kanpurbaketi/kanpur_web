@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { storeMicPose } from '../world/handProp';
 import { gltfLoader } from '../world/gltf';
 import { CollisionWorld } from './collide';
 import { Controls } from '../game/controls';
@@ -668,7 +669,9 @@ export class Ramu {
       }
       this.face = new Face(gltf.scene);
       this.mixer = new THREE.AnimationMixer(gltf.scene);
-      for (const clip of prepareClips(gltf.animations)) {
+      const clips = prepareClips(gltf.animations);
+      storeMicPose(gltf.scene, clips);
+      for (const clip of clips) {
         const a = this.mixer.clipAction(clip);
         if (ONCE.has(clip.name)) { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
         this.actions[clip.name] = a;

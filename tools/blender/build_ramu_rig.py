@@ -686,6 +686,7 @@ CLIP_RULES = (
     (('hanging', 'idle'), 'hang_idle'), (('stand', 'freehang'), 'hang_start'), (('braced', 'free'), 'hang_braced'), (('braced', 'drop'), 'hang_drop'),
     (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
     (('throw',), 'throw'),                          # the audience pelting a bad poet
+    (('grabbing', 'mic'), 'grab_mic'),             # Ramu taking the mic from the anchor (stage 1, part 2)
     (('jump', 'place'), 'jump_far'),               # Ramu's leap from cabin to cabin on the giant wheel ("Jump_fromplaceToanother")
     (('hungry',), 'hungry'),                        # Ramu holding his empty stomach (stage 1)
     (('stomach',), 'stomach_hit'),
@@ -713,6 +714,53 @@ def clip_name(stem):
         if all(w in s for w in words):
             return name
     return ''.join(ch if ch.isalnum() else '_' for ch in s).strip('_')
+
+
+LIMB_CHILD = {'Arm': 'ForeArm', 'ForeArm': 'Hand', 'Hand': 'HandMiddle1', 'Shoulder': 'Arm',
+              'UpLeg': 'Leg', 'Leg': 'Foot', 'Foot': 'ToeBase', 'Spine': 'Spine1', 'Spine1': 'Spine2', 'Spine2': 'Neck', 'Neck': 'Head'}
+
+
+def limb_child(short):
+    """the joint a bone points at (its child's), for turning it by direction"""
+    for side in ('Left', 'Right'):
+        if short.startswith(side):
+            rest = short[len(side):]
+            if rest in LIMB_CHILD:
+                return side + LIMB_CHILD[rest]
+            if rest.startswith('Hand') and rest[-1].isdigit() and int(rest[-1]) < 4:
+                return side + rest[:-1] + str(int(rest[-1]) + 1)
+    return LIMB_CHILD.get(short)
+
+
+def orient(b):
+    """bone `b`'s posed orientation (armature space) from its parents' and its own pose rotations as now set"""
+    short = b.name.split(':')[-1]
+    if b.parent is None:
+        return REST[short] @ b.rotation_quaternion
+    ps = b.parent.name.split(':')[-1]
+    return orient(b.parent) @ REST[ps].inverted() @ REST[short] @ b.rotation_quaternion
+
+
+def basis_for(pb, frame, to_ours):
+    """
+    The pose rotation that points bone `pb` (its joint to its child's) the way the clip's bone points in `frame` (the
+    clip's joints, posed, in its armature space), its parents as already posed. Twist about the bone is not carried.
+    """
+    short = pb.name.split(':')[-1]
+    child = limb_child(short)
+    if not child or child not in frame or short not in frame or child not in REST_M:
+        return pb.rotation_quaternion.copy()
+    want = (to_ours @ (frame[child] - frame[short])).normalized()
+    v_rest = (REST_M[child].translation - REST_M[short].translation)
+    if v_rest.length < 1e-6:
+        return pb.rotation_quaternion.copy()
+    local = REST[short].inverted() @ v_rest.normalized()                # the limb, in the bone's own rest frame
+    if pb.parent:
+        ps = pb.parent.name.split(':')[-1]
+        base = orient(pb.parent) @ REST[ps].inverted() @ REST[short]
+    else:
+        base = REST[short]
+    return local.rotation_difference(base.inverted() @ want).normalized()
 
 
 def import_mixamo_clips():
@@ -746,10 +794,26 @@ def import_mixamo_clips():
         new_act = bpy.data.actions.new(name)
         new_act.use_fake_user = True
         arm.animation_data.action = new_act
-        samples = []
+        samples, frames = [], []
         for fr in range(f0, f1 + 1):
             sc.frame_set(fr)
             samples.append({b.name.split(':')[-1]: b.matrix_basis.copy() for b in src.pose.bones})
+            frames.append({b.name.split(':')[-1]: b.head.copy() for b in src.pose.bones})
+        # a clip from a rig whose rest is not ours (an A-pose: arms down; grabbing_mic): its rotations are from that rest,
+        # so on ours the arms come out wrong. Then each animated bone takes the clip's posed orientation (armature space).
+        to_ours = (arm.matrix_world.to_3x3().normalized().inverted() @ src.matrix_world.to_3x3().normalized()).to_quaternion()
+        def arm_drop(a):
+            # the angle between the right upper arm and the spine at rest: ~90 in a T-pose, more with the arms down
+            bs = {x.name.split(':')[-1]: x for x in a.data.bones}
+            if not all(k in bs for k in ('RightArm', 'RightForeArm', 'Spine2', 'Hips')):
+                return 90.0
+            up = (bs['Spine2'].head_local - bs['Hips'].head_local).normalized()
+            return math.degrees((bs['RightForeArm'].head_local - bs['RightArm'].head_local).normalized().angle(up))
+        drop_src, drop_ours = arm_drop(src), arm_drop(arm)
+        other_rest = abs(drop_src - drop_ours) > 20
+        ra, rb = drop_src, drop_ours
+        if other_rest:
+            print(f'RIG clip {name}: its rig rests otherwise (arm to spine {ra:.0f} deg, ours {rb:.0f}): posed orientations')
         # root motion: if the clip travels (not "in place"), keep only the vertical part of the hips movement
         hips_rest = REST_M['Hips'].to_3x3()
         drift = 0.0
@@ -769,7 +833,10 @@ def import_mixamo_clips():
                 if left_idle and short.startswith(('LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand')):
                     continue
                 mb = m[short]
-                pb.rotation_quaternion = mb.to_quaternion()
+                if other_rest and short != 'Hips':
+                    pb.rotation_quaternion = basis_for(pb, frames[i], to_ours)
+                else:
+                    pb.rotation_quaternion = mb.to_quaternion()
                 if short == 'Hips':
                     loc = mb.translation * ratio
                     if drift > 0.25 and not keep:

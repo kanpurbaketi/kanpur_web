@@ -6,7 +6,7 @@ import { Rider } from '../player/rider';
  moved the hand. The hand bone points along the fingers; `GRIP` up it is the middle of the closed fist.
    'mic'   held as a stand-up comic holds one: the fist just under the chin, the elbow down by the ribs, the fingers round
            the handle and the handle nearly upright, its head (the object's +y) at the mouth. The clip's arm is moved
-           there (the hold's own IK); a clip that has the hand down at the chest keeps it there (the mic at the chest), and
+           there (grab_mic's pose when the rig has it, else the hold's own IK); a clip that has the hand down at the chest keeps it there (the mic at the chest), and
            one that holds the arm out (handing it over) keeps its own. `grip`: metres of the handle below the fist
    'hang'  carried by its top, upright (a lota by its neck): `grip` is the height of the neck above its origin
    'palm'  sitting in the fist, the object's origin at the grip, turned with the hand (a fruit)
@@ -25,11 +25,29 @@ export function findBone(root: THREE.Object3D, suffix: string): THREE.Object3D |
   return out;
 }
 
+/**
+ * The mic hold, from the grab_mic clip (assets/anims/grabbing_mic.fbx: one pose of the right arm and hand, the fist at the
+ * chin round an upright mic): its first frame, kept on the loaded model (userData.micPose) for HandProp to put the arm in.
+ */
+export function storeMicPose(scene: THREE.Object3D, clips: THREE.AnimationClip[]): void {
+  const clip = clips.find((c) => c.name === 'grab_mic');
+  if (!clip) return;
+  const pose: Record<string, number[]> = {};
+  for (const t of clip.tracks) {
+    const [node, prop] = t.name.split('.');
+    if (prop !== 'quaternion' || !/Right(Arm|ForeArm|Hand)/.test(node)) continue;
+    pose[node] = Array.from(t.values.slice(0, 4));
+  }
+  scene.userData.micPose = pose;
+}
+
 export class HandProp {
   private root: THREE.Object3D | null = null;
   private hand: THREE.Object3D | null = null;
   private head: THREE.Object3D | null = null;
   private rig: Rider | null = null;
+  /** the holder's mic hold (storeMicPose), if their rig has one: the bones and the turn of each */
+  private pose: { bone: THREE.Object3D; q: THREE.Quaternion }[] = [];
 
   /** `grip`: for 'mic', the handle below the fist; for 'hang', the height of the part held above the object's origin */
   /** 'mic': true while the clip's own arm holds it (handing it over); the hold at the mouth eases off and back */
@@ -45,6 +63,15 @@ export class HandProp {
     this.hand = root ? findBone(root, 'RightHand') : null;
     this.head = root ? findBone(root, 'Head') : null;
     this.rig = root ? new Rider(root) : null;
+    this.pose = [];
+    let stored: Record<string, number[]> | undefined;
+    root?.traverse((o) => { stored ??= o.userData.micPose; });
+    if (root && stored) {
+      for (const [name, v] of Object.entries(stored)) {
+        const bone = root.getObjectByName(name);
+        if (bone) this.pose.push({ bone, q: new THREE.Quaternion().fromArray(v) });
+      }
+    }
   }
 
   get held(): boolean { return this.hand !== null; }
@@ -105,8 +132,22 @@ export class HandProp {
     const out = fist.clone().sub(mouth).dot(f);
     this.hold += Math.max(-0.07, Math.min(0.07, (this.own ? 0 : 1) - this.hold));
     const w = (1 - smooth((out - 0.3) / 0.12)) * smooth(this.hold);
+    // the rig's own mic hold (grab_mic) when it has one: the right arm and fingers put in it, over whatever the body does
     // the fist is where the hand closes, a little past the wrist: the wrist goes that much short of it
-    target.addScaledVector(UP, -0.05).addScaledVector(f, -0.02);
+    target.copy(atMouth).addScaledVector(UP, -0.05).addScaledVector(f, -0.02);
+    if (this.pose.length) {
+      for (const { bone, q: pq } of this.pose) bone.quaternion.slerp(pq, w);
+      root.updateMatrixWorld(true);
+      // on a bigger or smaller body than the pose was made on, the same angles leave the fist off the chin: the wrist on
+      // to it, the elbow kept on the pose's side, the hand kept turned as the pose has it
+      const elbow = findBoneCached(root, 'RightForeArm', m7);
+      const pole = elbow.addScaledVector(UP, -0.1);
+      const hq = hand.getWorldQuaternion(new THREE.Quaternion());
+      rig.reach('Right', target, pole, w);
+      const parentQ = hand.parent!.getWorldQuaternion(new THREE.Quaternion());
+      hand.quaternion.copy(parentQ.invert().multiply(hq));
+      return;
+    }
     const shoulder = findBoneCached(root, 'RightArm', m7);
     const pole = shoulder.addScaledVector(UP, -0.55).addScaledVector(right, 0.28).addScaledVector(f, -0.12);
     rig.reach('Right', target, pole, w);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { storeMicPose } from './handProp';
 import { gltfLoader, lookUrl } from './gltf';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Face } from './face';
@@ -153,6 +154,7 @@ function load(name: RigName): Promise<Source> {
       let material!: THREE.MeshStandardMaterial;
       gltf.scene.traverse((o) => { if ((o as THREE.Mesh).isMesh) material = (o as THREE.Mesh).material as THREE.MeshStandardMaterial; });
       const clips = prepareClips(gltf.animations);
+      storeMicPose(gltf.scene, clips);                       // (copied onto each clone with userData)
       const by = (n: string) => clips.find((c) => c.name === n);
       return { scene: gltf.scene, clips, material, lie: hipsAt(by('fall'), true).sub(hipsAt(by('get_up'), false)) };
     });

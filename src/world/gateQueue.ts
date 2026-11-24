@@ -19,7 +19,7 @@ const QX = GATE.x + 1.2;
 const ROPE_Z = GATE.z + 0.5;
 const Z0 = GATE.z + 1.45;          // the front of the line
 const GAP = 0.9;                   // between people in line
-const TICKET_S = 1.8;
+const TICKET_S = 3;
 const KINDS: RigName[] = ['uncle', 'aunty', 'boy', 'girl', 'uncle', 'girl', 'aunty', 'boy'];
 
 interface Walker { p: Person; path: P2[]; t: number }
@@ -165,6 +165,7 @@ export class GateQueue {
         if ((this.pauseT -= dt) <= 0) {
           this.ticketT = TICKET_S;
           f.gesture('talk', `ticket-${this.n}`, TICKET_S);
+          this.guard.gesture('ticket_check', `ticket-${this.n}`, TICKET_S);   // takes it, looks at it, tears it, hands the stub back
           this.guard.face.talking = true;
         }
       } else if ((this.ticketT -= dt) <= 0) {

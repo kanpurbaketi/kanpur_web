@@ -56,7 +56,8 @@ const WALK_SPEED = 1.35, RUN_SPEED = 5.0, CLIP_HEIGHT = 1.52;
 /** clips that play through once and hold their last pose */
 export const ONCE = new Set(['punch', 'kick', 'hit', 'hit2', 'block', 'shove', 'fall', 'fall2', 'get_up', 'jump',
   'stomach', 'stomach_hit', 'push', 'push_one', 'pockets', 'head_no', 'angry_point', 'disappointed', 'throw', 'offer',
-  'hang_start', 'hang_braced', 'hang_drop']);   // Ramu on the giant wheel (stage 1, part 3)   // the last row: stage 1's scenes
+  'hang_start', 'hang_braced', 'hang_drop',
+  'ticket_check', 'shove_aside', 'pick_up', 'give', 'take', 'car_bail']);   // made in Katpootli (assets/anims/kp_*.fbx)   // Ramu on the giant wheel (stage 1, part 3)   // the last row: stage 1's scenes
 /** clip lengths as the game plays them, seconds at normal speed (after the cuts in prepareClips) */
 export const CLIP_SECS = { punch: 2.0, kick: 1.6, hit: 1.9, hit2: 1.35, block: 1.35, shove: 1.75, get_up: 2.7 };
 /** in the kick clip the foot lands this many seconds in */
@@ -184,6 +185,8 @@ export class Actor {
   private far = false;
   private skipped = 0;
   private frame = 0;
+  /** a security guard: standing is the guard's stance (guard_stand: feet apart, chest out, looking about), not the idle */
+  private guard = false;
 
   constructor(name: RigName, src: Source, material = src.material, liteSrc?: Source) {
     const body = clone(src.scene);
@@ -193,6 +196,7 @@ export class Actor {
     this.face = new Face(body);
     if (liteSrc) this.addLite(body, liteSrc, material);
     this.step = RIGS[name].step ?? 1;
+    this.guard = name === 'security';
     this.stride = (RIGS[name].height / CLIP_HEIGHT) * this.step;
     this.lie = src.lie;
     this.mixer = new THREE.AnimationMixer(body);
@@ -242,6 +246,7 @@ export class Actor {
   /** Crossfade to a looping clip and set its playback speed. */
   play(name: string, timeScale = 1, fade = 0.25): void {
     if (!this.actions[name]) name = 'idle';
+    if (name === 'idle' && this.guard && this.actions.guard_stand) name = 'guard_stand';
     if (this.state !== name) this.start(name, fade);
     this.state = name;
     if (this.current) this.current.timeScale = timeScale;
@@ -279,7 +284,8 @@ export class Actor {
     else this.play('run', speed / (RUN_SPEED * this.stride));
   }
 
-  update(dt: number): void {
+  /** move the body on by `dt`; true when the bones were posed this frame (far off they are only every other or third) */
+  update(dt: number): boolean {
     const d = this.root.getWorldPosition(_at).distanceTo(Actor.eye) * Actor.zoom;
     // far across the fair they are a few pixels high: not drawn (the body only: the story hides people by their root)
     const body = this.root.children[0];
@@ -296,10 +302,11 @@ export class Actor {
     // crowd's bones are much of the frame's work
     const every = d > 70 ? 3 : d > 35 ? 2 : 1;
     this.skipped += dt;
-    if (++this.frame % every !== 0) return;
+    if (++this.frame % every !== 0) return false;
     this.mixer.update(this.skipped);
     this.skipped = 0;
     if (!this.far) this.face.update(dt * every);
+    return true;
   }
 }
 

@@ -21,6 +21,10 @@ const EN = {
   'nav.home': 'Home',
   'nav.back': 'Back',
   'nav.close': 'Close',
+  'quit.title': 'Leave the game?',
+  'quit.text': 'Going back now quits the game. Anything you have not finished in this stage will be lost.',
+  'quit.yes': 'Quit',
+  'quit.no': 'Keep playing',
 
   'stage.n': 'Stage {n}',
   'stage.locked': 'Locked',
@@ -371,6 +375,7 @@ const EN = {
   'score.allTime': 'All time, in this browser',
 
   'drive.getOff': '{key} — get off',
+  'drive.bail': '{key} — jump out!',
   'drive.dead': ' (engine dead)',
   'drive.picking': 'Picking the lock  {bar}  {s} s — keep still ({key}: give up)',
   'drive.pick': '{key} — pick the lock ({s} s)',
@@ -401,6 +406,10 @@ const HI: Record<Key, string> = {
   'nav.home': 'होम',
   'nav.back': 'वापस',
   'nav.close': 'बंद करें',
+  'quit.title': 'खेल छोड़ना है?',
+  'quit.text': 'अभी पीछे जाने से खेल बंद हो जाएगा। इस स्टेज में जो पूरा नहीं हुआ, वह छूट जाएगा।',
+  'quit.yes': 'छोड़ें',
+  'quit.no': 'खेलते रहें',
 
   'stage.n': 'स्टेज {n}',
   'stage.locked': 'बंद',
@@ -747,6 +756,7 @@ const HI: Record<Key, string> = {
   'score.allTime': 'अब तक कुल, इस ब्राउज़र में',
 
   'drive.getOff': '{key} — उतरें',
+  'drive.bail': '{key} — कूद जाएँ!',
   'drive.dead': ' (इंजन बंद)',
   'drive.picking': 'ताला खोल रहे हैं  {bar}  {s} सेकंड — हिलें नहीं ({key}: छोड़ें)',
   'drive.pick': '{key} — ताला खोलें ({s} सेकंड)',

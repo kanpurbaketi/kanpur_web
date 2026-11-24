@@ -6,7 +6,7 @@ import { NIGHT } from '../world/night';
 import { loadSettings, onSettingsChange, Settings } from '../game/settings';
 import { skinParams } from '../game/skin';
 import { CLIP_SECS, ONCE, prepareClips, PUNCH_LANDS } from '../world/actors';
-import { Rider, RidePose } from './rider';
+import { Rider, RidePose, SEATS } from './rider';
 import { Face } from '../world/face';
 
 const CROUCH = 1.2, ACCEL = 12, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
@@ -249,8 +249,71 @@ export class Ramu {
     this.punching = false;
   }
 
+  /** thrown clear of a moving car (he jumped): the leap, a roll along the ground, up on his feet; -1: not */
+  private bailT = -1;
+  private bailV = new THREE.Vector2();
+  get bailing(): boolean { return this.bailT >= 0; }
+
+  /** He jumps out of a moving vehicle at (x, z), going at (vx, vz) m/s: he leaps, rolls and gets up. */
+  bail(x: number, z: number, vx: number, vz: number): void {
+    this.ride = null;
+    this.root.position.set(x, this.world.floorAt(x, z, 0.5), z);
+    this.model.rotation.set(0, Math.atan2(-vx, -vz), 0);
+    this.bailV.set(vx, vz);
+    this.bailT = 0;
+    this.vel.set(0, 0, 0);
+    this.grounded = true;
+    this.jumpPhase = 0;
+    this.punching = false;
+    this.gestureT = 0;
+  }
+
+  /** the jump out, a frame of it; false when he is not jumping out (any more) */
+  private bailFrame(dt: number): boolean {
+    if (this.bailT < 0) return false;
+    const LEAP = 0.42, ROLL = 0.7, UP = CLIP_SECS.get_up / 1.8, C = 0.62;
+    const t = (this.bailT += dt), p = this.root.position, m = this.model, A = this.actions;
+    // carried on by the car's speed: little drag in the air, a lot once he is rolling on the ground
+    this.bailV.multiplyScalar(Math.exp(-(t < LEAP ? 0.4 : t < LEAP + ROLL ? 2.2 : 9) * dt));
+    [p.x, p.z] = this.world.resolve(p.x + this.bailV.x * dt, p.z + this.bailV.y * dt, RADIUS, p.y);
+    const floor = this.world.floorAt(p.x, p.z, 0.5);
+    const heading = m.rotation.y;
+    if (t < LEAP) {
+      // the clip's crouch in the door and the leap, arms over the head; up in an arc
+      const a = this.play(A.car_bail ? 'car_bail' : 'jump', 0.05);
+      if (a) { a.timeScale = 0; a.time = Math.min(a.getClip().duration * 0.75, (t / LEAP) * a.getClip().duration * 0.75); }
+      p.y = floor + 0.45 * Math.sin(Math.PI * Math.min(1, t / LEAP));
+    } else if (t < LEAP + ROLL) {
+      // tucked, a roll over forward along the ground: turned about the middle of the ball he makes
+      const a = this.play(A.car_bail ? 'car_bail' : 'crouch', 0.08);
+      if (a && A.car_bail) { a.timeScale = 0; a.time = a.getClip().duration - 0.001; }
+      const k = (t - LEAP) / ROLL, th = -Math.PI * 2 * (k * k * (3 - 2 * k));
+      m.rotation.set(th, heading, 0, 'YXZ');
+      const c = _bail.set(0, C, 0).applyEuler(m.rotation);
+      m.position.set(-c.x, C - c.y, -c.z);
+      p.y = floor - 0.32 * Math.sin(Math.PI * k);
+    } else {
+      m.rotation.set(0, heading, 0, 'XYZ');
+      m.position.set(0, 0, 0);
+      p.y = floor;
+      if (t < LEAP + ROLL + UP && A.get_up) {
+        const g = this.play('get_up', 0.15);
+        if (g) g.timeScale = 1.8;
+      } else {
+        this.bailT = -1;
+        this.bailV.set(0, 0);
+      }
+    }
+    this.mixer?.update(dt);
+    this.face?.update(dt);
+    this.updateBlob();
+    if (!this.cinematic) this.updateCamera(p.x, floor + EYE, p.z, CAM_DIST + 0.8);     // (the ground's height: not down into the roll with him)
+    return true;
+  }
+
   update(dt: number): void {
     this.lookIdle += dt;
+    if (this.bailFrame(dt)) return;
     const r = this.ride;
     if (this.blob) this.blob.visible = !r;
     if (r) {
@@ -259,10 +322,19 @@ export class Ramu {
       this.punching = false;
       // on it: the standing idle from the mixer, then the rider bends him onto the seat, the grips and the pedals
       if (this.mixer && this.rider) {
-        this.play('idle', 0.15);
+        // in a car: the clips made for it (getting in and out paced by how far along he is; sitting at the wheel), else
+        // the standing idle, and the rider bends him onto the seat, the grips and the pedals
+        const A = this.actions, car = A.car_sit && r.kind in SEATS && 'wheel' in SEATS[r.kind].hands;
+        const clip = !car ? 'idle' : r.w >= 1 && !r.leaving ? 'car_sit' : r.leaving ? 'car_out' : 'car_in';
+        const a = this.play(A[clip] ? clip : 'car_sit', 0.15);
+        if (a && (clip === 'car_in' || clip === 'car_out') && A[clip]) {
+          const len = a.getClip().duration;
+          a.timeScale = 0;
+          a.time = Math.min(len - 0.001, (clip === 'car_in' ? r.w : 1 - r.w) * len);
+        } else if (a) a.timeScale = 1;
         this.mixer.update(dt);
         this.face?.update(dt);
-        this.rider.apply(this.root, this.model, r);
+        this.rider.apply(this.root, this.model, r, !!car);
       }
       // the camera swings round behind the vehicle as it goes, unless the player is looking about
       if (this.lookIdle > 1.2 && Math.abs(r.speed) > 1.5) {
@@ -384,7 +456,7 @@ export class Ramu {
     // the hands on the lock, over the clip
     if (lp) this.lastPick = { lock: lp.lock, low: lp.low, t: lp.t };
     this.pickW = Math.max(0, Math.min(1, this.pickW + (lp && hs < 0.8 ? dt / 0.35 : -dt / 0.2)));
-    if (this.pickW > 0 && this.lastPick && this.rider) this.rider.pick(this.model, this.lastPick.lock, this.lastPick.t, this.lastPick.low, this.pickW);
+    if (this.pickW > 0 && this.lastPick && this.rider) this.rider.pick(this.model, this.lastPick.lock, this.lastPick.t, this.lastPick.low, this.pickW, !!this.actions[this.lastPick.low ? 'pick_low' : 'pick_lock']);
     this.updateBlob();
 
     if (!this.cinematic) this.updateCamera(p.x, p.y + EYE, p.z, CAM_DIST);
@@ -700,7 +772,9 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
       const a = this.poseLast ? A[this.pose] : null;
       if (a) { a.timeScale = 0; a.time = a.getClip().duration - 0.001; a.setEffectiveWeight(1); }
     } else if (this.lockPick && hs < 0.8) {
-      set(this.lockPick.low && A.crouch ? 'crouch' : 'idle', 'idle', this.lockPick.low ? 1 : 0.6);
+      // the clips made for it (Katpootli): bent to a car's door, or crouched by a bike's front wheel, a glance round now and then
+      if (this.lockPick.low) set(A.pick_low ? 'pick_low' : 'crouch', 'idle', 1);
+      else set('pick_lock', 'idle', A.pick_lock ? 1 : 0.6);
     } else if (crouching) {
       if (hs < 0.25) set('crouch', 'idle', 1);
       else set('crouch_walk', 'crouch', Math.max(0.6, hs / 0.9));
@@ -715,6 +789,8 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
     this.face?.update(dt);
   }
 }
+
+const _bail = new THREE.Vector3();
 
 function moveToward(v: number, target: number, step: number): number {
   return Math.abs(target - v) <= step ? target : v + Math.sign(target - v) * step;

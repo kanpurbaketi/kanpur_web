@@ -180,7 +180,7 @@ async function ticket(d: Director, ramu: Ramu, q: GateQueue): Promise<void> {
     // from inside the gate, over the rope: the guard's arm, Ramu sent out of the line behind him
     d.shot({ pos: v3(fx + 1.1, 1.75, GATE.z - 2.6), look: v3(fx + 0.4, 1.05, fz + 0.6), fov: 48 }, 0);
     // he steps in as he draws his arm back (from his post his hand would stop short), and the hand lands at ~0.45 s
-    guard.gesture('push_one', 'shove', 1.6);
+    guard.gesture('shove_aside', 'shove', 1.4);           // (Katpootli: drawn back, a step in, the arm thrown out at ~0.5 s)
     const reach: [number, number] = [fx - (dx / dl) * 0.72, fz - (dz / dl) * 0.72];
     await d.tween(0.3, (k) => guard.place(post[0] + (reach[0] - post[0]) * k, post[1] + (reach[1] - post[1]) * k));
     await d.wait(0.24);

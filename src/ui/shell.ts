@@ -373,6 +373,34 @@ export function panel(title: string, view: (close: () => void) => HTMLElement): 
   document.body.append(ov);
 }
 
+/**
+ * In the game, the browser's Back (a phone's back button or swipe, a stray click on the browser's arrow) would leave it,
+ * and everything not saved with it: Back asks first. "Stay" keeps playing; "Quit" goes back as asked.
+ */
+export function guardBack(): void {
+  let leaving = false;
+  history.pushState({ game: 1 }, '');
+  addEventListener('popstate', () => {
+    if (leaving) return;
+    history.pushState({ game: 1 }, '');                // still here until they say otherwise
+    if (document.querySelector('.sh-quit')) return;
+    if (document.pointerLockElement) document.exitPointerLock();
+    panel(t('quit.title'), (close) => {
+      const box = el('div', 'sh-quit');
+      const yes = el('button', 'sh-btn ghost', t('quit.yes'));
+      const no = el('button', 'sh-btn', t('quit.no'));
+      yes.type = no.type = 'button';
+      yes.addEventListener('click', () => { leaving = true; close(); history.go(-2); });
+      no.addEventListener('click', close);
+      const row = el('div', 'sh-quit-row');
+      row.append(yes, no);
+      box.append(el('p', '', t('quit.text')), row);
+      setTimeout(() => no.focus(), 0);
+      return box;
+    });
+  });
+}
+
 // ---------- the loading page ----------
 
 /**
@@ -513,6 +541,8 @@ const css = `
 .sh-stage.locked .sh-stage-s { color: #8a7e70; }
 .sh-stage.here { border-color: #f2992a; background: #fff6e8; cursor: default; }
 .sh-stage.here .sh-stage-s { color: #b5480a; }
+.sh-quit p { margin: 4px 0 18px; line-height: 1.45; }
+.sh-quit-row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
 .sh-btn { padding: 9px 16px; border: 0; border-radius: 9px; background: #d9621a; color: #fff; font: 600 14px system-ui, sans-serif; cursor: pointer; }
 .sh-btn:hover { background: #c0561a; }
 .sh-btn:disabled { opacity: .6; cursor: default; }

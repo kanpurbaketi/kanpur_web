@@ -9,6 +9,12 @@ import type { Actor } from './actors';
 export class Person {
   readonly actor: Actor;
   private head: THREE.Object3D | null = null;
+  private neck: THREE.Object3D | null = null;
+  /** looking at somebody (their head) or a point while they sit or stand: the head and neck turned to it; null: as the clip has it */
+  private look: Person | { headPosition(out: THREE.Vector3): boolean } | THREE.Vector3 | null = null;
+  /** how far the look is turned on (eases in and out) */
+  private lookW = 0;
+  private lookT = 0;
   /** walking to here (null: standing) */
   private goal: THREE.Vector2 | null = null;
   private speed = 1.2;
@@ -27,7 +33,11 @@ export class Person {
     this.actor = actor;
     actor.root.position.set(x, y, z);
     actor.root.rotation.y = ry;
-    actor.root.traverse((o) => { if (!this.head && (o as THREE.Bone).isBone && /Head$/.test(o.name)) this.head = o; });
+    actor.root.traverse((o) => {
+      if (!(o as THREE.Bone).isBone) return;
+      if (!this.head && /Head$/.test(o.name)) this.head = o;
+      if (!this.neck && /Neck$/.test(o.name)) this.neck = o;
+    });
     actor.face.blinking = true;
   }
 
@@ -55,6 +65,42 @@ export class Person {
   }
 
   faceTowards(x: number, z: number): void { this.facing = this.towards(x, z); }
+
+  /** look at somebody (their head: a Person, Ramu) or a point, turning the head and neck to them; null: stop */
+  lookAt(at: Person | { headPosition(out: THREE.Vector3): boolean } | THREE.Vector3 | null): void { this.look = at; }
+
+  /** the head and neck turned to what they look at (over the clip's pose), nodding a little as they talk */
+  private looking(dt: number): void {
+    this.lookW = Math.max(0, Math.min(1, this.lookW + (this.look ? dt * 3 : -dt * 3)));
+    if (this.lookW <= 0 || !this.head || !this.neck) return;
+    this.lookT += dt;
+    if (this.look) {
+      if (this.look instanceof THREE.Vector3) _lt.copy(this.look);
+      else if (!this.look.headPosition(_lt)) return;
+      this.lastLook.copy(_lt);
+    } else _lt.copy(this.lastLook);
+    this.actor.root.updateWorldMatrix(true, true);
+    const h = this.head.getWorldPosition(_lh);
+    const ry = this.actor.root.rotation.y;
+    const to = _lt.sub(h);
+    if (to.lengthSq() < 1e-4) return;
+    to.normalize();
+    // no further round than a person turns their head (~70 degrees each way), nor further up or down than ~25
+    const d = Math.atan2(-to.x, -to.z) - ry;                                // the heading to it, from the body's (+: to the left)
+    const yaw = Math.max(-1.2, Math.min(1.2, Math.atan2(Math.sin(d), Math.cos(d))));
+    const pitch = Math.max(-0.45, Math.min(0.45, Math.asin(Math.max(-1, Math.min(1, to.y)))));
+    const talk = this.actor.face.talking ? 1 : 0;
+    const nod = talk * (Math.sin(this.lookT * 6.3) * 0.05 + Math.sin(this.lookT * 2.1) * 0.04);
+    const sway = talk * Math.sin(this.lookT * 1.7) * 0.07;
+    const k = this.lookW * this.lookW * (3 - 2 * this.lookW);
+    const right = _lr.set(Math.cos(ry), 0, -Math.sin(ry));                  // the body's right
+    for (const [bone, share] of [[this.neck, 0.4], [this.head, 0.6]] as const) {
+      _lq.setFromAxisAngle(_up, (yaw + sway) * share * k);
+      _lq2.setFromAxisAngle(right, (pitch + nod) * share * k);       // (about the right: + tips the face up)
+      turnWorld(bone, _lq.multiply(_lq2));
+    }
+  }
+  private lastLook = new THREE.Vector3();
 
   /** turn (over a few frames) to a heading */
   turn(ry: number): void { this.turnTo = ry; }
@@ -110,6 +156,18 @@ export class Person {
       r.y += a * Math.min(1, dt * 8);
       if (Math.abs(a) < 0.01) { r.y = this.turnTo; this.turnTo = null; }
     }
-    this.actor.update(dt);
+    if (this.actor.update(dt)) this.looking(dt);
   }
 }
+
+/** turn a bone by a rotation given in the world's frame */
+function turnWorld(bone: THREE.Object3D, q: THREE.Quaternion): void {
+  const parent = bone.parent!;
+  parent.getWorldQuaternion(_pq);
+  bone.getWorldQuaternion(_bq);
+  bone.quaternion.copy(_pq.invert().multiply(q.multiply(_bq)));
+  bone.updateMatrixWorld(true);
+}
+
+const _lt = new THREE.Vector3(), _lh = new THREE.Vector3(), _lr = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
+const _lq = new THREE.Quaternion(), _lq2 = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _bq = new THREE.Quaternion();

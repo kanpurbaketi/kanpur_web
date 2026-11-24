@@ -58,6 +58,10 @@ export interface RidePose {
   w: number;
   /** where he stands beside it (world), on the ground */
   sx: number; sz: number;
+  /** getting off (w going down) */
+  leaving?: boolean;
+  /** the hand brake held: in a car, his left hand leaves the wheel for the lever beside his seat */
+  brake?: boolean;
 }
 
 const ANKLE = 0.07;     // ankle above the sole
@@ -70,6 +74,8 @@ export class Rider {
   /** per kind: how far the spine leans so the hands reach */
   private leanOf = new Map<string, number>();
   private hipsY = 0.68; // the Hips bone above the soles, standing
+  /** how far his left hand is on the hand brake's lever (0 on the wheel .. 1 pulling it) */
+  private brakeW = 0;
 
   constructor(body: THREE.Object3D) {
     body.traverse((o) => {
@@ -91,11 +97,17 @@ export class Rider {
    * Pose him: `root` is moved so his hips sit where they should, `model` turned with the vehicle (it holds the rig,
    * which faces the other way: hence the half turn).
    */
-  apply(root: THREE.Object3D, model: THREE.Object3D, p: RidePose): void {
+  apply(root: THREE.Object3D, model: THREE.Object3D, p: RidePose, clipped = false): void {
     const seat = SEATS[p.kind];
     if (!seat || !this.ok) return;
     const F = p.frame, b = this.bone;
     const w = smooth(p.w);
+    // a car, with the clips for it (made in Katpootli: car_in / car_out / car_sit): while he gets in or out the clip moves
+    // his legs and arms (ducking under the roof, a leg in after the other), and the IK only takes over at the end, onto the
+    // pedals and the wheel; otherwise the IK eases from standing to seated as `w` goes
+    const byClip = clipped && 'wheel' in seat.hands;
+    const ikW = byClip ? smooth((p.w - 0.8) / 0.2) : 1;
+    const tw = byClip ? 1 : w;
     F.decompose(_v0, _q0, _v1);
     model.quaternion.copy(_q0).multiply(_qHalf);
     const at = (v: V | THREE.Vector3, out: THREE.Vector3) => (Array.isArray(v) ? out.set(v[0], v[1], v[2]) : out.copy(v)).applyMatrix4(F);
@@ -144,25 +156,36 @@ export class Rider {
       const keep = foot.getWorldQuaternion(new THREE.Quaternion());
       const hip = this.world(b[s + 'UpLeg'], new THREE.Vector3());
       const ground = new THREE.Vector3(hip.x, ANKLE, hip.z);
-      const t = at(feet[i], new THREE.Vector3()).lerp(ground, 1 - w);
+      const t = at(feet[i], new THREE.Vector3()).lerp(ground, 1 - tw);
       // knees ahead and a little out (on a bike's tank: in)
       const side = (i ? 1 : -1);
       const pole = hip.clone().addScaledVector(fwd, 0.6).addScaledVector(up, 0.25).addScaledVector(right, side * (seat.bike ? 0.04 : 0.12));
+      if (ikW <= 0) return;
+      const saved = this.save([b[s + 'UpLeg'], b[s + 'Leg'], foot]);
       this.ik(b[s + 'UpLeg'], b[s + 'Leg'], foot, t, pole);
-      this.setWorldQ(foot, keep);     // the foot flat, as it was standing
+      if (!byClip) this.setWorldQ(foot, keep);     // the foot flat, as it was standing
+      this.blend(saved, ikW);
     });
 
     // ---- arms
     const grips = this.grips(p, seat, mirror);
+    // the hand brake: a car's lever is beside his seat, toward the middle (he sits on the right: to his left), low
+    const car = 'wheel' in seat.hands;
+    this.brakeW = Math.max(0, Math.min(1, this.brakeW + (car && p.brake && p.w >= 1 ? 0.12 : -0.08)));
+    const lever = at([seat.hips[0] + 0.34, seat.hips[1] + 0.08 + 0.06 * smooth(this.brakeW), seat.hips[2] + 0.3 - 0.1 * smooth(this.brakeW)], new THREE.Vector3());
     SIDES.forEach((s, i) => {
       const sh = this.world(b[s + 'Arm'], new THREE.Vector3());
       // the wrist a hand's length short of the grip; hanging at his side while he gets on
       const g = at(grips[i], new THREE.Vector3()).addScaledVector(fwd, -0.07);
+      if (i === 0 && this.brakeW > 0) g.lerp(lever, smooth(Math.min(1, this.brakeW * 1.6)));
       const hang = sh.clone().addScaledVector(up, -this.arm * 0.95).addScaledVector(right, (i ? 1 : -1) * 0.04);
-      const t = hang.lerp(g, w);
+      const t = hang.lerp(g, tw);
       const side = (i ? 1 : -1);
       const pole = sh.clone().addScaledVector(right, side * 0.4).addScaledVector(up, -0.5).addScaledVector(fwd, -0.3);
+      if (ikW <= 0) return;
+      const saved = this.save([b[s + 'Arm'], b[s + 'ForeArm'], b[s + 'Hand']]);
       this.ik(b[s + 'Arm'], b[s + 'ForeArm'], b[s + 'Hand'], t, pole);
+      this.blend(saved, ikW);
     });
 
     // ---- head: up to look along the road (against the lean), and into the turn
@@ -177,7 +200,7 @@ export class Rider {
    * a pause now and then to feel, and every few seconds the pick drawn out a little and set again. Head down, watching.
    * `t`: seconds at it; `w`: 0..1, how far into the pose (eases in as he settles).
    */
-  pick(model: THREE.Object3D, lock: THREE.Vector3, t: number, low: boolean, w: number): void {
+  pick(model: THREE.Object3D, lock: THREE.Vector3, t: number, low: boolean, w: number, clipped = false): void {
     if (!this.ok) return;
     const b = this.bone;
     model.updateMatrixWorld(true);
@@ -189,7 +212,8 @@ export class Rider {
     const up = _v2.set(0, 1, 0), side = _v3.crossVectors(fwd, up).normalize();     // his right
     const tilt = _v4.crossVectors(up, fwd).normalize();                               // turning about this leans him forward
     // bend over to it: as far as the hands need, more for a lock down by a wheel
-    const lean = (low ? 0.55 : 0.32) * e;
+    // (a clip made for it, pick_lock / pick_low, already bends him over and has him glance round: only a little more here)
+    const lean = (low ? 0.55 : 0.32) * e * (clipped ? 0.25 : 1);
     this.turn(b.Spine, _q1.setFromAxisAngle(tilt, lean * 0.5));
     this.turn(b.Spine1 ?? b.Spine, _q1.setFromAxisAngle(tilt, lean * 0.5));
     // the pick's motion: raking strokes (9 a second) in bursts, a pause to feel, a reset every ~3.4 s
@@ -212,9 +236,9 @@ export class Rider {
     const fl = this.world(b.LeftHand, _v8).sub(this.world(b.LeftForeArm, _v9)).normalize();
     this.turn(b.LeftHand, _q1.setFromAxisAngle(fl, -0.3 * e));
     // head down, on the lock (and a glance round now and then, in case somebody is watching)
-    const glance = Math.max(0, Math.sin(t * 0.55) - 0.82) * 4;     // 0 most of the time, up to ~0.7
-    if (b.Neck) this.turn(b.Neck, _q1.setFromAxisAngle(tilt, (low ? 0.25 : 0.35) * e * (1 - glance)));
-    if (b.Head) this.turn(b.Head, _q1.setFromAxisAngle(up, glance * 0.9 * e));
+    const glance = clipped ? 0 : Math.max(0, Math.sin(t * 0.55) - 0.82) * 4;     // 0 most of the time, up to ~0.7
+    if (!clipped && b.Neck) this.turn(b.Neck, _q1.setFromAxisAngle(tilt, (low ? 0.25 : 0.35) * e * (1 - glance)));
+    if (!clipped && b.Head) this.turn(b.Head, _q1.setFromAxisAngle(up, glance * 0.9 * e));
   }
 
   /** where the hands hold (vehicle frame): the grips turned about the steering pivot, or on the wheel's rim */
@@ -255,6 +279,17 @@ export class Rider {
     sp.updateMatrixWorld(true);
     this.leanOf.set(p.kind, lean);
     return lean;
+  }
+
+  /** the bones' rotations as they are (to blend the IK's result back toward them) */
+  private save(bones: THREE.Bone[]): [THREE.Bone, THREE.Quaternion][] {
+    return bones.map((o) => [o, o.quaternion.clone()]);
+  }
+
+  /** `k` of the way from the saved rotations to the bones' present ones */
+  private blend(saved: [THREE.Bone, THREE.Quaternion][], k: number): void {
+    if (k >= 1) return;
+    for (const [o, q] of saved) { o.quaternion.copy(q.slerp(o.quaternion, k)); o.updateMatrixWorld(true); }
   }
 
   private world(o: THREE.Object3D, out: THREE.Vector3): THREE.Vector3 {

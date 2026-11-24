@@ -46,7 +46,8 @@ UNUSED = {'gunplay', 'sweep fall'}    # clips that keep their travel: a man knoc
 # clips only Ramu plays (stage 1, part 3: hanging from the giant wheel, flying off it, the leap from the well): not baked into the others
 # clips whose left arm the FBX leaves in the T-pose: that arm comes from the idle instead
 LEFT_ARM_FROM_IDLE = {'hungry'}
-RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling'}
+RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling',
+             'pick_lock', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk'}
 
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
@@ -661,6 +662,8 @@ CLIP_RULES = (
 
 def clip_name(stem):
     s = stem.lower()
+    if s.startswith('kp_'):                         # made in Katpootli (rannbhoomi.in): the name after the prefix is the clip's
+        return s[3:]
     for words, name in CLIP_RULES:
         if all(w in s for w in words):
             return name
@@ -1012,7 +1015,7 @@ def eat_hand(t):
                 P[n].rotation_quaternion = Quaternion((1, 0, 0), math.radians(20 if f == 'Thumb' else 40 + 6 * i))
 
 
-if SIT0:
+if SIT0 and 'sit_eat' not in bpy.data.actions:     # (the Katpootli one, kp_sit_eat.fbx, when it is there)
     reach_clip('sit_eat', EAT_N, eat_base, eat_target, eat_pole, eat_hand, _arg('--rpole', -90))
 bpy.context.view_layer.objects.active = arm
 bpy.ops.object.mode_set(mode='OBJECT')

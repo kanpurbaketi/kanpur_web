@@ -33,7 +33,7 @@ import { CORRIDOR, corridorWalks, NAGAR_NIGAM, prepareRoute, SHIVAJI_START, Stag
 import { startChoice } from './game/start';
 import { account } from './game/account';
 import { stage as stageOf, type Stage } from './game/stages';
-import { goFree, introCard, loadingFailed, loadingScreen, passedCard, toast, UserChip } from './ui/shell';
+import { goFree, guardBack, introCard, loadingFailed, loadingScreen, passedCard, toast, UserChip } from './ui/shell';
 import { Director } from './game/story/director';
 import { stage1, STAGE1_STEPS } from './game/story/stage1';
 import { stage1Part2 } from './game/story/stage1b';
@@ -361,6 +361,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   // E: Ramu takes the nearest vehicle (and throws off whoever is on it), drives it, gets off
   if (traffic) { traffic.resolve = (x, z, r) => world.resolve(x, z, r, 0); traffic.crosses = (x0, z0, x1, z1) => world.crosses(x0, z0, x1, z1); }
   const driving = traffic && !fixed ? new Driving(scene, traffic, ramu, peds, () => label(controls.get('use')[0] || controls.get('use')[1])) : null;
+  if (driving && params.has('debug')) (window as unknown as { __drive: Driving }).__drive = driving;   // for test scripts
   if (driving) driving.onTake = (thrown) => { stats.count('taken'); stats.count('thrown', thrown); };
   if (driving && params.has('debug')) (window as unknown as { __driving: Driving }).__driving = driving;
   // the street's walkers step round the story's people, and keep out of a cutscene (from between the camera and the faces)
@@ -613,6 +614,7 @@ async function boot(): Promise<void> {
   if (import.meta.env.DEV && params.has('debug')) {                // test scripts: straight into the world (a stage too, unrecorded)
     const st = stageOf(Number(params.get('stage')));
     const game = await main(st ? { stage: st, run: null } : null);
+    guardBack();
     await game.begin();
     return;
   }
@@ -628,6 +630,7 @@ async function boot(): Promise<void> {
     const shown = loadingScreen({ stage: st, place: tk(`place.${st.area ?? 'moti_jheel'}`), minS: 5, ads: true }, ready);
     const game = await main({ stage: st, run: runId });
     await shown;
+    guardBack();
     await game.begin();
     return;
   }
@@ -635,6 +638,7 @@ async function boot(): Promise<void> {
   const shown = loadingScreen({ place: tk('place.moti_jheel'), minS: 0, ads: false }, ready);
   await main(null);
   await shown;
+  guardBack();
   const msg = params.get('msg');
   if (msg) history.replaceState(null, '', location.pathname);
   toast(msg?.startsWith('stage.') ? tk(msg, { n: params.get('n') ?? '' }) : t('free.welcome'), 7);

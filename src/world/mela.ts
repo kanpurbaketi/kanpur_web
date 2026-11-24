@@ -19,6 +19,8 @@ import { MapData } from './types';
 
 /** a sitting clip's body set on a sofa cushion: how much to lift it and move it forward (tuned by eye: the shins hang in front of the seat's frame, not through it) */
 const SIT_Y = 0, SIT_Z = 0.05;
+/** the lota on the stage's floor: how far in front of the poets' seats (the table's near edge is at ~0.9) */
+const LOTA_Z = 0.72;
 /** the top of the dari sheets under the audience, and of the mela's dirt and its packed aisle from the gate (Ramu stands on them) */
 const DARI_Y = 0.11, DIRT_Y = 0.05, AISLE_Y = 0.08;
 
@@ -854,8 +856,8 @@ export class Mela {
       const mic = new HandProp(micObj, 'mic', 0.07);
       this.group.add(micObj);
       mic.holder(anchor.actor.root);
-      // the first poet's lota, on the floor at the end of his sofa (by Kumar's chair)
-      const lotaObj = lota(), [lx, lz] = toW((seats[0] + seats[1]) / 2 - 0.05, SEAT_Z + 0.35);
+      // the first poet's lota, on the floor under the table's edge in front of him (he bends down for it: pick_up)
+      const lotaObj = lota(), [lx, lz] = toW(seats[1] - 0.08, SEAT_Z + LOTA_Z);
       lotaObj.position.set(lx, FLOOR, lz);
       this.group.add(lotaObj);
       this.props.push(mic);

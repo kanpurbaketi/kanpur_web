@@ -8,10 +8,12 @@ import { Pedestrians } from '../world/pedestrians';
 
 /** how far from a vehicle's body Ramu can be to get on it, m */
 const REACH = 2.4;
-/** seconds to get on, and off */
-const MOUNT = 0.75, DISMOUNT = 0.55;
+/** seconds to get on, and off (a two-wheeler); into and out of a car's seat takes longer (its clips: car_in, car_out) */
+const MOUNT = 0.75, DISMOUNT = 0.55, MOUNT_CAR = 1.4, DISMOUNT_CAR = 1.2;
+/** faster than this (m/s), getting out is jumping out: he leaps clear and rolls, and the vehicle rolls on without him */
+const BAIL_SPEED = 3.5;
 /** seconds to pick a parked vehicle's lock: a car, a two-wheeler with an engine; a cycle has none worth the name */
-const PICK_CAR = 7, PICK_BIKE = 3;
+const PICK_CAR = 5, PICK_BIKE = 3;
 /** how far Ramu can shift while picking before he has let go of it, m */
 /** seconds he has to step over to the lock before keeping still counts */
 const PICK_SETTLE = 0.5;
@@ -81,10 +83,12 @@ export class Driving {
   use(): void {
     if (this.ramu.knockedOut || this.ramu.stun > 0) return;
     if (this.car) {
-      this.leaving = true;                    // he climbs off (update), then steps down
       this.horn = false;
+      if (Math.abs(this.car.v) > BAIL_SPEED && this.w >= 1 && !this.leaving) { this.bail(); return; }
+      this.leaving = true;                    // he climbs off (update), then steps down
       return;
     }
+    if (this.ramu.bailing) return;
     const p = this.ramu.position;
     if (p.y > 0.6) return;                          // up on a roof or a stair: no vehicle up there
     if (this.pick) { this.pick = null; return; }             // the key again: he gives up on the lock
@@ -123,6 +127,19 @@ export class Driving {
     this.from = [dx * co - dz * sn, dx * sn + dz * co];
     this.leaving = false;
     this.place();
+  }
+
+  /** Out of a moving vehicle: he jumps from his door, carried on by its speed, and it rolls on without him to a stop. */
+  private bail(): void {
+    const c = this.car!;
+    c.dark = !this.lights;
+    const [x, z] = this.traffic.leave(c);
+    const [ox, oz] = this.traffic.toWorld(c, 0, 0), [rx, rz] = this.traffic.toWorld(c, -1, 0);   // his side: the vehicle's right
+    const [fx, fz] = this.traffic.toWorld(c, 0, 1);
+    const f = 0.7 * c.v, s = 2.6;
+    this.car = null;
+    this.leaving = false;
+    this.ramu.bail(x, z, (fx - ox) * f + (rx - ox) * s, (fz - oz) * f + (rz - oz) * s);
   }
 
   /** Knocked out on it: he comes off. */
@@ -175,7 +192,8 @@ export class Driving {
     if (this.car) {
       // getting on or off: the vehicle held still meanwhile; on it: the keys drive
       const busy = this.w < 1 || this.leaving;
-      this.w = Math.max(0, Math.min(1, this.w + (this.leaving ? -dt / DISMOUNT : dt / MOUNT)));
+      const bike = this.traffic.seatOf(this.car).pose === 'ride';
+      this.w = Math.max(0, Math.min(1, this.w + (this.leaving ? -dt / (bike ? DISMOUNT : DISMOUNT_CAR) : dt / (bike ? MOUNT : MOUNT_CAR))));
       const s = busy ? { x: 0, y: 0 } : this.ramu.stick();
       this.traffic.drive(this.car, dt, -s.y, -s.x, !busy && this.ramu.braking, busy);
       this.place();
@@ -227,6 +245,7 @@ export class Driving {
     this.ramu.ride = {
       frame: this.traffic.bodyMatrix(c, this.frame), kind: this.traffic.kindOf(c), steer: c.steer, dist: c.dist, w: this.w, sx, sz,
       heading: c.heading, cx: c.x, cz: c.z, speed: c.v, cam: seat.cam, camH: seat.camH,
+      leaving: this.leaving, brake: this.ramu.braking,
     };
   }
 
@@ -235,7 +254,8 @@ export class Driving {
     let text = '';
     if (this.car) {
       const dead = this.car.damage >= 100 ? t('drive.dead') : '';
-      text = Math.abs(this.car.v) < 0.5 && this.w >= 1 && !this.leaving ? t('drive.getOff', { key: this.key() }) + dead : '';
+      text = this.w < 1 || this.leaving ? '' : Math.abs(this.car.v) < 0.5 ? t('drive.getOff', { key: this.key() }) + dead
+        : Math.abs(this.car.v) > BAIL_SPEED ? t('drive.bail', { key: this.key() }) : '';
     }
     else if (this.pick) {
       const k = this.pick, f = k.t / k.need, bar = 20;

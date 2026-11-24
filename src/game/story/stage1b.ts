@@ -459,9 +459,11 @@ async function lotaScene(d: Director, ramu: Ramu, s: Sammelan): Promise<boolean>
     const two = d.front(kumar, { dist: 2.3, side: -0.55, up: 0.15, drop: 0.2, fov: 44 });
     d.shot(two, 0.5);
     kumar.turn(toPoet);
+    kumar.lookAt(poet);                                         // his head round to the poet as he talks to him, and the poet's to him
     await d.wait(0.5);
     await d.say('kumar', kumar.face, 'toilet');
     poet.turn(toKumar);
+    poet.lookAt(kumar);
     await d.wait(0.4);                                          // turned to him first: the shot is from where he looks
     const pf = d.front(poet, { dist: 1.6, side: -0.3, up: 0.05, drop: 0.12, fov: 36 });
     d.shot(pf, 0, d.pushIn(pf, 0.02));
@@ -469,12 +471,31 @@ async function lotaScene(d: Director, ramu: Ramu, s: Sammelan): Promise<boolean>
     await d.say('poet', poet.face, 'lota');
     d.shot(k, 0, d.pushIn(k, 0.03));
     await d.say('kumar', kumar.face, 'givelota');
-    // the poet hands it over
-    d.shot(two, 0);
+    // the poet bends down for it, under the table's edge, and comes up with it by the neck (pick_up: the hand at it ~1.2 s)
+    // (low, from beyond Kumar's chair, along the gap between the sofas and the table)
+    const along = v(s.seats[0][0] - s.seats[1][0], 0, s.seats[0][1] - s.seats[1][1]);
+    const gap = along.length();
+    along.normalize();
+    const low = { pos: v(s.lotaAt[0], s.floor + 1.0, s.lotaAt[1]).addScaledVector(along, gap + 1.5), look: v(s.lotaAt[0], s.floor + 0.45, s.lotaAt[1]), fov: 46 };
+    d.shot(low, 0);
+    poet.lookAt(null);
+    poet.turn(s.facing);
+    poet.gesture('pick_up', 'lota-up', 2.6);
+    await d.wait(1.25);
     holdLota(s, poet);
-    await d.wait(0.8);
+    await d.wait(1.0);
+    // and hands it across: his hand out, Kumar's out to take it, Kumar's hand closes on it (~0.8 s)
+    d.shot(two, 0);
+    poet.turn(toKumar);
+    poet.lookAt(kumar);
+    poet.gesture('give', 'lota-give', 1.8);
+    await d.wait(0.15);
+    kumar.gesture('take', 'lota-take', 1.8);
+    await d.wait(0.75);
     holdLota(s, kumar);
-    await d.wait(0.6);
+    await d.wait(1.0);
+    poet.lookAt(null);
+    kumar.lookAt(null);
     // he gets up and goes, lota in hand
     standKumar(s);
     await d.tween(0.6, (t) => kumar.place(...lerp(s.seats[0], s.exit[0], t)));
@@ -482,15 +503,26 @@ async function lotaScene(d: Director, ramu: Ramu, s: Sammelan): Promise<boolean>
     d.shot(wide, 0);
     void walk(d, kumar, s.exit.slice(1), 1.25);
     await d.wait(2.4);
-    // the chair he left, and the plate on the table before it
+    // the chair he left, the plate on the table before it, and behind them, round the edge of the curtain, Ramu lurking
     const chair = { pos: v(s.seats[0][0] + 2.2, s.floor + 1.25, s.seats[0][1] - 0.7), look: v(s.seats[0][0] + 0.4, s.floor + 0.5, s.seats[0][1]), fov: 40 };
     d.shot(chair, 0);
     await d.wait(0.6);
+    const [lx, lz] = lurkSpot(s);
+    ramu.sitAt(lx, s.floor, lz, Math.atan2(-(s.seats[0][0] - lx), -(s.seats[0][1] - lz)), 'lurk');
+    const seat = v(s.seats[0][0], s.floor + 0.6, s.seats[0][1]), him = v(lx, s.floor + 1.1, lz);
+    const back = seat.clone().sub(him).setY(0).normalize();
+    d.shot({ pos: seat.clone().addScaledVector(back, 1.5).setY(s.floor + 1.05), look: him.clone().lerp(seat, 0.35), fov: 42 }, 0);
+    await d.wait(0.5);
     await d.say('ramu', ramu.face, 'chair');
-    await d.wait(0.3);
+    await d.wait(0.5);
     skipped = d.skipped;
   });
   // watched or skipped: the poet back to the audience, Kumar up and on his way with the lota, Ramu at the door
+  if (ramu.posed) ramu.standUp(s.door[0], s.door[1], 0);
+  ramu.standAt(s.door[0], s.door[1]);
+  ramu.faceTowards(s.behind[0], s.behind[1]);
+  poet.lookAt(null);
+  kumar.lookAt(null);
   ramu.stopGesture();
   ramu.yaw = ramu.facing;
   poet.turn(s.facing);
@@ -498,6 +530,11 @@ async function lotaScene(d: Director, ramu: Ramu, s: Sammelan): Promise<boolean>
   kumar.face.angry = 0;
   if (!s.lota.held || kumar.pose) { holdLota(s, kumar); standKumar(s); }
   return skipped;
+}
+
+/** where Ramu lurks while the chair stands empty: just through the back-stage door, at the curtain's edge */
+function lurkSpot(s: Sammelan): [number, number] {
+  return [s.behind[0] + (s.inside[0] - s.behind[0]) * 0.5, s.behind[1] + (s.inside[1] - s.behind[1]) * 0.5];
 }
 
 /** the lota in somebody's right hand (it goes in the props put in hands each frame) */

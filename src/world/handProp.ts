@@ -10,10 +10,12 @@ import { Rider } from '../player/rider';
            one that holds the arm out (handing it over) keeps its own. `grip`: metres of the handle below the fist
    'hang'  carried by its top, upright (a lota by its neck): `grip` is the height of the neck above its origin
    'palm'  sitting in the fist, the object's origin at the grip, turned with the hand (a fruit)
+   'stick' a stick held in the fist (candy floss): the fingers closed round it, the thumb round from the other side, the
+           stick (the object's +y) up through the ring they make; `grip`: metres of the stick below the fist
  Rigs without a right hand (none of ours) leave the object where it is. The object lives in `parent` (any frame).
 */
 
-export type HoldMode = 'mic' | 'hang' | 'palm';
+export type HoldMode = 'mic' | 'hang' | 'palm' | 'stick';
 const GRIP = 0.06;
 const UP = new THREE.Vector3(0, 1, 0);
 const v = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), f = new THREE.Vector3();
@@ -89,8 +91,12 @@ export class HandProp {
     hand.getWorldQuaternion(q);
     b.set(0, 1, 0).applyQuaternion(q);
     const grip = a.addScaledVector(b, GRIP);
+    if (this.mode === 'stick' && this.rig?.ok) {
+      this.rig.grip('Right', 0.95, 0, -1);
+      root.updateMatrixWorld(true);
+    }
     // in a closed fist (the IK's mic hold) the handle is in the curl of the fingers: in from the knuckles, on the palm's side
-    if (this.mode === 'mic' && this.rig?.hand('Right', m1, m2)) {
+    if ((this.mode === 'mic' || this.mode === 'stick') && this.rig?.hand('Right', m1, m2)) {
       hand.getWorldPosition(grip).addScaledVector(m1, 0.075).addScaledVector(m2, 0.03);
     }
     parent.updateWorldMatrix(true, false);
@@ -109,6 +115,12 @@ export class HandProp {
       }
       o.position.copy(parent.worldToLocal(grip.clone().addScaledVector(dir, -this.grip)));
       o.quaternion.setFromUnitVectors(UP, dir).premultiply(pq);
+    } else if (this.mode === 'stick' && this.rig?.hand('Right', m1, m2)) {
+      // up through the ring of the fingers: across the knuckles, the index's side up
+      const through = m3.crossVectors(m1, m2).normalize();
+      if (through.y < 0) through.negate();
+      o.position.copy(parent.worldToLocal(grip.clone().addScaledVector(through, -this.grip)));
+      o.quaternion.setFromUnitVectors(UP, through).premultiply(pq);
     } else if (this.mode === 'hang') {
       // upright, turned as the holder is
       o.position.copy(parent.worldToLocal(grip.addScaledVector(UP, -this.grip)));

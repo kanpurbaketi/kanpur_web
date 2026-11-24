@@ -876,10 +876,11 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
   const lane = (i: number): number => (i % 2 ? 0.35 : -0.3);
   const closeTo = (i: number): number => RAIL_A + side(i) * (0.2 + (i % 2) * 0.08) + (side(i) < 0 ? -0.08 : 0);
   const toWell = Math.atan2(-(KUAN.x - meetAt[0]), -(KUAN.z - meetAt[1]));
-  const girl = await extra(mela, 'anaya', girlAt[0], girlAt[1], Math.atan2(-(meetAt[0] - girlAt[0]), -(meetAt[1] - girlAt[1])));
+  // at the rail, watching the show down in the well (she turns to him when he comes up to her)
+  const girl = await extra(mela, 'anaya', girlAt[0], girlAt[1], Math.atan2(-(KUAN.x - girlAt[0]), -(KUAN.z - girlAt[1])));
   girl.position.y = Y;
   girl.face.laughing = true;
-  const floss = candyFloss(), held = new HandProp(floss, 'hang', 0.12);   // upright, the fist 12 cm up the stick
+  const floss = candyFloss(), held = new HandProp(floss, 'stick', 0.12);  // in her fist, 12 cm up the stick
   mela.group.add(floss);
   held.holder(girl.actor.root);
   props.push(held);

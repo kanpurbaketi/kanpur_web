@@ -57,7 +57,7 @@ const WALK_SPEED = 1.35, RUN_SPEED = 5.0, CLIP_HEIGHT = 1.52;
 export const ONCE = new Set(['punch', 'kick', 'hit', 'hit2', 'block', 'shove', 'fall', 'fall2', 'get_up', 'jump',
   'stomach', 'stomach_hit', 'push', 'push_one', 'pockets', 'head_no', 'angry_point', 'disappointed', 'throw', 'offer',
   'hang_start', 'hang_braced', 'hang_drop',
-  'ticket_check', 'shove_aside', 'pick_up', 'give', 'take', 'car_bail', 'mic_give', 'mic_take', 'rise', 'self_point', 'struck', 'pick_try', 'pick_start', 'pick_open', 'climb_roof', 'roof_leap']);   // made in Katpootli (assets/anims/kp_*.fbx)   // Ramu on the giant wheel (stage 1, part 3)   // the last row: stage 1's scenes
+  'ticket_check', 'shove_aside', 'pick_up', 'give', 'take', 'car_bail', 'mic_give', 'mic_take', 'rise', 'self_point', 'struck', 'pick_try', 'pick_start', 'pick_open', 'climb_roof', 'roof_leap', 'jump_far']);   // made in Katpootli (assets/anims/kp_*.fbx)   // Ramu on the giant wheel (stage 1, part 3)   // the last row: stage 1's scenes
 /** clip lengths as the game plays them, seconds at normal speed (after the cuts in prepareClips) */
 export const CLIP_SECS = { punch: 2.0, kick: 1.6, hit: 1.9, hit2: 1.35, block: 1.35, shove: 1.75, get_up: 2.7 };
 /** in the kick clip the foot lands this many seconds in */

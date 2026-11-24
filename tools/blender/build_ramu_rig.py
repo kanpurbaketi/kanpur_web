@@ -47,7 +47,7 @@ UNUSED = {'gunplay', 'sweep fall'}    # clips that keep their travel: a man knoc
 # clips whose left arm the FBX leaves in the T-pose: that arm comes from the idle instead
 LEFT_ARM_FROM_IDLE = {'hungry'}
 RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling',
-             'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap'}
+             'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far'}
 
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
@@ -686,6 +686,7 @@ CLIP_RULES = (
     (('hanging', 'idle'), 'hang_idle'), (('stand', 'freehang'), 'hang_start'), (('braced', 'free'), 'hang_braced'), (('braced', 'drop'), 'hang_drop'),
     (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
     (('throw',), 'throw'),                          # the audience pelting a bad poet
+    (('jump', 'place'), 'jump_far'),               # Ramu's leap from cabin to cabin on the giant wheel ("Jump_fromplaceToanother")
     (('hungry',), 'hungry'),                        # Ramu holding his empty stomach (stage 1)
     (('stomach',), 'stomach_hit'),
     (('crouch', 'walk'), 'crouch_walk'), (('crouched',), 'crouch_walk'), (('crouch',), 'crouch'), (('sneak',), 'crouch'),

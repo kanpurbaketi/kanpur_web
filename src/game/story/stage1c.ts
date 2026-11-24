@@ -639,19 +639,23 @@ async function rideWheel(d: Director, ramu: Ramu, mela: Mela): Promise<boolean> 
   }
 }
 
+/** jump_far (assets/anims/Jump_fromplaceToanother.fbx): 1.03 s; the feet leave at 0.07 s, down again at 0.73 s */
+const JF_LEN = 1.03, JF_OFF = 0.07, JF_LAND = 0.73;
+
 /** a jump from his cabin's roof back to the roof of the one behind (higher, nearer the top), the wheel turning on */
 async function leap(d: Director, ramu: Ramu, mela: Mela): Promise<void> {
   const from = riding.cabin!, to = cabinAt(mela, thetaOf(mela, from) - STEP);
   const a = new THREE.Vector3(), b = new THREE.Vector3(), off = soleOff(ramu);
   riding.cabin = null;
-  ramu.gesture('roof_leap', 1);
+  ramu.gesture('jump_far', 1);
   ramu.model.rotation.y = Math.PI / 2;                  // west, the way he jumps
-  await d.tween(0.9, (k) => {
+  // the clip (Jump_fromplaceToanother, in place) springs him up and lands him: across between its take-off and landing
+  await d.tween(JF_LEN, (k) => {
     roofSpot(from, a);
     roofSpot(to, b);
-    const f = Math.max(0, Math.min(1, (k - 0.25) / 0.6));   // off on the clip's spring, down as it lands
+    const f = Math.max(0, Math.min(1, (k * JF_LEN - JF_OFF) / (JF_LAND - JF_OFF)));
     a.lerp(b, sm(f));
-    ramu.position.set(a.x, a.y - off + Math.sin(Math.PI * f) * 1.1, a.z);
+    ramu.position.set(a.x, a.y - off + Math.sin(Math.PI * f) * 0.25, a.z);
   });
   riding.cabin = to;
   void playSfx('thud', 0.4);
@@ -752,10 +756,18 @@ async function stopAndJump(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promi
   stopping = true;
   await d.until(() => w.speed === 0 || !riding.cabin);
   // the call to jump, into the castle (no hurry: it asks again till he goes)
+  // the camera behind him on the cabin's roof, looking past him down at the castle; it goes with him, jump and fall
   const from = ramu.position.clone();
-  const mid = from.clone().lerp(bounce, 0.5);
-  const wide = { pos: v(mid.x - 7, mid.y + 2.5, mid.z + 21), look: v(mid.x - 1.5, mid.y + 0.5, mid.z), fov: 54 };
-  d.shot(wide, 0);
+  const ahead = v(bounce.x - from.x, 0, bounce.z - from.z).normalize();
+  const side = v(-ahead.z, 0, ahead.x);
+  const behind = (p: THREE.Vector3, k = 0) => ({
+    // over his shoulder, close (between him and the spokes behind), looking out past him and a little down at the castle
+    pos: v(p.x - ahead.x * 1.7 + side.x * 0.45, p.y + 1.55, p.z - ahead.z * 1.7 + side.z * 0.45),
+    look: v(p.x + ahead.x * 5, p.y + 0.8 + (bounce.y - p.y) * (0.15 + 0.6 * k), p.z + ahead.z * 5),
+    fov: 60,
+  });
+  ramu.model.rotation.y = Math.atan2(-(bounce.x - from.x), -(bounce.z - from.z));
+  d.shot(behind(from), 0);
   d.box.set(9, 'm.s1.castle', 'm.s1.castle.h1', null);
   d.locked = true;
   const ui = new GripPrompt('leap');
@@ -767,14 +779,19 @@ async function stopAndJump(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promi
     const off = soleOff(ramu), at = ramu.position.clone().setY(ramu.position.y + off);
     riding.cabin = null;
     ramu.model.rotation.y = Math.atan2(-(bounce.x - at.x), -(bounce.z - at.z));
-    ramu.gesture('roof_leap', 0.7);
-    d.shot(wide, 0);
-    const T = 2.1, peak = 3.2;
+    ramu.gesture('jump_far', 1);
+    d.shot(behind(ramu.position), 0);
+    const T = 2.1, peak = 2.4, t0 = JF_OFF / T;
     await d.tween(T, (k) => {
-      if (k > 0.35) ramu.holdClip('falling');
-      const f = Math.max(0, (k - 0.12) / 0.88);
+      if (k * T > JF_LAND - 0.3) ramu.holdClip('falling');   // past the clip's top: falling the rest of the way
+      const f = Math.max(0, (k - t0) / (1 - t0));
       ramu.position.lerpVectors(at, bounce, f);
       ramu.position.y += Math.sin(f * Math.PI) * peak - off * (1 - f);
+      // up with the clip's own spring (it lifts him ~0.85 m off the roof before he drops), so he stays in the frame
+      const lift = 0.85 * Math.sin(Math.PI * Math.max(0, Math.min(1, (k * T - JF_OFF) / (JF_LAND - JF_OFF))));
+      const sh = behind(ramu.position, f);
+      sh.pos.y += lift; sh.look.y += lift;
+      d.shot(sh, 0);
     });
     void playSfx('thud', 0.6);
     // boing, boing, boing

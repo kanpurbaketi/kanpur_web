@@ -108,7 +108,10 @@ export class StreetDetail {
     this.addPoles(poles);
     this.addLamps(lamps);
     for (const [x, z] of lamps) this.lamps.push([x, z]);
-    this.addTrees(map.area === 'moti_jheel' ? trees.filter(([x, z]) => !inMela(x, z, 3) && treeClear(x, z)) : trees);   // none inside the mela, none hiding the statue
+    // none inside the mela, none hiding the statue; and only the trees drawn are solid (a left-out one was an invisible
+    // trunk Ramu stuck on, at the statue's corner)
+    const kept = map.area === 'moti_jheel' ? trees.filter(([x, z]) => !inMela(x, z, 3) && treeClear(x, z)) : trees;
+    this.addTrees(kept);
     const wg = new THREE.BufferGeometry();
     wg.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));
     const wl = new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: '#1b1b1b' }));
@@ -116,7 +119,7 @@ export class StreetDetail {
     this.drawCalls++;
     for (const [x, z] of poles) this.obstacles.push([x, z, 0.2]);
     for (const [x, z] of lamps) this.obstacles.push([x, z, 0.15]);
-    for (const [x, z] of trees) this.obstacles.push([x, z, 0.3]);
+    for (const [x, z] of kept) this.obstacles.push([x, z, 0.3]);
     console.log('street detail', { poles: poles.length, lamps: lamps.length, trees: trees.length, real });
   }
 

@@ -13,6 +13,9 @@ import { Person } from './person';
 
 const CRUMB = 0.6, CATCH = 0.95;
 
+/** the guards' top speed, m/s: a little under Ramu's run (5.6) */
+const MAX_SPEED = 5.1;
+
 interface Guard { p: Person; via: [number, number][]; k: number; pace: number; off: number }
 
 /** the four of them, each his own man: the bearded one as built; tall and dark; no beard, a little shorter; thin, a grey beard */
@@ -101,7 +104,8 @@ export class Chase {
         const left = this.v.set(h.x - q.x, 0, h.z - q.z).length();
         // how far behind (along the trail, roughly): far, they close in; near, a little slower than his run
         const behind = g.k >= 0 ? Math.max(left, (this.trail.length - g.k) * CRUMB) : left;
-        const speed = (this.hard ? 6.4 : behind > 11 ? 5.5 : behind > 5 ? 4.7 : 4.3) * g.pace;
+        // (never as fast as his run, 5.6 m/s: a guard catches him only if he stops, or runs into a corner)
+        const speed = Math.min(MAX_SPEED, this.hard ? 5.1 : behind > 11 ? 5.0 : behind > 5 ? 4.6 : 4.3) * g.pace;
         let tx: number, tz: number, ty: number | null = null;
         if (g.via.length) {                                  // their own way first
           [tx, tz] = g.via[0];
@@ -123,6 +127,7 @@ export class Chase {
           q.x += (dx / d) * s + (-dz / d) * side * dt * 0.6;
           q.z += (dz / d) * s + (dx / d) * side * dt * 0.6;
           if (ty !== null) q.y += (Math.max(0.05, ty) - q.y) * Math.min(1, dt * 10);
+          else if (p.floor) q.y = p.floor(q.x, q.z);                // their own way (up the stage's stairs): on the steps
           p.turn(Math.atan2(-dx, -dz));
         }
         p.driven = speed;

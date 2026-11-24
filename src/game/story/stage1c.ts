@@ -67,14 +67,23 @@ export function chaseFor(mela: Mela, ramu: Ramu): Chase {
   return chase;
 }
 
-/** part 2's end: four guards from the sammelan's gates, round the audience, after him; hard, until they have him */
-export async function sendGuards(mela: Mela, s: Sammelan, ramu: Ramu): Promise<void> {
+/**
+ Part 2's end: four guards after him. On the stage (`stairs`): from beyond the foot of its stairs, up them and across the
+ stage at him; otherwise (a test start down on the ground) from the sammelan's gates, round the audience.
+*/
+export async function sendGuards(mela: Mela, s: Sammelan, ramu: Ramu, stairs = true): Promise<void> {
   const c = chaseFor(mela, ramu);
   if (c.guards.length) return;
+  c.harmless = stairs;                 // in part 2's scene they only come at him: mission 6 starts before they have him
   const { x, z } = ramu.position;
-  await c.spawn(4, s.gates, x, z, (gx, gz) => s.route(gx, gz, z));
+  if (stairs) {
+    const [fx, fz] = s.exit[5], [bx, bz] = s.exit[6], top = s.exit[4];
+    const ux = bx - fx, uz = bz - fz, ul = Math.hypot(ux, uz) || 1;      // away from the stairs' foot
+    const spots: [number, number][] = [0, 1, 2, 3].map((i) => [bx + (ux / ul) * (i * 1.1) + (-uz / ul) * ((i % 2) - 0.5), bz + (uz / ul) * (i * 1.1) + (ux / ul) * ((i % 2) - 0.5)]);
+    await c.spawn(4, spots, x, z, () => [[fx, fz], top]);
+    for (const g of c.guards) g.floor = s.ground;
+  } else await c.spawn(4, s.gates, x, z, (gx, gz) => s.route(gx, gz, z));
   c.resetTrail([]);
-  c.hard = true;
   c.go();
 }
 
@@ -111,23 +120,31 @@ export async function stage1Part3(d: Director, ramu: Ramu, mela: Mela, hooks: St
   mela.crowd.huntIf = () => false;
   if (!c.guards.length) {              // a test start: the guards from the sammelan's gates
     if (from === 'start') ramu.standAt(SAMMELAN.x1 - 4, EAST.z, 0.5);
-    await sendGuards(mela, s, ramu);
+    await sendGuards(mela, s, ramu, false);
   }
+  c.harmless = false;                  // (they came up the stage's stairs at him in a scene: from here they can have him)
 
   if (from === 'start' || from === 'flee') {
     const fromA: Restart = { at: A, ry: -Math.PI / 2, behind: [[SAMMELAN.x1 - 1.4, EAST.z - 1.2], [SAMMELAN.x1 - 1.4, EAST.z + 1.2], [SAMMELAN.x1 - 2.6, EAST.z], [SAMMELAN.x1 - 3.4, EAST.z + 0.6]] };
     if (from === 'start') {
-      // ---- mission 6, run: they have him soon enough ----
-      let caught = false;
-      c.onCatch = () => { caught = true; };
-      if (!c.on) { c.resetTrail([]); c.hard = true; c.go(); }
-      await d.mission(6, 'm.s1.run', [{ at: null, hint: 'm.s1.run.h1', done: () => caught }]);
-      await firstCatch(d, ramu, c, s);
+      // ---- mission 6, run: off the stage before they lay hands on him, and out of the sammelan's east gate (he is
+      // the faster; caught, a beating and from the foot of the stairs again) ----
+      const [sx, sz] = s.exit[5], ry = Math.atan2(-(A[0] - sx), -(A[1] - sz));
+      const back = (k: number): P2 => [sx - Math.sin(ry) * -k, sz - Math.cos(ry) * -k];
+      const fromStairs: Restart = { at: [sx, sz], ry, behind: [back(3.5), back(4.5), back(5.5), back(6.5)] };
+      c.hard = false;
+      // a head start: the scene cut just short of their hands; back along their way, 4.5 m and more off him
+      const r = ramu.position;
+      c.place(c.guards.map((g, i) => {
+        const dx = g.position.x - r.x, dz = g.position.z - r.z, l = Math.hypot(dx, dz) || 1, want = Math.max(l, 4.5 + i * 0.9);
+        return [r.x + (dx / l) * want, r.z + (dz / l) * want];
+      }));
+      await leg(d, ramu, c, 6, 'm.s1.run', [step(A, 'm.s1.flee.h1', 2.6)], fromStairs);
       hooks.step(6);
     } else restartAt(ramu, c, fromA);
 
     // ---- mission 7: A, B, C ----
-    await leg(d, ramu, c, 7, 'm.s1.flee', [step(A, 'm.s1.flee.h1', 2.6), step(B, 'm.s1.flee.h2'), step(C, 'm.s1.flee.h3')], fromA);
+    await leg(d, ramu, c, 7, 'm.s1.flee', from === 'flee' ? [step(A, 'm.s1.flee.h1', 2.6), step(B, 'm.s1.flee.h2'), step(C, 'm.s1.flee.h3')] : [step(B, 'm.s1.flee.h2'), step(C, 'm.s1.flee.h3')], fromA);
     await rockScene(d, ramu, c, mela);
     hooks.step(7);
   }
@@ -184,8 +201,10 @@ export async function stage1Part3(d: Director, ramu: Ramu, mela: Mela, hooks: St
   ramu.gesture('get_up');
 }
 
+/** his model's roll (about its own forward) that leans him to his left */
+const ROLL_LEFT = 1;
 /** where he comes down after the rock (in front of the stall at C) */
-const LAND_AT: P2 = [C[0] + 1.4, C[1] + 3.1];
+const LAND_AT: P2 = [C[0] + 1.4, C[1] - 2.6];     // to his left as he runs +x
 
 interface Restart { at: P2; ry: number; behind: P2[] }
 
@@ -244,42 +263,6 @@ async function blows(d: Director, ramu: Ramu, g: Person, n = 2): Promise<void> {
   }
 }
 
-/** the first time they have him (at the stage): held, hit, then he shoves the one in front over and is off */
-async function firstCatch(d: Director, ramu: Ramu, c: Chase, s: Sammelan): Promise<void> {
-  // facing out toward the sammelan's east gate, the way he will run
-  ramu.faceTowards(A[0], A[1]);
-  const gs = surround(ramu, c), g = gs[0];
-  await d.scene(async () => {
-    const two = d.front(ramu, { dist: 2.8, side: 1.6, up: 0.3, drop: 0.35, fov: 46 });
-    d.shot(two, 0, d.pushIn(two, 0.05));
-    await d.say('guard', g.face, 'gotcha');
-    await blows(d, ramu, g);
-    await d.say('ramu', ramu.face, 'ouch');
-    ramu.gesture('push_one');
-    await d.wait(0.45);
-    g.gesture('fall', `fl${performance.now()}`, 3.5);
-    gs[1].gesture('shove', 'sv1', 1.6);
-    gs[2].gesture('shove', 'sv2', 1.6);
-    void playSfx('thud', 0.7);
-    await d.wait(0.6);
-    d.shot(d.front(ramu, { dist: 1.7, side: 0.4, up: 0.05, drop: 0.15, fov: 38 }), 0);
-    await d.say('ramu', ramu.face, 'free');
-  });
-  ramu.stopGesture();
-  ramu.yaw = ramu.facing;
-  // the one he shoved gets up as the others (staggered back) go after him
-  const p = ramu.position;
-  for (const q of c.guards) {
-    const dx = q.position.x - p.x, dz = q.position.z - p.z, l = Math.hypot(dx, dz) || 1;
-    q.place(p.x + (dx / l) * 2.6, p.z + (dz / l) * 2.6);
-    q.faceTowards(p.x, p.z);
-  }
-  g.gesture('get_up', 'gu1', 2.7);
-  c.resetTrail([[g.position.x, g.position.z]]);
-  c.hard = false;
-  void s;
-}
-
 const CAUGHT = ['caught1', 'caught2', 'caught3'];
 let caughtN = 0;
 
@@ -299,8 +282,8 @@ async function beaten(d: Director, ramu: Ramu, c: Chase): Promise<void> {
 async function rockScene(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<void> {
   c.stop();
   const run0: P2 = [C[0] - 3.6, C[1] + 0.1], run1: P2 = [C[0] - 0.4, C[1] + 0.6];
-  const custAt: [P2, P2] = [[LAND_AT[0] - 0.45, LAND_AT[1] + 0.55], [LAND_AT[0] + 0.5, LAND_AT[1] + 0.45]];
-  const [uncle, aunty] = await Promise.all([extra(mela, 'uncle', ...custAt[0], Math.PI), extra(mela, 'aunty', ...custAt[1], Math.PI)]);
+  const custAt: [P2, P2] = [[LAND_AT[0] - 0.45, LAND_AT[1] - 0.75], [LAND_AT[0] + 0.5, LAND_AT[1] - 0.65]];
+  const [uncle, aunty] = await Promise.all([extra(mela, 'uncle', ...custAt[0], 0), extra(mela, 'aunty', ...custAt[1], 0)]);
   const g = c.guards[0];
   g.place(run0[0] - 8.5, run0[1] + 0.3, -Math.PI / 2);
   c.guards.slice(1).forEach((q, i) => q.place(run0[0] - 11 - i * 1.3, run0[1] + (i - 1) * 1.1, -Math.PI / 2));
@@ -310,7 +293,7 @@ async function rockScene(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise
   held.holder(g.actor.root);
   props.push(held);
   ramu.sitAt(run0[0], 0.05, run0[1], -Math.PI / 2, 'idle');
-  const tilt = (k: number) => { ramu.model.rotation.x = k; };
+  const roll = (k: number) => { ramu.model.rotation.z = k; };
   await d.scene(async () => {
     // over the guard's shoulder, Ramu running ahead of him
     d.shot({ pos: v(g.position.x - 2.2, 1.9, g.position.z + 1.4), look: v(run0[0], 1.0, run0[1]), fov: 44 }, 0);
@@ -331,21 +314,24 @@ async function rockScene(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise
       stone.rotation.x += 0.3;
     });
     void playSfx('thud', 1);
-    // off his feet, over and down onto the two at the stall
-    ramu.holdClip('falling');
-    ramu.model.rotation.y = Math.atan2(-(LAND_AT[0] - run1[0]), -(LAND_AT[1] - run1[1]));
-    await d.tween(0.75, (k) => {
-      ramu.position.set(run1[0] + (LAND_AT[0] - run1[0]) * k, 0.05 + Math.sin(k * Math.PI) * 1.3 + (1 - k) * 0.2, run1[1] + (LAND_AT[1] - run1[1]) * k);
-      tilt(-1.2 * k);
+    // struck: arched back, off his feet, thrown to his left, twisting that way, and down onto the two at the stall
+    ramu.holdClip('idle');
+    ramu.gesture('struck', 1);
+    const y0 = -Math.PI / 2, y1 = Math.atan2(-(LAND_AT[0] - run1[0]), -(LAND_AT[1] - run1[1]));
+    await d.tween(0.8, (k) => {
+      const e = k * k * (3 - 2 * k);
+      ramu.position.set(run1[0] + (LAND_AT[0] - run1[0]) * k, 0.05 + Math.sin(k * Math.PI) * 1.0, run1[1] + (LAND_AT[1] - run1[1]) * k);
+      ramu.model.rotation.y = y0 + (y1 - y0) * e;
+      roll(ROLL_LEFT * Math.sin(k * Math.PI) * 0.7);
       stone.position.y = Math.max(0.08, stone.position.y - 0.08);
     });
     uncle.gesture('fall', 'cf1', 4);
     aunty.gesture('fall2', 'cf2', 4);
     void playSfx('thud', 1);
-    tilt(0);
-    ramu.holdClip('idle');
+    roll(0);
+    ramu.model.rotation.y = y1;
     ramu.gesture('fall2');
-    d.shot({ pos: v(LAND_AT[0] + 3.2, 1.3, LAND_AT[1] - 2.6), look: v(LAND_AT[0], 0.4, LAND_AT[1] + 0.3), fov: 46 }, 0);
+    d.shot({ pos: v(LAND_AT[0] + 3.2, 1.3, LAND_AT[1] + 2.6), look: v(LAND_AT[0], 0.4, LAND_AT[1] - 0.6), fov: 46 }, 0);
     await d.wait(2.2);
     // up again: the customers angry, Ramu sorry, and off
     uncle.gesture('get_up', 'cu1', 2.7);
@@ -364,14 +350,14 @@ async function rockScene(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise
     await d.say('ramu', ramu.face, 'sorry');
   });
   // watched or skipped: Ramu up by the stall, the customers on their feet and cross, the guards behind
-  tilt(0);
+  roll(0);
   ramu.stopGesture();
-  ramu.standUp(LAND_AT[0] - 0.4, LAND_AT[1] - 1.2, 0.5);
+  ramu.standUp(LAND_AT[0] - 0.4, LAND_AT[1] + 1.2, 0.5);
   ramu.model.rotation.y = 0;
   ramu.yaw = 0;
   held.holder(null);
   stone.position.set(run1[0] + 0.6, 0.08, run1[1] + 0.3);
-  for (const p of [uncle, aunty]) { p.idle(); p.face.angry = 0.6; p.faceTowards(LAND_AT[0], LAND_AT[1] - 1.2); }
+  for (const p of [uncle, aunty]) { p.idle(); p.face.angry = 0.6; p.faceTowards(LAND_AT[0], LAND_AT[1] + 1.2); }
   c.place([[run0[0] - 5.5, run0[1]], [run0[0] - 7, run0[1] + 0.9], [run0[0] - 8, run0[1] - 0.8], [run0[0] - 9.5, run0[1]]]);
   c.resetTrail([[run0[0] - 5.5, run0[1]], run1]);
 }

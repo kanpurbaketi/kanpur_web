@@ -47,7 +47,7 @@ UNUSED = {'gunplay', 'sweep fall'}    # clips that keep their travel: a man knoc
 # clips whose left arm the FBX leaves in the T-pose: that arm comes from the idle instead
 LEFT_ARM_FROM_IDLE = {'hungry'}
 RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling',
-             'pick_lock', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk'}
+             'pick_lock', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck'}
 
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed

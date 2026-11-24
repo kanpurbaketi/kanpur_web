@@ -115,6 +115,58 @@ const C = {
     [0, M(body(16, 6, -6, 0, 14), ra(70, 40, 75), la(14, 20, 40), legs(22, 30, 8, 14, 8))],
     [1.5, M(body(18, 8, -4, 8, 16), legs(24, 32, 8, 14, 8))],
     [3, M(body(16, 6, -6, 0, 14), ra(70, 40, 75), legs(22, 30, 8, 14, 8))]] },
+  // ---- standing with a hand mic held at the chest (the game aims it at the mouth), the free hand easy, looking round the house
+  mic_stand: { len: 6, keys: [
+    [0, M(body(0, -2, 0), ra(12, 35, 115), la(10, 8, 15), legs(0, 0, 0, 0, 6))],
+    [1.6, M(body(0, -2, 2, 18), legs(2, 3, -1, 0, 6))],
+    [3.2, M(body(0, -2, 0, -20), la(12, 12, 22))],
+    [4.6, M(body(0, -2, 1, -8), legs(-1, 0, 2, 3, 6))],
+    [6, M(body(0, -2, 0), ra(12, 35, 115), la(10, 8, 15), legs(0, 0, 0, 0, 6))]] },
+  // ---- talking into it: the mic up at the mouth, the free hand making the points, nods, turning to the house
+  mic_talk: { len: 4, keys: [
+    [0, M(body(2, 0, 2, 0), ra(10, 38, 135), la(18, 30, 50), legs(0, 0, 0, 0, 6))],
+    [0.7, M(body(2, 2, 6, 12), { chest: { turn: 8 } }, la(32, 48, 60))],
+    [1.3, M(body(2, 0, -2, 8), la(40, 35, 35))],
+    [2.0, M(body(2, 1, 4, -10), { chest: { turn: -8 } }, la(24, 50, 75))],
+    [2.7, M(body(2, 0, 0, -14), la(36, 40, 40))],
+    [3.4, M(body(2, 1, 5, 0), { chest: { turn: 0 } }, la(16, 26, 55))],
+    [4, M(body(2, 0, 2, 0), ra(10, 38, 135), la(18, 30, 50), legs(0, 0, 0, 0, 6))]] },
+  // ---- walking with the mic held at the chest (Mixamo's walk for the legs)
+  mic_walk: { len: 1.033, import: { file: 'Walking.fbx', part: 'lower' }, keys: [
+    [0, M(body(2, 0, 0), ra(12, 35, 115), la(10, 14, 20))],
+    [0.5, M(body(2, 0, 1), la(10, -6, 14))],
+    [1.033, M(body(2, 0, 0), ra(12, 35, 115), la(10, 14, 20))]] },
+  // ---- the anchor holds the mic out to whoever is taking it, and lets his hand down empty
+  mic_give: { len: 1.8, keys: [
+    [0, M(body(0, -2, 0), ra(12, 35, 115), la(10, 8, 15), legs(0, 0, 0, 0, 6))],
+    [0.6, M(body(6, 3, 8), ra(16, 66, 28))],
+    [1.0, M(body(6, 3, 8), ra(16, 66, 28))],
+    [1.8, M(body(0, -2, 2), ra(10, 6, 14))]] },
+  // ---- and the one taking it: a hand out, closed on it, brought in to the chest
+  mic_take: { len: 1.8, keys: [
+    [0, M(STAND)],
+    [0.6, M(body(6, 3, 6), ra(16, 64, 26))],
+    [0.9, M(body(6, 3, 6), ra(16, 62, 30))],
+    [1.8, M(body(0, -2, 2), ra(12, 35, 115))]] },
+  // ---- up out of a chair: bent forward over the feet, hands pushing off, up straight (crossfaded from the sitting clip)
+  rise: { len: 1.2, keys: [
+    [0, M(body(34, 12, -12), arms(14, 38, 22), legs(40, 55, 40, 55, 6))],
+    [0.55, M(body(18, 6, -4), arms(12, 20, 18), legs(18, 22, 18, 22, 4))],
+    [1.2, STAND]] },
+  // ---- seated, called by somebody else's name: a look left, a look right, then "me?" with a hand on his chest
+  self_point: { len: 2.6, import: { file: 'Sitting Talking.fbx', part: 'lower' }, keys: [
+    [0, M(body(0, 0, 0), arms(12, 22, 40))],
+    [0.5, M(body(0, 0, 0, 35))],
+    [1.0, M(body(0, 0, 0, -35))],
+    [1.5, M(body(2, -2, -4, 0), { head: { side: 8 } }, ra(28, 26, 150))],
+    [2.2, M(body(2, -2, -4, 0), { head: { side: 10 } }, ra(28, 26, 150))],
+    [2.6, M(body(0, 0, 0, 0), { head: { side: 0 } }, ra(14, 28, 70))]] },
+  // ---- a rock in the back while running: arched back, arms flung, then pitched forward, hands out to break the fall
+  struck: { len: 0.8, keys: [
+    [0, M(body(10, 4, 0), arms(14, 20, 60), legs(25, 40, -15, 30, 4))],
+    [0.14, M(body(-18, -14, -26), arms(45, -40, 25), legs(10, 30, -20, 50, 4))],
+    [0.45, M(body(28, 10, -10), arms(30, 120, 20), legs(25, 30, -25, 70, 4))],
+    [0.8, M(body(32, 12, -14), arms(30, 140, 15), legs(20, 20, -30, 75, 4))]] },
 };
 
 const name = process.argv[2], c = C[name];

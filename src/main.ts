@@ -479,7 +479,7 @@ void main() {
       if (director && !paused) director.update(dt);
       if (keepers && !paused) keepers.update(dt, ramu.position.x, ramu.position.z);
       if (queue && !paused) queue.update(dt, ramu.position.x, ramu.position.z);     // the story: after Ramu, so a cutscene's camera has the last word
-      if (!driving?.driving && !health.knockedOut) {
+      if (!driving?.driving && !health.knockedOut && !ramu.posed) {   // (posed: a scene has put him exactly where he is, a chair at a table)
         // he cannot walk through people: the street crowd and the mela's
         const p = ramu.position;
         [p.x, p.z] = peds.pushOut(p.x, p.z, 0.33, p.y);

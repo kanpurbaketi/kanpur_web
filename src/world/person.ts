@@ -26,6 +26,8 @@ export class Person {
   /** moved by somebody else (the story's chase sets where they are): the pace their walk or run is played at; null: on
    * their own */
   driven: number | null = null;
+  /** what walking looks like for them just now (with a mic in the hand: mic_walk) */
+  walkClip = 'walk';
   /** the ground under them while walking (the stage, its stairs): null keeps their height */
   floor: ((x: number, z: number) => number) | null = null;
 
@@ -145,7 +147,7 @@ export class Person {
         p.z += (dz / d) * step;
         if (this.floor) p.y = this.floor(p.x, p.z);
         this.turnTo = Math.atan2(-dx, -dz);
-        this.actor.move(d < 0.15 ? 0.6 : this.speed);
+        this.actor.move(d < 0.15 ? 0.6 : this.speed, 'idle', this.walkClip);
       }
     } else if (this.gestureT > 0) {
       if ((this.gestureT -= dt) <= 0 && this.driven === null) this.actor.play(this.pose ?? 'idle', this.pose ? this.poseScale : 1);

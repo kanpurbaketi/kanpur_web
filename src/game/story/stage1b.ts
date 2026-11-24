@@ -10,7 +10,7 @@ import { RhymeQuiz } from '../../ui/rhyme';
 import { Throwers } from '../../world/throwers';
 import type { StoryHooks } from './stage1';
 import { playSfx } from './sfx';
-import { PART3_FROM, sendGuards, stage1Part3 } from './stage1c';
+import { PART3_FROM, chaseFor, sendGuards, stage1Part3 } from './stage1c';
 
 /*
  Stage 1, part 2 (plans/09-stage1-part2.md): inside the mela, at the kavi sammelan. Built so far:
@@ -85,7 +85,9 @@ async function quiz(d: Director, ramu: Ramu, s: Sammelan, ui: RhymeQuiz, thrower
     const r = close();
     d.shot(r, 0, d.pushIn(r, 0.03));
     await d.wait(0.5);
+    ramu.holdClip('mic_talk');
     await d.say('ramu', ramu.face, `q${q.n}`, line);
+    ramu.holdClip('mic_stand');
     await d.wait(0.2);
   });
   ramu.yaw = s.facing;                                         // over his shoulder at the audience, while he thinks
@@ -94,10 +96,12 @@ async function quiz(d: Director, ramu: Ramu, s: Sammelan, ui: RhymeQuiz, thrower
     const r = close();
     d.shot(r, 0, d.pushIn(r, 0.03));
     await d.wait(0.2);
+    ramu.holdClip('mic_talk');
     if (a.picked >= 0) {
       const second = `${key}.c${a.picked}`;
       await d.say('ramu', ramu.face, `q${q.n}c${a.picked}`, second, () => `${tk(line)}\n${tk(second)}`);
     } else await d.say('ramu', ramu.face, 'umm');
+    ramu.holdClip('mic_stand');
     const [fx, fz] = [-Math.sin(s.facing), -Math.cos(s.facing)];
     const head = new THREE.Vector3();
     if (!ramu.headPosition(head)) head.set(ramu.position.x, ramu.position.y + 1.5, ramu.position.z);
@@ -182,11 +186,23 @@ async function kumarBack(d: Director, ramu: Ramu, s: Sammelan, throwers: Thrower
   d.shot(af, 0, d.pushIn(af, 0.04));
   await d.wait(0.3);
   await d.say('anchor', anchor.face, 'pakdo');
-  // the guards, in at the gates
+  // the guards, up the stage's stairs at him; mission 6 ("Run!") starts before they lay hands on him
+  ramu.faceTowards(s.exit[4][0], s.exit[4][1]);
   await guards(ramu, s);
-  const g = s.gates[0];
-  d.shot({ pos: v(g[0] - 9, 2.2, g[1] + 3), look: v(g[0] - 1, 1.0, g[1]), fov: 48 }, 0);
-  await d.wait(2.2);
+  const rx = ramu.position.x, rz = ramu.position.z;
+  const ax = top[0] - rx, az = top[1] - rz, al = Math.hypot(ax, az) || 1;
+  // over his shoulder, from behind him, the stairs' top ahead
+  d.shot({ pos: v(rx - (ax / al) * 2.6 + (az / al) * 0.9, s.floor + 2.1, rz - (az / al) * 2.6 - (ax / al) * 0.9), look: v(top[0], s.floor + 0.6, top[1]), fov: 50 }, 0);
+  const t0 = performance.now();
+  await d.until(() => d.skipped || performance.now() - t0 > 8000 || nearestGuard(ramu) < 3.2);
+}
+
+/** how far the nearest of the story's guards is from Ramu (Infinity with none) */
+function nearestGuard(ramu: Ramu): number {
+  if (!theMela) return Infinity;
+  let best = Infinity;
+  for (const g of chaseFor(theMela, ramu).guards) best = Math.min(best, Math.hypot(g.position.x - ramu.position.x, g.position.z - ramu.position.z));
+  return best;
 }
 
 /** the four guards from the sammelan's gates, after him (stage1c.ts: the chase) */
@@ -272,10 +288,13 @@ async function takeSeat(d: Director, ramu: Ramu, s: Sammelan): Promise<void> {
   d.prompt = null;
 }
 
+const SIT_FWD = 0.05;
+
 /** beat 3: Ramu in the armchair, a fruit off Kumar's plate, eating; the poet beside him gives him a look */
 async function sitAndEat(d: Director, ramu: Ramu, s: Sammelan): Promise<void> {
   const [cx, cz] = s.seats[0], poet = s.poets[0];
-  ramu.sitAt(cx, s.seatY, cz, s.facing, 'sit_eat');
+  // a little forward on the seat: his (shorter) shins clear of the armchair's front panel
+  ramu.sitAt(cx - Math.sin(s.facing) * SIT_FWD, s.seatY, cz - Math.cos(s.facing) * SIT_FWD, s.facing, 'sit_eat');
   ramu.yaw = s.facing;
   fruit = foodMesh('apple').then((m) => {
     s.group.add(m);
@@ -333,16 +352,20 @@ async function anchorCalls(d: Director, ramu: Ramu, s: Sammelan): Promise<void> 
     for (let i = 0; i < shers.length; i++) {
       const sh = [a, a2, house][i];
       d.shot(sh, i ? 0.7 : 0, d.pushIn(sh, 0.04));
+      anchor.hold('mic_talk', 0.9);
       await d.wait(0.3);
       await d.say('anchor', anchor.face, shers[i][0]);
       await d.say('anchor', anchor.face, shers[i][1]);
+      anchor.hold('mic_stand');                                 // the mic down to his chest for the wah wah
       void playSfx('applause', 0.7, 2.2);
       await d.say('audience', null, 'wah');
     }
     // the call
     d.shot(a, 0, d.pushIn(a, 0.05));
+    anchor.hold('mic_talk', 0.9);
     await d.wait(0.3);
     await d.say('anchor', anchor.face, 'intro');
+    anchor.hold('mic_stand');
     void playSfx('applause', 1, 4);
     // nobody gets up; the poets look at Kumar's chair, and at who is in it
     const row = d.front(s.poets[2], { dist: 3.0, side: 2.0, up: 0.2, drop: 0.25, fov: 50 });
@@ -350,35 +373,55 @@ async function anchorCalls(d: Director, ramu: Ramu, s: Sammelan): Promise<void> 
     anchor.turn(anchor.towards(ramu.position.x, ramu.position.z));
     for (const p of s.poets) glance(s, p, ramu.position.x, ramu.position.z);
     await d.wait(1.8);
+    // Ramu: a look left, a look right (who, me?), a hand on his chest
     ramu.holdClip('sitting_talking');
     dropFruit(s);
     const r = d.front(ramu, { dist: 1.6, side: 0.45, up: 0.05, drop: 0.15, fov: 37 });
     d.shot(r, 0, d.pushIn(r, 0.03));
-    await d.wait(0.6);
+    ramu.gesture('self_point');
+    await d.wait(1.5);
     await d.say('ramu', ramu.face, 'me');
-    // a cut: he is up and at the mic, the anchor holding it out to him
-    toMic(ramu, s);
-    anchor.idle();
+    await d.wait(0.3);
+    // up out of the chair, round the end of the table and over to the mic, the anchor waiting there for him
+    const path = micPath(s);
+    const side = { pos: v(path[1][0] + fx * 3.6 - fz * 2.2, A + 1.5, path[1][1] + fz * 3.6 + fx * 2.2), look: v(path[1][0] + fx * 0.8, A + 0.9, path[1][1] + fz * 0.8), fov: 48 };
+    d.shot(side, 0);
+    ramu.gesture('rise', 1.1);
+    const seat: [number, number] = [ramu.position.x, ramu.position.z];
+    await d.tween(1.0, (k) => ramu.position.set(seat[0] + (path[0][0] - seat[0]) * k, A, seat[1] + (path[0][1] - seat[1]) * k));
+    ramu.stopGesture();
     anchor.faceTowards(...s.micSide);
-    micProp.mode = 'palm';
+    await walkRamu(d, ramu, path, 1.3, 'walk');
+    // the handover: the anchor holds the mic out, Ramu takes it (the hands meet ~0.7 s in)
+    ramu.faceTowards(anchor.position.x, anchor.position.z);
+    anchor.faceTowards(ramu.position.x, ramu.position.z);
     const hand = { pos: v(mx + fx * 3.2 - fz * 0.4, A + 1.5, mz + fz * 3.2 + fx * 0.4), look: v((mx + s.micSide[0]) / 2, A + 1.2, (mz + s.micSide[1]) / 2), fov: 40 };
     d.shot(hand, 0);
-    await d.wait(0.4);
+    anchor.hold('mic_talk', 0.9);
     await d.say('anchor', anchor.face, 'handover');
+    anchor.gesture('mic_give', 'handover', 1.8);
+    await d.wait(0.1);
+    ramu.gesture('mic_take');
+    await d.wait(0.7);
+    micProp.mode = 'mic';
     micProp.holder(ramu.model);
-    await d.wait(0.5);
-    // the anchor steps aside, Ramu steps up to the mic and holds it up
+    await d.wait(1.0);
+    // the anchor steps aside, Ramu steps up to the mic with it
+    anchor.walkClip = 'walk';
     anchor.walkTo(...s.aside, 1.0);
-    await d.wait(1.2);
-    const from: [number, number] = [ramu.position.x, ramu.position.z];
-    await d.tween(0.6, (k) => ramu.standAt(...lerp(from, s.mic, k), A));
+    await d.wait(0.6);
+    ramu.stopGesture();
+    await walkRamu(d, ramu, [s.mic], 0.9, 'mic_walk');
     atMic(ramu, s);
     d.shot(house, 0.9, d.pushIn(house, 0.15));
     await d.wait(1.6);
   });
   // watched or skipped: Ramu at the mic with it, the anchor aside, facing the audience, the poets looking at Ramu
   dropFruit(s);
-  if (!micProp.held || anchor.walking) { micProp.holder(ramu.model); anchor.place(...s.aside); }
+  ramu.stopGesture();
+  micProp.holder(ramu.model);                                   // (skipped: handed over, the anchor already aside)
+  if (anchor.walking || Math.hypot(anchor.position.x - s.aside[0], anchor.position.z - s.aside[1]) > 0.3) anchor.place(...s.aside);
+  anchor.walkClip = 'walk';
   anchor.idle();
   anchor.turn(anchor.towards(...s.mic));
   anchor.face.talking = false;
@@ -392,15 +435,33 @@ function glance(s: Sammelan, p: Person, x: number, z: number): void {
   p.turn(s.facing + Math.max(-0.55, Math.min(0.55, d)));
 }
 
-/** up out of the chair and beside the mic, facing it */
-function toMic(ramu: Ramu, s: Sammelan): void {
-  ramu.standUp(...s.micSide, s.floor);
-  ramu.faceTowards(...s.mic);
+/** from Kumar's chair to beside the mic: out in front of the chair, along the row past the end of the table, and
+ round it to the mic's side (world points; the first is where he stands up to, in front of the chair) */
+function micPath(s: Sammelan): [number, number][] {
+  const [cx, cz] = s.seats[0], [nx, nz] = s.seats[1];
+  const fx = -Math.sin(s.facing), fz = -Math.cos(s.facing);       // toward the audience
+  let ox = cx - nx, oz = cz - nz;                                   // along the row, outward past his chair
+  const ol = Math.hypot(ox, oz) || 1;
+  ox /= ol; oz /= ol;
+  return [[cx + fx * 0.45, cz + fz * 0.45], [cx + fx * 0.5 + ox * 1.1, cz + fz * 0.5 + oz * 1.1],
+    [cx + fx * 2.3 + ox * 1.1, cz + fz * 2.3 + oz * 1.1], s.micSide];
 }
 
-/** at the mic, facing the audience, holding it up to recite */
+/** Ramu walks through the points at `speed` m/s on the stage, playing `clip` (the walk, or with the mic: mic_walk) */
+async function walkRamu(d: Director, ramu: Ramu, pts: [number, number][], speed: number, clip: string): Promise<void> {
+  const y = ramu.position.y;
+  ramu.sitAt(ramu.position.x, y, ramu.position.z, ramu.facing, clip);
+  for (const [x, z] of pts) {
+    const x0 = ramu.position.x, z0 = ramu.position.z, len = Math.hypot(x - x0, z - z0);
+    if (len < 0.05) continue;
+    ramu.model.rotation.y = Math.atan2(-(x - x0), -(z - z0));
+    await d.tween(len / speed, (k) => ramu.position.set(x0 + (x - x0) * k, y, z0 + (z - z0) * k));
+  }
+}
+
+/** at the mic, facing the audience, holding it (up to his mouth as he talks: mic_talk) */
 function atMic(ramu: Ramu, s: Sammelan): void {
-  ramu.sitAt(s.mic[0], s.floor, s.mic[1], s.facing, 'recite');
+  ramu.sitAt(s.mic[0], s.floor, s.mic[1], s.facing, 'mic_stand');
   s.micProp.mode = 'mic';
   s.micProp.holder(ramu.model);
   ramu.yaw = s.facing;

@@ -849,7 +849,8 @@ export class Mela {
       kumar.actor.update(7);
       this.chat.push({ p: kumar, t: 3 });
       const anchor = person('anchor', toW(MIC[0], MIC[1]), FLOOR);
-      anchor.hold('recite', 0.9, 0);
+      anchor.hold('mic_talk', 0.9, 0);                       // (Katpootli: the mic at his mouth, the free hand making his points)
+      anchor.walkClip = 'mic_walk';
       anchor.face.talking = true;                            // reciting, all the while
       const micObj = await gltfLoader().loadAsync('models/handmic.glb').then((g) => g.scene, () => new THREE.Group());
       micObj.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });

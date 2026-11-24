@@ -335,7 +335,7 @@ export class Rider {
     if (amt <= 0 || !this.knuckles(side, _v8, across)) return;
     if (side === 'Left') across.negate();
     // a hand with only an index (the other fingers skinned onto it, fading in past the knuckles) closes the more for it
-    if (!b[side + 'HandMiddle1']) amt *= 1.45;
+    if (!b[side + 'HandMiddle1']) amt *= 1.2;
     for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) {
       const k = f === 'Index' ? 1 - 0.55 * pinch : 1;
       for (let j = 1; j <= 3; j++) {
@@ -350,6 +350,24 @@ export class Rider {
     for (const j of [2, 3]) {
       const bone = b[side + 'HandThumb' + j];
       if (bone) this.turn(bone, _q1.setFromAxisAngle(across, amt * 0.5 * GRIP_SIGN));
+    }
+  }
+
+  /**
+   * The thumb round a handle held in the fist (after grip): its tip brought round to lie on the index finger's middle
+   * joint, from the other side of the handle, as a fist closes on a mic. `w` 0..1.
+   */
+  thumbOver(side: 'Left' | 'Right', w = 1): void {
+    const b = this.bone, t1 = b[side + 'HandThumb1'], t2 = b[side + 'HandThumb2'];
+    const tip = b[side + 'HandThumb4'] ?? b[side + 'HandThumb3'];
+    const i2 = b[side + 'HandIndex2'], m2 = b[side + 'HandMiddle2'];
+    if (!t1 || !t2 || !tip || !i2 || w <= 0) return;
+    const to = this.world(i2, new THREE.Vector3());
+    if (m2) to.lerp(this.world(m2, _v9), 0.35);
+    for (const bone of [t1, t2]) {
+      const from = this.world(tip, new THREE.Vector3());
+      const at = from.clone().lerp(to, w);
+      this.aim(bone, from, at);
     }
   }
 

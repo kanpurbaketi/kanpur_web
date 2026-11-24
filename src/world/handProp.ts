@@ -57,6 +57,11 @@ export class HandProp {
   private hold = 1;
   /** 'stick': the way the stick points, eased */
   private stickDir = new THREE.Vector3();
+  /** the right arm's bones (arm to fingertips): each as the clip left it (`pre`) and as this left it (`post`). A body far
+   from the camera is posed by its mixer only every other or third frame; the turns put on here (the grip, the wrist)
+   are on top of the pose they find, so on a frame the mixer skipped they would go on again over last frame's and the
+   hand shake. Then the clip's pose is put back first. */
+  private arm: { bone: THREE.Object3D; pre: THREE.Quaternion; post: THREE.Quaternion }[] = [];
 
   constructor(readonly object: THREE.Object3D, public mode: HoldMode, readonly grip = 0.07) {}
 
@@ -68,6 +73,10 @@ export class HandProp {
     this.head = root ? findBone(root, 'Head') : null;
     this.rig = root ? new Rider(root) : null;
     this.pose = [];
+    this.arm = [];
+    findBone(root ?? new THREE.Object3D(), 'RightArm')?.traverse((bone) => {
+      this.arm.push({ bone, pre: bone.quaternion.clone(), post: new THREE.Quaternion(0, 0, 0, 0) });
+    });
     let stored: Record<string, number[]> | undefined;
     root?.traverse((o) => { stored ??= o.userData.micPose; });
     if (root && stored) {
@@ -84,7 +93,16 @@ export class HandProp {
     const { root, hand, head } = this;
     const o = this.object, parent = o.parent;
     if (!root || !hand || !parent) return;
+    for (const k of this.arm) {
+      if (k.bone.quaternion.equals(k.post)) k.bone.quaternion.copy(k.pre);   // the mixer did not run: as the clip had it
+      else k.pre.copy(k.bone.quaternion);
+    }
     root.updateMatrixWorld(true);
+    this.place(root, hand, head, o, parent);
+    for (const k of this.arm) k.post.copy(k.bone.quaternion);
+  }
+
+  private place(root: THREE.Object3D, hand: THREE.Object3D, head: THREE.Object3D | null, o: THREE.Object3D, parent: THREE.Object3D): void {
     if (this.mode === 'mic' && head && this.rig?.ok) {
       this.micArm(root, hand, head);
       root.updateMatrixWorld(true);

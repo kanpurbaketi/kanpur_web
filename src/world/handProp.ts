@@ -101,6 +101,12 @@ export class HandProp {
       facing(root, f);
       const mouth = v.addScaledVector(f, MOUTH_F).addScaledVector(UP, MOUTH_UP);
       const dir = mouth.sub(grip).normalize();
+      if (this.pose.length && this.rig?.hand('Right', m1, m2)) {
+        // up through the ring of the fingers (across the knuckles, index side up), leaning a little to the mouth
+        const through = m3.crossVectors(m1, m2).normalize();
+        if (through.y < 0) through.negate();
+        dir.multiplyScalar(0.25).addScaledVector(through, 0.75).normalize();
+      }
       o.position.copy(parent.worldToLocal(grip.clone().addScaledVector(dir, -this.grip)));
       o.quaternion.setFromUnitVectors(UP, dir).premultiply(pq);
     } else if (this.mode === 'hang') {
@@ -133,21 +139,25 @@ export class HandProp {
     this.hold += Math.max(-0.07, Math.min(0.07, (this.own ? 0 : 1) - this.hold));
     const w = (1 - smooth((out - 0.3) / 0.12)) * smooth(this.hold);
     // the rig's own mic hold (grab_mic) when it has one: the right arm and fingers put in it, over whatever the body does
-    // the fist is where the hand closes, a little past the wrist: the wrist goes that much short of it
-    target.copy(atMouth).addScaledVector(UP, -0.05).addScaledVector(f, -0.02);
     if (this.pose.length) {
       for (const { bone, q: pq } of this.pose) bone.quaternion.slerp(pq, w);
       root.updateMatrixWorld(true);
-      // on a bigger or smaller body than the pose was made on, the same angles leave the fist off the chin: the wrist on
-      // to it, the elbow kept on the pose's side, the hand kept turned as the pose has it
-      const elbow = findBoneCached(root, 'RightForeArm', m7);
-      const pole = elbow.addScaledVector(UP, -0.1);
-      const hq = hand.getWorldQuaternion(new THREE.Quaternion());
-      rig.reach('Right', target, pole, w);
-      const parentQ = hand.parent!.getWorldQuaternion(new THREE.Quaternion());
-      hand.quaternion.copy(parentQ.invert().multiply(hq));
+      // then the hold as a singer's: the fist below the chin and out in front, the elbow low by the ribs, the forearm
+      // angled up, the wrist straight; the back of the hand to the front, knuckles to his left, the fingers round the
+      // handle and the thumb over them, so the mic stands up through the fist (see update)
+      const fistAt = m5.copy(mouth).addScaledVector(f, 0.09).addScaledVector(UP, -0.21).addScaledVector(right, 0.03);
+      const along = m6.copy(right).multiplyScalar(-0.85).addScaledVector(UP, 0.3).addScaledVector(f, 0.15).normalize();
+      const wrist = fistAt.addScaledVector(along, -0.075).addScaledVector(f, 0.03);
+      const shoulder = findBoneCached(root, 'RightArm', m7);
+      const pole = shoulder.addScaledVector(UP, -0.5).addScaledVector(right, 0.15).addScaledVector(f, -0.05);
+      rig.reach('Right', wrist, pole, w);
+      rig.palmTo('Right', m8.copy(f).negate(), w);
+      rig.handTo('Right', along, m8.copy(f).negate().addScaledVector(right, -0.2), w);
+      rig.grip('Right', 0.95, 0);
       return;
     }
+    // the fist is where the hand closes, a little past the wrist: the wrist goes that much short of it
+    target.addScaledVector(UP, -0.05).addScaledVector(f, -0.02);
     const shoulder = findBoneCached(root, 'RightArm', m7);
     const pole = shoulder.addScaledVector(UP, -0.55).addScaledVector(right, 0.28).addScaledVector(f, -0.12);
     rig.reach('Right', target, pole, w);

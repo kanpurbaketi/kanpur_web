@@ -55,12 +55,14 @@ export class HandProp {
   /** 'mic': true while the clip's own arm holds it (handing it over); the hold at the mouth eases off and back */
   own = false;
   private hold = 1;
+  /** 'stick': the way the stick points, eased */
+  private stickDir = new THREE.Vector3();
 
   constructor(readonly object: THREE.Object3D, public mode: HoldMode, readonly grip = 0.07) {}
 
   /** in `root`'s right hand from now on (null: let go, the object stays where it was) */
   holder(root: THREE.Object3D | null): void {
-    if (root !== this.root) this.hold = 0;            // a new hand: from where its clip has it
+    if (root !== this.root) this.hold = 0;            // a new hand: from where its clip has it (a stick eases on from the old)
     this.root = root;
     this.hand = root ? findBone(root, 'RightHand') : null;
     this.head = root ? findBone(root, 'Head') : null;
@@ -116,11 +118,14 @@ export class HandProp {
       o.position.copy(parent.worldToLocal(grip.clone().addScaledVector(dir, -this.grip)));
       o.quaternion.setFromUnitVectors(UP, dir).premultiply(pq);
     } else if (this.mode === 'stick' && this.rig?.hand('Right', m1, m2)) {
-      // up through the ring of the fingers: across the knuckles, the index's side up
-      const through = m3.crossVectors(m1, m2).normalize();
-      if (through.y < 0) through.negate();
-      o.position.copy(parent.worldToLocal(grip.clone().addScaledVector(through, -this.grip)));
-      o.quaternion.setFromUnitVectors(UP, through).premultiply(pq);
+      // up through the ring of the fingers: across the knuckles toward the index's side (along x palm: always that side,
+      // so it never flips over as the fist turns level, holding it out), leaned upright as a hand holds a stick, and
+      // eased frame to frame
+      const through = m3.crossVectors(m1, m2).normalize().addScaledVector(UP, 0.9).normalize();
+      if (this.stickDir.lengthSq() < 0.5) this.stickDir.copy(through);
+      this.stickDir.lerp(through, 0.35).normalize();
+      o.position.copy(parent.worldToLocal(grip.clone().addScaledVector(this.stickDir, -this.grip)));
+      o.quaternion.setFromUnitVectors(UP, this.stickDir).premultiply(pq);
     } else if (this.mode === 'hang') {
       // upright, turned as the holder is
       o.position.copy(parent.worldToLocal(grip.addScaledVector(UP, -this.grip)));

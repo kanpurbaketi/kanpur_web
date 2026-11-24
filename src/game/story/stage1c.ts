@@ -19,8 +19,10 @@ import { playSfx } from './sfx';
    mission 7  A (out of the sammelan's east gate), B (down the lane), C (east along the aisle); at C a guard's rock
               knocks him flying into two customers at a stall
    mission 8  D (north up the main aisle), E (the giant wheel): he jumps for a cabin and it lifts him away
-   mission 9  hold on: four times his grip slips, Space (or a tap) in time grabs again; a miss drops him (from D again).
-              Then a guard has the operator stop the wheel dead, and Ramu is flung into the bouncy castle (F)
+   mission 9  he climbs onto the cabin's roof; a guard waits on the east side, where the cabins come down. Each time his
+              cabin goes over the top, Space (or a tap) in time jumps back to the cabin behind; a miss, and it takes
+              him down to the guard (back up on a cabin, from the start of the jumps). Three jumps: the guard has the
+              operator stop the wheel, his cabin out on the east side; one more jump, into the bouncy castle (F)
    mission 10 G, H, the maut ka kuan's stair, up to its gallery; at the top he sees Anaya across the well, candy floss
               in her hand
    mission 11 round the gallery to her: the guards come up the stair across the well, "Woh raha!"; slow motion: she
@@ -152,26 +154,24 @@ export async function stage1Part3(d: Director, ramu: Ramu, mela: Mela, hooks: St
   // ---- mission 8: D, E, the wheel; mission 9: hold on (a miss: from D again) ----
   if (from !== 'kuan' && from !== 'gallery') {
     const fromD = { at: D, ry: 0, behind: [[-149.6, 293], [-148.4, 293.6], [-149.2, 295], [-148.6, 296]] as P2[] };
-    let restart = from === 'wheel' || from === 'hang' ? fromD : { at: LAND_AT, ry: -Math.PI / 2, behind: [[-166, 298.0], [-166.5, 299.2], [-168, 298.4], [-169, 299]] as P2[] };
+    const restart = from === 'wheel' || from === 'hang' ? fromD : { at: LAND_AT, ry: -Math.PI / 2, behind: [[-166, 298.0], [-166.5, 299.2], [-168, 298.4], [-169, 299]] as P2[] };
     if (from === 'wheel' || from === 'hang') restartAt(ramu, c, fromD);
     let toHang = from === 'hang';                    // a test start at mission 9: straight onto the wheel
-    for (;;) {
-      if (!toHang) {
-        await leg(d, ramu, c, 8, 'm.s1.wheel', [step(D, 'm.s1.wheel.h1', 3.5), step(E, 'm.s1.wheel.h2', 3.5)], restart);
-        hooks.step(8);
-      }
-      d.fastForward = toHang;
-      toHang = false;
-      await grabWheel(d, ramu, c, mela);
-      d.fastForward = false;
-      if (await holdOn(d, ramu, mela)) break;
-      await fell(d, ramu, c, mela, hooks);
-      restart = fromD;
-      restartAt(ramu, c, fromD);
+    if (!toHang) {
+      await leg(d, ramu, c, 8, 'm.s1.wheel', [step(D, 'm.s1.wheel.h1', 3.5), step(E, 'm.s1.wheel.h2', 3.5)], restart);
+      hooks.step(8);
+    }
+    d.fastForward = toHang;
+    await grabWheel(d, ramu, c, mela);
+    d.fastForward = false;
+    // on the roof: three jumps back to the cabin behind; a miss, and the guard below has him: back up on a cabin
+    while (!(await rideWheel(d, ramu, mela))) {
+      await caughtBelow(d, ramu, c, mela, hooks);
+      backOnWheel(ramu, c, mela);
       await d.fade(0, 0.6);
     }
     hooks.step(9);
-    await flung(d, ramu, c, mela);
+    await stopAndJump(d, ramu, c, mela);
   } else if (from === 'kuan') {
     ramu.standAt(...F, 0);
     ramu.yaw = ramu.facing;
@@ -405,11 +405,13 @@ function hangFrom(mela: Mela, ramu: Ramu): void {
   });
 }
 
-/** at E: he runs at the wheel, jumps for a cabin coming up and it lifts him off his feet; the guards jump for his feet */
+/** at E: he runs at the wheel, jumps for a cabin coming up and it lifts him off his feet; the guards jump for his feet;
+ * he climbs up onto its roof, and one of them goes round to the east side, where the cabins come down */
 async function grabWheel(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<void> {
   const w = mela.giant;
   c.stop();
   hangFrom(mela, ramu);
+  rideRoof(mela, ramu);
   w.speed = 0.05;                                          // (the scene's own pace: slow enough to jump for)
   // the cabin on the rising (west) side whose floor is lowest above 1.6 m
   let best: THREE.Object3D | null = null, by = Infinity;
@@ -418,6 +420,7 @@ async function grabWheel(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise
     if (p.x < w.hub.x - 0.5 && p.y > 1.5 && p.y < by) { by = p.y; best = cb; }
   }
   const cabin = best ?? w.cabins[0];
+  const catchAt = catchSpot(mela);
   await d.scene(async () => {
     const g0 = gripOf(cabin);
     const under: P2 = [g0.x, g0.z + 0.2];
@@ -444,42 +447,189 @@ async function grabWheel(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise
     await d.say('guard', c.guards[0].face, 'utar');
     d.shot(d.front(ramu, { dist: 2.2, side: 0.6, up: -0.3, drop: 0.1, fov: 42 }), 0);
     await d.say('ramu', ramu.face, 'oonchai');
+    // up the cabin's side and onto its roof
+    const top = new THREE.Vector3();
+    d.shot({ pos: v(g0.x - 1.2, g0.y + 1.0, g0.z + 6.5), look: v(g0.x, g0.y + 1.2, g0.z), fov: 50 }, 0);
+    void d.until(() => {
+      if (d.skipped || riding.cabin) return true;          // (up: the next shot is the scene's, not this one's)
+      roofSpot(cabin, top);
+      d.shot({ pos: v(top.x - 1.4, top.y + 0.2, top.z + 6.5), look: v(top.x, top.y - 0.4, top.z), fov: 50 }, 0);
+      return false;
+    });
+    await climbUp(d, ramu, cabin);
+    // one of them round to the other side, where the cabins come down
+    const g = c.guards[0], g1 = c.guards[1];
+    g1.faceTowards(catchAt[0], catchAt[1]);
+    d.shot(d.front(g1, { dist: 2.8, side: -0.9, up: 0.1, drop: 0.25, fov: 46 }), 0);
+    g1.gesture('angry_point', 'udhar', 1.8);
+    await d.say('guard', g1.face, 'udhar');
+    // and off he goes, round under the wheel to the east side
+    g.walkTo(catchAt[0], catchAt[1], 4.6);
+    const t0 = performance.now();
+    await d.until(() => {
+      const q = g.position;
+      d.shot({ pos: v(q.x - 3.5, 2.2, q.z + 8), look: v(q.x + 1, 1.4, q.z - 1), fov: 50 }, 0);
+      return d.skipped || performance.now() - t0 > 2600 || Math.hypot(q.x - catchAt[0], q.z - catchAt[1]) < 0.5;
+    });
+    g.faceTowards(w.hub.x, w.hub.z);
   });
-  // watched or skipped: hanging from the cabin, on the way up, the guards beneath shaking their fists
-  hanging.cabin = cabin; hanging.slip = 0; hanging.w = 1;
-  ramu.holdClip('hang_idle');
-  w.speed = 0.2;
-  for (const q of c.guards) { q.driven = null; q.idle(); q.faceTowards(ramu.position.x, ramu.position.z); }
+  // watched or skipped: crouched on the cabin's roof, on the way up; one guard on the east side, the others beneath
+  onRoof(ramu, cabin);
+  w.speed = RIDE_SPEED;
+  guardsRound(c, mela);
 }
 
-/** the camera beside him on the wheel (he is the player's to keep up there): this frame's shot */
-function wheelCam(d: Director, ramu: Ramu, mela: Mela): void {
-  const p = ramu.position, h = mela.giant.hub;
-  const out = Math.sign(p.x - h.x) || -1;
-  d.shot({ pos: v(p.x + out * 2.4, p.y + 1.1, p.z + 6.6), look: v(p.x, p.y + 0.45, p.z), fov: 50 }, 0);
+// ---- on a cabin's roof ----
+
+/** his soles on a cabin's roof: the canopy's top (below the pivot), beside the hanger, towards the camera's side */
+const ROOF = -0.02, ROOF_DX = 0.3, ROOF_DZ = 0.3;
+/** crouched up there, facing south-west (towards the cabin behind and the crowd) */
+const FACE_ROOF = Math.PI * 0.75;
+/** the wheel's pace while he is up there (slower than its own 0.22, so there is time to jump), and on the way up to the top */
+const RIDE_SPEED = 0.12, CLIMB_SPEED = 0.45;
+/** cabins apart, round the wheel (16) */
+const STEP = (Math.PI * 2) / 16;
+/** jumps back to the cabin behind that he needs, and how far over the top his cabin goes before the call to jump */
+const JUMPS = 3, CALL_AT = 0.5;
+/** a miss: the guard has him when his cabin is this far round (near the bottom, on the east side) */
+const CAUGHT_AT = 2.75;
+
+const riding: { cabin: THREE.Object3D | null } = { cabin: null };
+const fl = new THREE.Vector3(), fr = new THREE.Vector3(), roofAt = new THREE.Vector3(), wpos = new THREE.Vector3();
+let footBones: [THREE.Object3D, THREE.Object3D] | null = null;
+const sm = (x: number): number => { const k = Math.max(0, Math.min(1, x)); return k * k * (3 - 2 * k); };
+const wrapA = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** how far his soles are above his position, in this frame of his clip */
+function soleOff(ramu: Ramu): number {
+  if (!footBones) {
+    const l = findBone(ramu.model, 'LeftFoot'), r = findBone(ramu.model, 'RightFoot');
+    if (l && r) footBones = [l, r];
+  }
+  if (!footBones) return 0;
+  ramu.model.updateWorldMatrix(true, true);
+  footBones[0].getWorldPosition(fl);
+  footBones[1].getWorldPosition(fr);
+  return Math.min(fl.y, fr.y) - 0.07 - ramu.position.y;
 }
 
-/** four slips: true if he grabbed every time */
-async function holdOn(d: Director, ramu: Ramu, mela: Mela): Promise<boolean> {
-  const ui = new GripPrompt();
+/** where his soles go on `cabin`'s roof (world) */
+function roofSpot(cabin: THREE.Object3D, out: THREE.Vector3): THREE.Vector3 {
+  cabin.getWorldPosition(out);
+  return out.set(out.x + ROOF_DX, out.y + ROOF, out.z + ROOF_DZ);
+}
+
+/** a cabin's angle round the wheel from the top: rising on the west (< 0), going down on the east (> 0) */
+function thetaOf(mela: Mela, cabin: THREE.Object3D): number {
+  const h = mela.giant.hub;
+  cabin.getWorldPosition(wpos);
+  return Math.atan2(wpos.x - h.x, wpos.y - h.y);
+}
+
+/** the cabin nearest the angle `a` */
+function cabinAt(mela: Mela, a: number): THREE.Object3D {
+  let to = mela.giant.cabins[0], best = Infinity;
+  for (const cb of mela.giant.cabins) {
+    const e = Math.abs(wrapA(thetaOf(mela, cb) - a));
+    if (e < best) { best = e; to = cb; }
+  }
+  return to;
+}
+
+/** where the guard waits for him: under the east side, where the cabins come down, in front of the wheel */
+function catchSpot(mela: Mela): P2 {
+  const h = mela.giant.hub;
+  return [h.x + 3.7, h.z + 2.6];
+}
+
+/** on `cabin`'s roof, every frame, till `riding.cabin` is null */
+let rideTick = false;
+function rideRoof(mela: Mela, ramu: Ramu): void {
+  if (rideTick) return;
+  rideTick = true;
+  mela.always.add(() => {
+    const cb = riding.cabin;
+    if (!cb) return;
+    roofSpot(cb, roofAt);
+    ramu.position.set(roofAt.x, roofAt.y - soleOff(ramu), roofAt.z);
+  });
+}
+
+/** crouched on `cabin`'s roof (an end state: watched or skipped) */
+function onRoof(ramu: Ramu, cabin: THREE.Object3D): void {
+  hanging.cabin = null;
+  riding.cabin = cabin;
+  ramu.stopGesture();
+  ramu.holdClip('roof_crouch');
+  ramu.model.rotation.set(0, FACE_ROOF, 0);
+}
+
+/** the guards: one on the east side to catch him coming down, the others beneath the west side, looking up */
+function guardsRound(c: Chase, mela: Mela): void {
+  const h = mela.giant.hub, at = catchSpot(mela);
+  c.guards.forEach((q, i) => {
+    q.driven = null;
+    if (i === 0) q.place(at[0], at[1]);
+    else q.place(h.x - 5 - i * 0.9, h.z + 2.4 + (i % 2) * 0.8);
+    q.position.y = 0.05;
+    q.idle();
+    q.faceTowards(h.x, h.z);
+  });
+}
+
+/** from hanging under `cabin`'s floor: up its side, over the roof's edge and crouched on it */
+async function climbUp(d: Director, ramu: Ramu, cabin: THREE.Object3D): Promise<void> {
+  const edge = new THREE.Vector3(), top = new THREE.Vector3(), byHands = new THREE.Vector3(), byFeet = new THREE.Vector3();
+  ramu.stopGesture();
+  ramu.holdClip('roof_crouch');
+  ramu.gesture('climb_roof', 1);
+  hanging.cabin = null;
+  await d.tween(1.7, (k) => {
+    gripOf(cabin, edge);                                   // the floor's edge, where his hands are
+    roofSpot(cabin, top);
+    // the hands up the cabin's side to the roof's edge
+    const up = sm(k / 0.55);
+    byHands.set(edge.x, edge.y + (top.y + 0.04 - edge.y) * up, edge.z + 0.1 * up);
+    byHands.sub(handsAt(ramu).sub(ramu.position));
+    // the feet over the edge and in to where he crouches
+    const inn = sm((k - 0.45) / 0.55);
+    byFeet.set(top.x, top.y - soleOff(ramu), edge.z + 0.1 + (top.z - edge.z - 0.1) * inn);
+    ramu.position.lerpVectors(byHands, byFeet, sm((k - 0.35) / 0.4));
+    ramu.model.rotation.y = FACE_ROOF * inn;
+  });
+  onRoof(ramu, cabin);
+}
+
+/** the camera on him up there: from in front of the wheel, a little to the west (the cabin behind in the shot) */
+function rideCam(d: Director, ramu: Ramu): void {
+  const p = ramu.position;
+  d.shot({ pos: v(p.x - 1.4, p.y + 0.9, p.z + 7.2), look: v(p.x - 1.3, p.y + 0.55, p.z), fov: 50 }, 0);
+}
+
+/**
+ * Crouched on the roof as the wheel turns: up to the top, and each time his cabin goes over it and on down towards the
+ * guard, the call to jump (Space or a tap, in time) back to the cabin behind. True after JUMPS of them; false if he
+ * missed one (his cabin goes on down: caughtBelow).
+ */
+async function rideWheel(d: Director, ramu: Ramu, mela: Mela): Promise<boolean> {
+  const w = mela.giant, ui = new GripPrompt('leap');
   let following = true;
-  void d.until(() => { if (following && hanging.cabin) wheelCam(d, ramu, mela); return !following; });
-  d.locked = true;                                      // (he is held; the keys are for the grip)
-  d.box.set(9, 'm.s1.hold', 'm.s1.hold.h1', null);
+  void d.until(() => { if (following) rideCam(d, ramu); return !following; });
+  d.locked = true;                                      // (he is held; the keys are for the jump)
   try {
-    for (let i = 0; i < 4; i++) {
-      await d.wait(i ? 1.3 + Math.random() * 0.5 : 1.0);
-      // the grip goes: his hands slide down the edge
-      ramu.gesture('hang_drop', 2.2);
-      void d.tween(0.5, (k) => { hanging.slip = 0.12 * k; });
-      const ok = await ui.grab(i < 2 ? 1.5 : 1.25);
-      if (!ok) return false;
-      ramu.stopGesture();
-      ramu.gesture('hang_braced', 1.4);
-      void d.tween(0.4, (k) => { hanging.slip = 0.12 * (1 - k); });
-      void playSfx('thud', 0.25);
+    for (let n = 0; n < JUMPS; n++) {
+      d.box.set(9, 'm.s1.hold', n ? 'm.s1.hold.h2' : 'm.s1.hold.h1', null);
+      const t0 = performance.now();
+      await d.until(() => {
+        const cb = riding.cabin;
+        if (!cb) return true;
+        const a = thetaOf(mela, cb);
+        w.speed = a < -0.6 ? CLIMB_SPEED : RIDE_SPEED;   // (quicker on the way up to the top)
+        return a > CALL_AT && a < 2 && performance.now() - t0 > 1200;
+      });
+      if (!(await ui.grab(n ? 1.6 : 2.0))) return false;
+      await leap(d, ramu, mela);
     }
-    await d.wait(0.8);
     return true;
   } finally {
     following = false;
@@ -489,32 +639,96 @@ async function holdOn(d: Director, ramu: Ramu, mela: Mela): Promise<boolean> {
   }
 }
 
-/** a miss: he drops from the cabin; a fade */
-async function fell(d: Director, ramu: Ramu, c: Chase, mela: Mela, hooks: StoryHooks): Promise<void> {
-  const from = ramu.position.clone();
-  hanging.cabin = null;
+/** a jump from his cabin's roof back to the roof of the one behind (higher, nearer the top), the wheel turning on */
+async function leap(d: Director, ramu: Ramu, mela: Mela): Promise<void> {
+  const from = riding.cabin!, to = cabinAt(mela, thetaOf(mela, from) - STEP);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), off = soleOff(ramu);
+  riding.cabin = null;
+  ramu.gesture('roof_leap', 1);
+  ramu.model.rotation.y = Math.PI / 2;                  // west, the way he jumps
+  await d.tween(0.9, (k) => {
+    roofSpot(from, a);
+    roofSpot(to, b);
+    const f = Math.max(0, Math.min(1, (k - 0.25) / 0.6));   // off on the clip's spring, down as it lands
+    a.lerp(b, sm(f));
+    ramu.position.set(a.x, a.y - off + Math.sin(Math.PI * f) * 1.1, a.z);
+  });
+  riding.cabin = to;
+  void playSfx('thud', 0.4);
+  void d.tween(0.4, (k) => { ramu.model.rotation.y = Math.PI / 2 + (FACE_ROOF - Math.PI / 2) * k; });
+}
+
+/** a miss: his cabin takes him on down to the guard waiting on the east side, who pulls him off; a fade */
+async function caughtBelow(d: Director, ramu: Ramu, c: Chase, mela: Mela, hooks: StoryHooks): Promise<void> {
+  const w = mela.giant, g = c.guards[0];
+  let following = true;
+  void d.until(() => { if (following) rideCam(d, ramu); return !following; });
+  d.locked = true;
+  await d.until(() => {
+    if (!riding.cabin) return true;
+    w.speed = 0.42;
+    return thetaOf(mela, riding.cabin) > CAUGHT_AT;
+  });
+  following = false;
   await d.scene(async () => {
+    const from = ramu.position.clone(), gp = g.position.clone();
+    const land = v(gp.x - 0.7, 0.08, gp.z - 0.35);
+    w.speed = RIDE_SPEED;
+    riding.cabin = null;
+    d.shot({ pos: v(gp.x + 2.2, 1.7, gp.z + 5.2), look: v(gp.x - 0.6, 1.5, gp.z - 0.8), fov: 52 }, 0);
+    g.faceTowards(from.x, from.z);
+    g.gesture('jump', 'gcatch', 1.0);                     // up for his ankle
+    await d.wait(0.35);
+    ramu.stopGesture();
     ramu.holdClip('falling');
-    d.shot({ pos: v(from.x + 3, Math.max(2, from.y * 0.5), from.z + 9), look: v(from.x, from.y * 0.5, from.z), fov: 55 }, 0);
-    const T = Math.max(0.5, Math.sqrt((2 * Math.max(0.2, from.y)) / 9.8));
-    await d.tween(T, (k) => { ramu.position.set(from.x, Math.max(0.08, from.y - 0.5 * 9.8 * (k * T) ** 2), from.z + k * 0.6); });
+    ramu.model.rotation.y = FACE_ROOF;
+    await d.tween(0.55, (k) => {
+      ramu.position.lerpVectors(from, land, k);
+      ramu.position.y = from.y + (0.08 - from.y) * k * k;
+    });
     void playSfx('thud', 1);
     ramu.holdClip('idle');
     ramu.gesture('fall');
-    await d.wait(1.2);
+    g.faceTowards(land.x, land.z);
+    g.gesture('angry_point', 'gpakda', 1.8);
+    await d.say('guard', g.face, 'pakda');
     await d.fade(1, 0.6);
   });
   await d.fade(1, 0);
-  mela.giant.speed = 0.22;
-  hooks.note('story.s1.fell');
-  c.stop();
+  d.locked = false;
+  hooks.note('story.s1.caughtWheel');
 }
 
-/** a guard has the operator stop the wheel dead; Ramu is flung off it, over the stalls, into the bouncy castle */
-async function flung(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<void> {
+/** after a catch: on the roof of a cabin rising on the west side again, the guards back round the wheel */
+function backOnWheel(ramu: Ramu, c: Chase, mela: Mela): void {
+  const cb = cabinAt(mela, -1.0);
+  roofSpot(cb, roofAt);
+  ramu.sitAt(roofAt.x, roofAt.y, roofAt.z, FACE_ROOF, 'roof_crouch');
+  onRoof(ramu, cb);
+  mela.giant.speed = RIDE_SPEED;
+  guardsRound(c, mela);
+}
+
+/** his cabin's angle where the wheel is stopped: out on the east side, the nearest it comes to the bouncy castle */
+const STOP_AT = 1.62;
+
+/**
+ * Three jumps: the guard has the operator stop the wheel; it slows to a stop with his cabin out on the east side, the
+ * bouncy castle below and beyond it; the call to jump; and he leaps, and lands in it.
+ */
+async function stopAndJump(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<void> {
   const w = mela.giant, op = mela.wheelMan;
-  const at = new THREE.Vector3(), bounce = v(INFLATABLE.x + 0.4, 0.46, INFLATABLE.z - 0.3);
-  w.speed = 0.05;                                         // (he slows it as he sees them coming)
+  const bounce = v(INFLATABLE.x + 0.4, 0.46, INFLATABLE.z - 0.3);
+  // slowing to stop with his cabin at STOP_AT (true once stopped)
+  let stopping = false;
+  const stopTick = (): boolean => {
+    if (!stopping || !riding.cabin) return !stopping;
+    let rem = STOP_AT - thetaOf(mela, riding.cabin);
+    if (rem < -0.25) rem += Math.PI * 2;
+    w.speed = rem < 0.004 ? 0 : Math.min(0.3, Math.max(0.035, rem * 0.6));
+    return w.speed === 0;
+  };
+  void d.until(() => stopTick() && stopping);
   await d.scene(async () => {
     // the guard to the operator at his lever (south of the wheel)
     const g = c.guards[0];
@@ -528,28 +742,48 @@ async function flung(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<voi
     if (op) op.root.rotation.y = 0;
     mela.pullWheelLever();
     await d.say('operator', op?.face ?? null, 'le');
-    // the wheel stops dead: he goes on without it
-    w.speed = 0;
-    hanging.cabin = null;
-    at.copy(ramu.position);
-    ramu.holdClip('falling');
-    const mid = at.clone().lerp(bounce, 0.5);
-    d.shot({ pos: v(mid.x - 2, 9, mid.z + 27), look: v(mid.x, 6, mid.z), fov: 55 }, 0);
-    const T = 2.0, peak = 4.5;
+    stopping = true;
+    // the wheel slows, his cabin coming round to a stop out on the east side
+    const h = w.hub;
+    d.shot({ pos: v(h.x + 8, 7, h.z + 30), look: v(h.x + 9, 8, h.z - 2), fov: 52 }, 0);
+    const t0 = performance.now();
+    await d.until(() => d.skipped || w.speed === 0 || performance.now() - t0 > 9000);
+  });
+  stopping = true;
+  await d.until(() => w.speed === 0 || !riding.cabin);
+  // the call to jump, into the castle (no hurry: it asks again till he goes)
+  const from = ramu.position.clone();
+  const mid = from.clone().lerp(bounce, 0.5);
+  const wide = { pos: v(mid.x - 7, mid.y + 2.5, mid.z + 21), look: v(mid.x - 1.5, mid.y + 0.5, mid.z), fov: 54 };
+  d.shot(wide, 0);
+  d.box.set(9, 'm.s1.castle', 'm.s1.castle.h1', null);
+  d.locked = true;
+  const ui = new GripPrompt('leap');
+  while (!(await ui.grab(4, 'leap.castle')));
+  ui.dispose();
+  d.box.clear();
+  d.locked = false;
+  await d.scene(async () => {
+    const off = soleOff(ramu), at = ramu.position.clone().setY(ramu.position.y + off);
+    riding.cabin = null;
+    ramu.model.rotation.y = Math.atan2(-(bounce.x - at.x), -(bounce.z - at.z));
+    ramu.gesture('roof_leap', 0.7);
+    d.shot(wide, 0);
+    const T = 2.1, peak = 3.2;
     await d.tween(T, (k) => {
-      ramu.position.lerpVectors(at, bounce, k);
-      ramu.position.y += Math.sin(k * Math.PI) * peak;
-      ramu.model.rotation.x = -k * Math.PI * 2.2;
-      ramu.model.rotation.y = -Math.PI / 2;
+      if (k > 0.35) ramu.holdClip('falling');
+      const f = Math.max(0, (k - 0.12) / 0.88);
+      ramu.position.lerpVectors(at, bounce, f);
+      ramu.position.y += Math.sin(f * Math.PI) * peak - off * (1 - f);
     });
-    ramu.model.rotation.x = 0;
     void playSfx('thud', 0.6);
     // boing, boing, boing
     d.shot({ pos: v(bounce.x - 4.5, 6.8, bounce.z + 6.5), look: v(bounce.x, 1.0, bounce.z), fov: 48 }, 0);
-    for (const [h, t] of [[2.0, 0.75], [0.9, 0.5], [0.35, 0.3]]) {
-      await d.tween(t, (k) => { ramu.position.set(bounce.x, bounce.y + Math.sin(k * Math.PI) * h, bounce.z); });
-    }
+    ramu.stopGesture();
     ramu.holdClip('idle');
+    for (const [hh, t] of [[2.0, 0.75], [0.9, 0.5], [0.35, 0.3]]) {
+      await d.tween(t, (k) => { ramu.position.set(bounce.x, bounce.y + Math.sin(k * Math.PI) * hh, bounce.z); });
+    }
     ramu.gesture('get_up');
     await d.wait(2.5);
     d.shot(d.front(ramu, { dist: 1.8, side: 0.4, up: 0.1, drop: 0.15, fov: 40 }), 0);
@@ -557,6 +791,7 @@ async function flung(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<voi
   });
   // watched or skipped: on his feet on the castle's floor, the wheel stopped (it goes again a little later), the guards
   // coming from the wheel
+  riding.cabin = null;
   hanging.cabin = null;
   ramu.model.rotation.x = 0;
   ramu.stopGesture();

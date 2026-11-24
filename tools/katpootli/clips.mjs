@@ -185,6 +185,29 @@ const C = {
     [1.5, M(body(2, -2, -4, 0), { head: { side: 8 } }, ra(28, 26, 150))],
     [2.2, M(body(2, -2, -4, 0), { head: { side: 10 } }, ra(28, 26, 150))],
     [2.6, M(body(0, 0, 0, 0), { head: { side: 0 } }, ra(14, 28, 70))]] },
+  // ---- the giant wheel: up from hanging under a cabin onto its roof (the game moves him up the side and in over the
+  // edge): a pull-up, the chest over the edge, a knee up, crouched on the roof
+  climb_roof: { len: 1.7, keys: [
+    [0, M(body(0, 0, -10), arms(8, 168, 12), legs(4, 8, 2, 6, 4))],
+    [0.5, M(body(4, 2, -14), arms(10, 150, 118), legs(22, 34, 10, 22, 4))],
+    [0.9, M(body(40, 18, 8), arms(12, 40, 70), legs(62, 92, 12, 24, 6))],
+    [1.3, M(body(32, 12, 14), arms(12, 32, 24), legs(96, 122, 44, 82, 8))],
+    [1.7, M(body(22, 10, 12), arms(14, 34, 26), legs(84, 112, 84, 112, 14))]] },
+  // crouched on a cabin's roof as the wheel carries him: low, a hand down on the roof, the other out for balance, swaying,
+  // a look down at the guard and back at the cabin behind
+  roof_crouch: { len: 4, keys: [
+    [0, M(body(22, 10, 12, 0, 0), ra(10, 38, 14), la(55, 25, 22), legs(84, 112, 84, 112, 14))],
+    [1.0, M(body(24, 11, 22, -30, 4), la(60, 22, 18), legs(82, 110, 86, 115, 14))],
+    [2.0, M(body(20, 9, 6, 0, -3), la(50, 30, 26), legs(86, 115, 82, 110, 14))],
+    [3.0, M(body(22, 10, 4, 38, 2), la(58, 24, 20), legs(84, 112, 84, 112, 14))],
+    [4, M(body(22, 10, 12, 0, 0), ra(10, 38, 14), la(55, 25, 22), legs(84, 112, 84, 112, 14))]] },
+  // the leap from one roof to the next: down, the arms swung back, up and out, knees tucked, down into a crouch
+  roof_leap: { len: 0.9, keys: [
+    [0, M(body(22, 10, 12), ra(10, 38, 14), la(55, 25, 22), legs(84, 112, 84, 112, 14))],
+    [0.18, M(body(36, 16, 0), arms(22, -35, 30), legs(96, 124, 96, 124, 14))],
+    [0.34, M(body(4, 0, -12), arms(24, 160, 20), legs(4, 8, 0, 6, 6))],
+    [0.6, M(body(24, 10, 4), arms(34, 100, 40), legs(82, 105, 82, 105, 10))],
+    [0.9, M(body(24, 12, 12), arms(22, 50, 30), legs(84, 112, 84, 112, 14))]] },
   // ---- a rock in the back while running: arched back, arms flung, then pitched forward, hands out to break the fall
   struck: { len: 0.8, keys: [
     [0, M(body(10, 4, 0), arms(14, 20, 60), legs(25, 40, -15, 30, 4))],

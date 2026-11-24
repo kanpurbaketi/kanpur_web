@@ -1,8 +1,11 @@
 import { onLang, t } from '../i18n';
 
+type Words = 'grip.title' | 'leap.title' | 'leap.castle';
+
 /*
- The grip prompt (stage 1, part 3: hanging from the giant wheel): "Your grip is slipping!", a ring running down, and
- Space (or a tap on the big button) to grab again before it runs out. grab() resolves true if he grabbed in time.
+ The timed prompt (stage 1, part 3, on the giant wheel): a call ("Jump!"), a ring running down, and Space (or a tap on
+ the big button) before it runs out. grab() resolves true if it was in time. `kind` picks the words: 'grip' (your grip is
+ slipping: grab), 'leap' (jump to the cabin behind; or, with grab's `title`, any other call to jump).
 */
 
 export class GripPrompt {
@@ -17,8 +20,9 @@ export class GripPrompt {
   private all = 1;
   private last = 0;
   private raf = 0;
+  private titleKey: Words = 'grip.title';
 
-  constructor() {
+  constructor(private kind: 'grip' | 'leap' = 'grip') {
     this.root.className = 'grip';
     this.root.hidden = true;
     this.title.className = 'grip-title';
@@ -48,7 +52,8 @@ export class GripPrompt {
   }
 
   /** the prompt for `secs`: true if he grabbed in time */
-  grab(secs: number): Promise<boolean> {
+  grab(secs: number, title?: Words): Promise<boolean> {
+    this.titleKey = title ?? `${this.kind}.title`;
     this.all = this.left = secs;
     this.last = performance.now();
     this.draw();
@@ -60,8 +65,8 @@ export class GripPrompt {
   }
 
   private draw(): void {
-    this.title.textContent = t('grip.title');
-    this.btn.textContent = t('grip.tap');
+    this.title.textContent = t(this.titleKey);
+    this.btn.textContent = t(`${this.kind}.tap`);
     this.key.textContent = t('grip.key', { key: 'Space' });
   }
 

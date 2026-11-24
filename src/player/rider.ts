@@ -267,13 +267,36 @@ export class Rider {
     return out * e;
   }
 
+  /**
+   * The knuckles of one hand (world): `along` from the wrist to the knuckles, `across` from the index's side to the
+   * little finger's. A rig with only an index and a thumb (the lighter ones) has them from those two.
+   */
+  private knuckles(side: 'Left' | 'Right', along: THREE.Vector3, across: THREE.Vector3): boolean {
+    const b = this.bone, h = b[side + 'Hand'], i1 = b[side + 'HandIndex1'], p1 = b[side + 'HandPinky1'], m1 = b[side + 'HandMiddle1'];
+    const t1 = b[side + 'HandThumb1'];
+    if (!h || !i1) return false;
+    this.world(m1 ?? i1, along).sub(this.world(h, _v9)).normalize();
+    if (p1) this.world(p1, across).sub(this.world(i1, _v9));
+    else if (t1) this.world(i1, across).sub(this.world(t1, _v9));
+    else return false;
+    across.addScaledVector(along, -across.dot(along)).normalize();
+    return true;
+  }
+
+  /** one arm's hand (its wrist) to `target` (world), the elbow towards `pole`, by `w` (0..1: from where the clip has it) */
+  reach(side: 'Left' | 'Right', target: THREE.Vector3, pole: THREE.Vector3, w = 1): void {
+    const b = this.bone, up = b[side + 'Arm'], fore = b[side + 'ForeArm'], hand = b[side + 'Hand'];
+    if (!up || !fore || !hand || w <= 0) return;
+    const at = this.world(hand, new THREE.Vector3()).lerp(target, w);
+    this.ik(up, fore, hand, at, pole);
+  }
+
   /** the forearm turned about its length (the hand with it) so the palm faces `dir` (world), by `w` (0..1) */
   palmTo(side: 'Left' | 'Right', dir: THREE.Vector3, w: number): void {
-    const b = this.bone, fa = b[side + 'ForeArm'], h = b[side + 'Hand'], i1 = b[side + 'HandIndex1'], p1 = b[side + 'HandPinky1'], m1 = b[side + 'HandMiddle1'];
-    if (!fa || !h || !i1 || !p1 || !m1 || w <= 0) return;
+    const b = this.bone, fa = b[side + 'ForeArm'], h = b[side + 'Hand'];
+    const along = new THREE.Vector3(), across = new THREE.Vector3();
+    if (!fa || !h || w <= 0 || !this.knuckles(side, along, across)) return;
     const axis = this.world(h, new THREE.Vector3()).sub(this.world(fa, _v9)).normalize();
-    const across = this.world(p1, new THREE.Vector3()).sub(this.world(i1, _v9));
-    const along = this.world(m1, new THREE.Vector3()).sub(this.world(h, _v9));
     // out of the palm (the side the fingers close toward)
     const n = side === 'Right' ? along.clone().cross(across) : across.clone().cross(along);
     // both onto the plane across the forearm: the angle between them about it
@@ -282,14 +305,34 @@ export class Rider {
     this.turn(fa, _q1.setFromAxisAngle(axis, ang * w));
   }
 
+  /** the hand's frame (world): `along` from the wrist to the knuckles, `palm` out of the palm; false if it has no fingers */
+  hand(side: 'Left' | 'Right', along: THREE.Vector3, palm: THREE.Vector3): boolean {
+    const across = new THREE.Vector3();
+    if (!this.knuckles(side, along, across)) return false;
+    if (side === 'Right') palm.crossVectors(along, across); else palm.crossVectors(across, along);
+    palm.addScaledVector(along, -palm.dot(along)).normalize();
+    return true;
+  }
+
+  /** the wrist bent so the knuckles point along `along` and the palm faces `palm` (world), by `w` (0..1) */
+  handTo(side: 'Left' | 'Right', along: THREE.Vector3, palm: THREE.Vector3, w: number): void {
+    const h = this.bone[side + 'Hand'];
+    const a0 = new THREE.Vector3(), n0 = new THREE.Vector3();
+    if (!h || w <= 0 || !this.hand(side, a0, n0)) return;
+    const a1 = along.clone().normalize(), n1 = palm.clone().addScaledVector(a1, -palm.dot(a1)).normalize();
+    const m0 = new THREE.Matrix4().makeBasis(a0, n0, a0.clone().cross(n0));
+    const m1 = new THREE.Matrix4().makeBasis(a1, n1, a1.clone().cross(n1));
+    const q = new THREE.Quaternion().setFromRotationMatrix(m1.multiply(m0.transpose()));
+    this.turn(h, new THREE.Quaternion().slerp(q, w));
+  }
+
   /**
    * The fingers of one hand closed: 0 open .. 1 a fist. `pinch` keeps the index and thumb straighter (a tool held between
    * them, like a pen). Each finger turns about the line across the knuckles, the thumb across the palm.
    */
   grip(side: 'Left' | 'Right', amt: number, pinch = 0): void {
-    const b = this.bone, h = b[side + 'Hand'], i1 = b[side + 'HandIndex1'], p1 = b[side + 'HandPinky1'], m1 = b[side + 'HandMiddle1'];
-    if (!h || !i1 || !p1 || !m1 || amt <= 0) return;
-    const across = this.world(p1, new THREE.Vector3()).sub(this.world(i1, _v9)).normalize();
+    const b = this.bone, across = new THREE.Vector3();
+    if (amt <= 0 || !this.knuckles(side, _v8, across)) return;
     if (side === 'Left') across.negate();
     for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) {
       const k = f === 'Index' ? 1 - 0.55 * pinch : 1;
@@ -299,7 +342,7 @@ export class Rider {
       }
     }
     // the thumb in over the palm
-    const along = this.world(m1, _v8).sub(this.world(h, _v9)).normalize();
+    const along = _v8;                                  // (from knuckles)
     const t1 = b[side + 'HandThumb1'];
     if (t1) this.turn(t1, _q1.setFromAxisAngle(along, amt * (1 - 0.4 * pinch) * 0.6 * THUMB_SIGN * (side === 'Left' ? -1 : 1)));
     for (const j of [2, 3]) {

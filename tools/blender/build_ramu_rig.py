@@ -133,6 +133,50 @@ for ob in (mesh, arm):
     bpy.context.view_layer.objects.active = ob
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 mesh.parent = arm
+
+
+def fuse_fingers():
+    """
+    A rig with an index finger but no others (the anchor's): the other three fingers are skinned to the hand, so they
+    cannot close. Past the knuckles their skin goes to the index's bones, and the four close together (a fist round a mic).
+    """
+    bones = arm.data.bones
+    M = arm.matrix_world
+    for s in ('Left', 'Right'):
+        hand = next((b for b in bones if b.name.endswith(s + 'Hand')), None)
+        if hand is None:
+            continue
+        pre = hand.name[:-len(s + 'Hand')]
+        idx = [bones.get(f'{pre}{s}HandIndex{j}') for j in (1, 2, 3)]
+        if bones.get(f'{pre}{s}HandMiddle1') or not all(idx):
+            continue
+        hg = mesh.vertex_groups.get(hand.name)
+        if hg is None:
+            continue
+        groups = [mesh.vertex_groups.get(b.name) or mesh.vertex_groups.new(name=b.name) for b in idx]
+        thumbs = {g.index for g in mesh.vertex_groups if g.name.startswith(f'{pre}{s}HandThumb')}
+        h0 = M @ hand.head_local
+        joints = [M @ b.head_local for b in idx]
+        ax = (joints[0] - h0).normalized()
+        d = [(p - h0).dot(ax) for p in joints]
+        start = d[0] - 0.3 * (d[1] - d[0])            # a little before the knuckles, fading in
+        moved = 0
+        for v in mesh.data.vertices:
+            wh = next((g.weight for g in v.groups if g.group == hg.index), 0.0)
+            if wh <= 0 or sum(g.weight for g in v.groups if g.group in thumbs) > 0.05:
+                continue
+            x = ((mesh.matrix_world @ v.co) - h0).dot(ax)
+            if x < start:
+                continue
+            f = min(1.0, (x - start) / max(1e-6, d[0] - start))
+            j = 0 if x < d[1] else (1 if x < d[2] else 2)
+            hg.add([v.index], wh * (1 - f), 'REPLACE')
+            groups[j].add([v.index], wh * f, 'ADD')
+            moved += 1
+        print(f'FINGERS {s}: {moved} vertices of the other fingers onto the index')
+
+
+fuse_fingers()
 mesh.matrix_parent_inverse = arm.matrix_world.inverted()
 vs = [v.co for v in mesh.data.vertices]
 lo = min(v.z for v in vs)

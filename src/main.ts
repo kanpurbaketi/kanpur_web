@@ -552,10 +552,10 @@ void main() {
         done: finish,
         note: (key: string) => toast(tk(key), 5),
       };
-      // test scripts: ?debug&stage=1&part=2 starts at part 2, just inside the tear; &part=3 at part 3 (&leg=wheel: at the
+      // test scripts: ?debug&stage=1&part=2 starts at part 2, just inside the tear (&from=5: past the scene at the door); &part=3 at part 3 (&leg=wheel: at the
       // main aisle, for the giant wheel; &leg=kuan: out of the bouncy castle, for the well)
       const part = import.meta.env.DEV && params.has('debug') && mela ? params.get('part') : null;
-      if (part === '2') void stage1Part2(director, ramu, mela!, hooks);
+      if (part === '2') void stage1Part2(director, ramu, mela!, hooks, Number(params.get('from')) || 4);   // (&from=5: at the seat's mission)
       else if (part === '3') void stage1Part3(director, ramu, mela!, hooks, (params.get('leg') as Part3From | null) ?? 'start');
       else void stage1(director, ramu, keepers, queue!, mela, hooks, TEST_FROM || 1);
     },

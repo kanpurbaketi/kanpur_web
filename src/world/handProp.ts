@@ -1,9 +1,13 @@
 import * as THREE from 'three';
+import { Rider } from '../player/rider';
 
 /*
  A thing held in somebody's right hand (the anchor's mic, the lota, a fruit), put there every frame after their clip has
  moved the hand. The hand bone points along the fingers; `GRIP` up it is the middle of the closed fist.
-   'mic'   the handle (the object's +y) from the fist toward the mouth, `grip` metres of it below the fist
+   'mic'   held as a stand-up comic holds one: the fist just under the chin, the elbow down by the ribs, the fingers round
+           the handle and the handle nearly upright, its head (the object's +y) at the mouth. The clip's arm is moved
+           there (the hold's own IK); a clip that has the hand down at the chest keeps it there (the mic at the chest), and
+           one that holds the arm out (handing it over) keeps its own. `grip`: metres of the handle below the fist
    'hang'  carried by its top, upright (a lota by its neck): `grip` is the height of the neck above its origin
    'palm'  sitting in the fist, the object's origin at the grip, turned with the hand (a fruit)
  Rigs without a right hand (none of ours) leave the object where it is. The object lives in `parent` (any frame).
@@ -25,15 +29,22 @@ export class HandProp {
   private root: THREE.Object3D | null = null;
   private hand: THREE.Object3D | null = null;
   private head: THREE.Object3D | null = null;
+  private rig: Rider | null = null;
 
   /** `grip`: for 'mic', the handle below the fist; for 'hang', the height of the part held above the object's origin */
+  /** 'mic': true while the clip's own arm holds it (handing it over); the hold at the mouth eases off and back */
+  own = false;
+  private hold = 1;
+
   constructor(readonly object: THREE.Object3D, public mode: HoldMode, readonly grip = 0.07) {}
 
   /** in `root`'s right hand from now on (null: let go, the object stays where it was) */
   holder(root: THREE.Object3D | null): void {
+    if (root !== this.root) this.hold = 0;            // a new hand: from where its clip has it
     this.root = root;
     this.hand = root ? findBone(root, 'RightHand') : null;
     this.head = root ? findBone(root, 'Head') : null;
+    this.rig = root ? new Rider(root) : null;
   }
 
   get held(): boolean { return this.hand !== null; }
@@ -43,17 +54,25 @@ export class HandProp {
     const o = this.object, parent = o.parent;
     if (!root || !hand || !parent) return;
     root.updateMatrixWorld(true);
+    if (this.mode === 'mic' && head && this.rig?.ok) {
+      this.micArm(root, hand, head);
+      root.updateMatrixWorld(true);
+    }
     hand.getWorldPosition(a);
     hand.getWorldQuaternion(q);
     b.set(0, 1, 0).applyQuaternion(q);
     const grip = a.addScaledVector(b, GRIP);
+    // in a closed fist (the IK's mic hold) the handle is in the curl of the fingers: in from the knuckles, on the palm's side
+    if (this.mode === 'mic' && this.rig?.hand('Right', m1, m2)) {
+      hand.getWorldPosition(grip).addScaledVector(m1, 0.075).addScaledVector(m2, 0.03);
+    }
     parent.updateWorldMatrix(true, false);
     const pq = parent.getWorldQuaternion(q2).invert();
     if (this.mode === 'mic' && head) {
       // the handle pointing at the mouth: 10 cm in front of the head bone and a little up
       head.getWorldPosition(v);
-      f.set(0, 0, 1).applyQuaternion(root.getWorldQuaternion(q));
-      const mouth = v.addScaledVector(f, 0.1).addScaledVector(UP, 0.075);
+      facing(root, f);
+      const mouth = v.addScaledVector(f, MOUTH_F).addScaledVector(UP, MOUTH_UP);
       const dir = mouth.sub(grip).normalize();
       o.position.copy(parent.worldToLocal(grip.clone().addScaledVector(dir, -this.grip)));
       o.quaternion.setFromUnitVectors(UP, dir).premultiply(pq);
@@ -67,4 +86,56 @@ export class HandProp {
       o.quaternion.copy(q).premultiply(pq);
     }
   }
+
+  /** the mic arm: the clip's, moved to the hold (see 'mic') */
+  private micArm(root: THREE.Object3D, hand: THREE.Object3D, head: THREE.Object3D): void {
+    const rig = this.rig!;
+    const f = facing(root, m1);
+    const right = m2.crossVectors(f, UP).normalize();
+    const mouth = head.getWorldPosition(m3).addScaledVector(f, MOUTH_F).addScaledVector(UP, MOUTH_UP);
+    // where the clip has the fist
+    hand.getWorldQuaternion(q2);
+    const fist = hand.getWorldPosition(m4).addScaledVector(m5.set(0, 1, 0).applyQuaternion(q2), GRIP);
+    // up at the mouth (talking), or down at the chest, as high as the clip holds it
+    const atMouth = m5.copy(mouth).addScaledVector(f, 0.015).addScaledVector(UP, -0.14).addScaledVector(right, 0.015);
+    const atChest = m6.copy(mouth).addScaledVector(f, 0.15).addScaledVector(UP, -0.42).addScaledVector(right, 0.07);
+    const high = smooth((fist.y - (mouth.y - 0.45)) / 0.25);
+    const target = atChest.lerp(atMouth, high);
+    // held out (handing it over, taking it): the clip's own arm
+    const out = fist.clone().sub(mouth).dot(f);
+    this.hold += Math.max(-0.07, Math.min(0.07, (this.own ? 0 : 1) - this.hold));
+    const w = (1 - smooth((out - 0.3) / 0.12)) * smooth(this.hold);
+    // the fist is where the hand closes, a little past the wrist: the wrist goes that much short of it
+    target.addScaledVector(UP, -0.05).addScaledVector(f, -0.02);
+    const shoulder = findBoneCached(root, 'RightArm', m7);
+    const pole = shoulder.addScaledVector(UP, -0.55).addScaledVector(right, 0.28).addScaledVector(f, -0.12);
+    rig.reach('Right', target, pole, w);
+    // the palm to the mouth's side (knuckles out), the fingers round the handle
+    rig.palmTo('Right', m8.copy(f).multiplyScalar(-0.55).addScaledVector(right, -0.85).normalize(), w);
+    // a fist round an upright handle: the knuckles forward and a little in and up, the palm toward the body's middle
+    const along = m3.copy(f).multiplyScalar(0.8).addScaledVector(right, -0.35).addScaledVector(UP, 0.15);
+    rig.handTo('Right', along, m8.copy(right).multiplyScalar(-0.9).addScaledVector(f, -0.3), w);
+    rig.grip('Right', 0.95, 0);
+  }
+}
+
+/** the mouth from the head bone (the base of the skull): forward, up */
+const MOUTH_F = 0.1, MOUTH_UP = 0.075;
+const smooth = (x: number): number => { const k = Math.max(0, Math.min(1, x)); return k * k * (3 - 2 * k); };
+const m1 = new THREE.Vector3(), m2 = new THREE.Vector3(), m3 = new THREE.Vector3(), m4 = new THREE.Vector3();
+const m5 = new THREE.Vector3(), m6 = new THREE.Vector3(), m7 = new THREE.Vector3(), m8 = new THREE.Vector3();
+const bones = new WeakMap<THREE.Object3D, Map<string, THREE.Object3D | null>>();
+function findBoneCached(root: THREE.Object3D, suffix: string, out: THREE.Vector3): THREE.Vector3 {
+  let m = bones.get(root);
+  if (!m) { m = new Map(); bones.set(root, m); }
+  let b = m.get(suffix);
+  if (b === undefined) { b = findBone(root, suffix); m.set(suffix, b); }
+  return b ? b.getWorldPosition(out) : root.getWorldPosition(out);
+}
+/** which way the body faces, level: from the shoulders (a rig's root can be turned round from its model) */
+const fl = new THREE.Vector3(), fr = new THREE.Vector3();
+function facing(root: THREE.Object3D, out: THREE.Vector3): THREE.Vector3 {
+  const right = findBoneCached(root, 'RightArm', fr).sub(findBoneCached(root, 'LeftArm', fl)).setY(0);
+  if (right.lengthSq() < 1e-6) return out.set(0, 0, 1).applyQuaternion(root.getWorldQuaternion(q)).setY(0).normalize();
+  return out.crossVectors(UP, right).normalize();
 }

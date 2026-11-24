@@ -399,12 +399,14 @@ async function anchorCalls(d: Director, ramu: Ramu, s: Sammelan): Promise<void> 
     d.shot(hand, 0);
     anchor.hold('mic_talk', 0.9);
     await d.say('anchor', anchor.face, 'handover');
+    micProp.own = true;                                       // the arm out as the clip has it, not at his mouth
     anchor.gesture('mic_give', 'handover', 1.8);
     await d.wait(0.1);
     ramu.gesture('mic_take');
     await d.wait(0.7);
     micProp.mode = 'mic';
     micProp.holder(ramu.model);
+    micProp.own = false;                                      // (eases up to Ramu's mouth)
     await d.wait(1.0);
     // the anchor steps aside, Ramu steps up to the mic with it
     anchor.walkClip = 'walk';
@@ -420,6 +422,7 @@ async function anchorCalls(d: Director, ramu: Ramu, s: Sammelan): Promise<void> 
   dropFruit(s);
   ramu.stopGesture();
   micProp.holder(ramu.model);                                   // (skipped: handed over, the anchor already aside)
+  micProp.own = false;
   if (anchor.walking || Math.hypot(anchor.position.x - s.aside[0], anchor.position.z - s.aside[1]) > 0.3) anchor.place(...s.aside);
   anchor.walkClip = 'walk';
   anchor.idle();

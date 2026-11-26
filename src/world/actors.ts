@@ -248,6 +248,9 @@ export class Actor {
   }
 
   /** Crossfade to a looping clip and set its playback speed. */
+  /** the rig has this clip */
+  has(name: string): boolean { return !!this.actions[name]; }
+
   play(name: string, timeScale = 1, fade = 0.25): void {
     if (!this.actions[name]) name = 'idle';
     if (name === 'idle' && this.guard && this.actions.guard_stand) name = 'guard_stand';

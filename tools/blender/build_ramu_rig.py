@@ -50,6 +50,9 @@ LEFT_ARM_FROM_IDLE = {'hungry'}
 RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling',
              'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far', 'fall_back', 'hang_jump', 'fall_balance', 'climb_rail', 'slip_fall'}
 
+# clips only the guards play (shouting at Ramu while they talk: person.ts talkClip): not baked into the others
+GUARD_ONLY = {'yell'}
+
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
 # to the uncle's rest orientations (the same T-pose, the same bone rolls) and that pose made their rest (to_tpose below).
@@ -691,6 +694,7 @@ CLIP_RULES = (
     (('slip', 'fall'), 'slip_fall'),               # Ramu slipping off the well's rail and falling back in ("slip and fall")
     (('hanging', 'idle'), 'hang_idle'), (('stand', 'freehang'), 'hang_start'), (('braced', 'free'), 'hang_braced'), (('braced', 'drop'), 'hang_drop'),
     (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
+    (('yelling',), 'yell'),                         # a guard shouting at Ramu (security only: GUARD_ONLY)
     (('throw',), 'throw'),                          # the audience pelting a bad poet
     (('grabbing', 'mic'), 'grab_mic'),             # Ramu taking the mic from the anchor (stage 1, part 2)
     (('jump', 'place'), 'jump_far'),               # Ramu's leap from cabin to cabin on the giant wheel ("Jump_fromplaceToanother")
@@ -781,6 +785,8 @@ def import_mixamo_clips():
     for f in files:
         name = clip_name(os.path.splitext(os.path.basename(f))[0])
         if name in RAMU_ONLY and CHAR != 'ramu':
+            continue
+        if name in GUARD_ONLY and not CHAR.startswith('security'):
             continue
         before = set(bpy.data.objects)
         bpy.ops.import_scene.fbx(filepath=f)

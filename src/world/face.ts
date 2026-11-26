@@ -152,6 +152,9 @@ vec3 faceDetail( vec3 base ) {
   mat.needsUpdate = true;
 }
 
+/** talking, the mouth's key taken this far past its own full opening at most (it was made shallow: whispering) */
+const MOUTH_GAIN = 1.5;
+
 export class Face {
   /** say things: the mouth opens and shuts in syllables, with pauses between words */
   talking = false;
@@ -211,10 +214,9 @@ export class Face {
         const r = Math.random();
         if (this.laughing) { this.target = this.target > 0.5 ? 0.35 + r * 0.15 : 0.8 + r * 0.2; this.next = 0.09 + Math.random() * 0.06; }
         else if (r < 0.14) { this.target = 0; this.next = 0.18 + Math.random() * 0.35; }       // between words
-        // syllables: mostly a little open (the lips moving, 15-40%), now and then a wide vowel (55-65%), with the lips
-        // nearly meeting between them
-        else if (this.target > 0.12) { this.target = 0.02 + Math.random() * 0.06; this.next = 0.06 + Math.random() * 0.06; }
-        else { this.target = r > 0.85 ? 0.55 + Math.random() * 0.1 : 0.15 + Math.random() * 0.25; this.next = 0.09 + Math.random() * 0.1; }
+        // syllables: mostly half open (30-60%), now and then a wide vowel (70-85%), the lips not quite meeting between
+        else if (this.target > 0.2) { this.target = 0.05 + Math.random() * 0.08; this.next = 0.06 + Math.random() * 0.06; }
+        else { this.target = r > 0.85 ? 0.7 + Math.random() * 0.15 : 0.3 + Math.random() * 0.3; this.next = 0.09 + Math.random() * 0.1; }
       }
     } else this.target = 0;
     if (this.open === 0 && this.target === 0) { /* resting */ }
@@ -222,7 +224,7 @@ export class Face {
       this.open += (this.target - this.open) * Math.min(1, dt * (this.laughing ? 22 : 15));   // (eased: the lips do not snap)
       if (this.target === 0 && this.open < 0.01) this.open = 0;
     }
-    inf[this.iMouth] = this.open;
+    inf[this.iMouth] = this.open * (this.laughing ? 1 : MOUTH_GAIN);   // (the key itself opens only a little: talking takes it past its full)
     if (this.iAngry >= 0 && (this.scowl !== this.angry)) {
       this.scowl += (this.angry - this.scowl) * Math.min(1, dt * 9);
       if (Math.abs(this.angry - this.scowl) < 0.005) this.scowl = this.angry;

@@ -28,6 +28,9 @@ export class Person {
   driven: number | null = null;
   /** what walking looks like for them just now (with a mic in the hand: mic_walk) */
   walkClip = 'walk';
+  /** played while they talk, standing (a guard: yell); its own head movement, so the look adds no nodding or sway. Null:
+   their stand (or pose) goes on, the head nodding a little */
+  talkClip: string | null = null;
   /** the ground under them while walking (the stage, its stairs): null keeps their height */
   floor: ((x: number, z: number) => number) | null = null;
 
@@ -41,7 +44,11 @@ export class Person {
       if (!this.neck && /Neck$/.test(o.name)) this.neck = o;
     });
     actor.face.blinking = true;
+    if (actor.has('yell')) this.talkClip = 'yell';
+    for (const b of [this.neck, this.head]) if (b) this.headRest.push([b, b.quaternion.clone()]);
   }
+  /** the neck's and head's turns as built (the talk clip's head swinging is held back toward them) */
+  private headRest: [THREE.Object3D, THREE.Quaternion][] = [];
 
   get position(): THREE.Vector3 { return this.actor.root.position; }
   get facing(): number { return this.actor.root.rotation.y; }
@@ -91,10 +98,13 @@ export class Person {
     const d = Math.atan2(-to.x, -to.z) - ry;                                // the heading to it, from the body's (+: to the left)
     const yaw = Math.max(-1.2, Math.min(1.2, Math.atan2(Math.sin(d), Math.cos(d))));
     const pitch = Math.max(-0.45, Math.min(0.45, Math.asin(Math.max(-1, Math.min(1, to.y)))));
-    const talk = this.actor.face.talking ? 1 : 0;
-    const nod = talk * (Math.sin(this.lookT * 6.3) * 0.05 + Math.sin(this.lookT * 2.1) * 0.04);
-    const sway = talk * Math.sin(this.lookT * 1.7) * 0.07;
+    const talk = this.actor.face.talking && !this.talkClip ? 1 : 0;
+    const nod = talk * (Math.sin(this.lookT * 6.3) * 0.025 + Math.sin(this.lookT * 2.1) * 0.02);
+    const sway = talk * Math.sin(this.lookT * 1.7) * 0.04;
     const k = this.lookW * this.lookW * (3 - 2 * this.lookW);
+    // looking at someone, the head is theirs, not the clip's: its own tilts and turns (a sitting talk throws the head back)
+    // mostly taken out, then turned to them
+    for (const [b, q] of this.headRest) b.quaternion.slerp(q, LOOK_HEAD_STILL * k);
     const right = _lr.set(Math.cos(ry), 0, -Math.sin(ry));                  // the body's right
     for (const [bone, share] of [[this.neck, 0.4], [this.head, 0.6]] as const) {
       _lq.setFromAxisAngle(_up, (yaw + sway) * share * k);
@@ -151,16 +161,26 @@ export class Person {
       }
     } else if (this.gestureT > 0) {
       if ((this.gestureT -= dt) <= 0 && this.driven === null) this.actor.play(this.pose ?? 'idle', this.pose ? this.poseScale : 1);
-    } else if (this.pose) this.actor.play(this.pose, this.poseScale);
+    } else if (this.talkClip && this.actor.face.talking) this.actor.play(this.talkClip);
+    else if (this.pose) this.actor.play(this.pose, this.poseScale);
     else this.actor.move(0);
     if (this.turnTo !== null) {
       const r = this.actor.root.rotation, a = Math.atan2(Math.sin(this.turnTo - r.y), Math.cos(this.turnTo - r.y));
       r.y += a * Math.min(1, dt * 8);
       if (Math.abs(a) < 0.01) { r.y = this.turnTo; this.turnTo = null; }
     }
-    if (this.actor.update(dt)) this.looking(dt);
+    if (this.actor.update(dt)) {
+      // talking (the yell): its arms and body, but the head mostly still (the clip swings it about): their look turns it
+      if (this.talkClip && this.actor.face.talking) for (const [b, q] of this.headRest) b.quaternion.slerp(q, TALK_HEAD_STILL);
+      this.looking(dt);
+    }
   }
 }
+
+/** how much of the talk clip's own head and neck movement is taken out (0: all of it kept, 1: none) */
+const TALK_HEAD_STILL = 0.8;
+/** looking at someone: how much of the clip's own head and neck movement is taken out */
+const LOOK_HEAD_STILL = 0.7;
 
 /** turn a bone by a rotation given in the world's frame */
 function turnWorld(bone: THREE.Object3D, q: THREE.Quaternion): void {

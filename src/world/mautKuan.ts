@@ -97,6 +97,70 @@ function plankTexture(): THREE.CanvasTexture {
   return t;
 }
 
+/**
+ The well's bottom: trodden sand, darker and packed in a ring by the wall where the bikes and cars roll on and off it, tyre
+ arcs, and patches of grass come up where nothing runs (round the pole, and in clumps between). One texture over the whole
+ floor (the disc's uv spans its width).
+*/
+function sandTexture(): THREE.CanvasTexture {
+  const S = 1024, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!, mid = S / 2, px = S / (2 * WELL_R);
+  g.fillStyle = '#b39668';
+  g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 9000; i++) {            // grains and pebbles
+    const l = 38 + rnd(i * 1.3) * 30;
+    g.fillStyle = `hsla(${32 + rnd(i * 2.1) * 10},${22 + rnd(i * 3.3) * 18}%,${l}%,${0.25 + rnd(i * 4.7) * 0.4})`;
+    const r = 0.6 + rnd(i * 5.9) ** 3 * 3.5;
+    g.beginPath(); g.arc(rnd(i * 6.1) * S, rnd(i * 7.3) * S, r, 0, TAU); g.fill();
+  }
+  for (let i = 0; i < 60; i++) {               // soft blotches: damp and dry
+    const x = rnd(i * 8.7) * S, y = rnd(i * 9.1) * S, r = 30 + rnd(i * 3.7) * 90;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, rnd(i) < 0.5 ? 'rgba(90,70,45,.18)' : 'rgba(225,205,160,.16)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr;
+    g.fillRect(x - r, y - r, 2 * r, 2 * r);
+  }
+  const ring = g.createRadialGradient(mid, mid, (WELL_R - 3.2) * px, mid, mid, WELL_R * px);   // packed by the wall
+  ring.addColorStop(0, 'rgba(70,55,40,0)');
+  ring.addColorStop(1, 'rgba(70,55,40,.6)');
+  g.fillStyle = ring;
+  g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 70; i++) {               // tyre arcs round the outer ring
+    const r = (WELL_R - 0.4 - rnd(i * 2.9) * 3) * px, a = rnd(i * 4.1) * TAU;
+    g.strokeStyle = `rgba(45,34,24,${0.12 + rnd(i * 5.5) * 0.2})`;
+    g.lineWidth = 2 + rnd(i * 6.6) * 4;
+    g.beginPath(); g.arc(mid, mid, r, a, a + 0.4 + rnd(i * 7.7) * 1.6); g.stroke();
+  }
+  const patch = (x: number, y: number, r: number, seed: number) => {
+    for (let k = 0; k < 7; k++) {              // a clump: overlapping soft greens
+      const cx = x + (rnd(seed + k * 1.1) - 0.5) * r, cy = y + (rnd(seed + k * 2.3) - 0.5) * r, rr = r * (0.35 + rnd(seed + k * 3.7) * 0.4);
+      const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rr);
+      gr.addColorStop(0, 'rgba(78,104,44,.85)');
+      gr.addColorStop(0.7, 'rgba(96,112,52,.5)');
+      gr.addColorStop(1, 'rgba(110,110,60,0)');
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(cx, cy, rr, 0, TAU); g.fill();
+    }
+    for (let k = 0; k < r * 3; k++) {          // blades
+      const a = rnd(seed * 3 + k) * TAU, d = rnd(seed * 5 + k * 1.7) ** 0.7 * r * 0.75, bx = x + Math.cos(a) * d, by = y + Math.sin(a) * d;
+      g.strokeStyle = `hsla(${80 + rnd(k + seed) * 30},${35 + rnd(k * 2 + seed) * 25}%,${20 + rnd(k * 3 + seed) * 22}%,.8)`;
+      g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + (rnd(k * 4 + seed) - 0.5) * 6, by - 4 - rnd(k * 5 + seed) * 7); g.stroke();
+    }
+  };
+  patch(mid, mid, 2.2 * px, 1);                  // round the pole
+  for (let i = 0; i < 16; i++) {
+    const a = rnd(i * 3.3 + 7) * TAU, d = (1.5 + rnd(i * 4.9 + 2) * (WELL_R - 5)) * px;
+    patch(mid + Math.cos(a) * d, mid + Math.sin(a) * d, (0.5 + rnd(i * 2.2) * 1.3) * px, 10 + i * 7);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
 /** a railing panel's steel mesh: upright bars and an X across, white on clear (one panel to a texture repeat) */
 let meshCanvas: HTMLCanvasElement | null = null;
 function meshTexture(panels: number): THREE.CanvasTexture {
@@ -181,7 +245,7 @@ export function buildMautKuan() {
     const face = end.clone().addScaledVector(n, 0.055);
     leds.add(new THREE.BoxGeometry(0.66, 0.01, 0.26), LED, mm.clone().setPosition(face));
     const h = face.clone().addScaledVector(n, 0.12);
-    bulbs.add(h.x, h.y, h.z, '#f2f5ff', -1, NIGHT ? 3.2 : 1.6);
+    bulbs.add(h.x, h.y, h.z, '#f2f5ff', -1, NIGHT ? 2.0 : 1.2);
   };
 
   // the wooden drum: weathered grey upright planks inside (one textured cylinder), steel hoops on the outside
@@ -192,15 +256,14 @@ export function buildMautKuan() {
   g.cyl(0, 0, 0, R + 0.1, 0.1, '#5a4a3a', 48);      // under the plank floor
   const planks = plankTexture();
   planks.repeat.x = 6;
-  const wallMat = new THREE.MeshStandardMaterial({ map: planks, bumpMap: planks, bumpScale: 1.2, roughness: 0.92, side: THREE.BackSide,
+  const wallMat = new THREE.MeshStandardMaterial({ map: planks, roughness: 0.92, side: THREE.BackSide,
     emissiveMap: planks, emissive: new THREE.Color(NIGHT ? 0.2 : 0.03, NIGHT ? 0.2 : 0.03, NIGHT ? 0.22 : 0.03) });   // (at night as if the LED floods lit it all round)
   const wall = new THREE.Mesh(new THREE.CylinderGeometry(R, R, H, 128, 1, true), wallMat);
   wall.position.y = H / 2;
   group.add(wall);
-  const floorTex = planks.clone();
-  floorTex.repeat.set(1.9, 1.85);
+  const floorTex = sandTexture();
   const floorMesh = new THREE.Mesh(new THREE.CircleGeometry(R + 0.02, 72).rotateX(-Math.PI / 2),
-    new THREE.MeshStandardMaterial({ map: floorTex, color: '#8a8580', roughness: 0.95, emissiveMap: floorTex, emissive: wallMat.emissive }));
+    new THREE.MeshStandardMaterial({ map: floorTex, roughness: 1, emissiveMap: floorTex, emissive: wallMat.emissive }));
   floorMesh.position.y = 0.105;
   group.add(floorMesh);
 
@@ -375,7 +438,7 @@ export function buildMautKuan() {
     const a = ((i + 0.5) / 112) * TAU + (rnd(i) - 0.5) * 0.03;
     if (inGap(a, 0.06)) continue;                     // the way in from the stair is kept clear
     if (wrap(a - GALLERY.girl + 0.45) < 0.9) continue;  // and the rail either side of the girl's spot (stage 1's end)
-    if (rnd(i * 3 + 1) < 0.2) continue;               // a few gaps: Ramu runs round the gallery behind them
+    if (rnd(i * 3 + 1) < 0.45) continue;              // gaps (and fewer bodies to draw): Ramu runs round the gallery behind them
     const r = R + 0.4 + rnd(i * 5) * 0.12, p = wallPoint(a, r, H - 0.01);   // leaning on the rail: the outer half is free
     const kid = rnd(i * 9 + 2) < 0.12;
     spots.push({
@@ -383,20 +446,18 @@ export function buildMautKuan() {
       pose: ONLOOKER[Math.floor(rnd(i * 13) * ONLOOKER.length)], ...(kid ? { s: 0.66, kind: i % 2 ? 'boy' : 'girl' } as const : {}),
     });
   }
-  for (let i = 0; i < 14; i++) {       // waiting at the foot of the stair, by the booth
+  for (let i = 0; i < 8; i++) {        // waiting at the foot of the stair, by the booth
     const a = A0 + 0.06 + rnd(i * 3) * 0.34, rr = RS1 + 0.9 + rnd(i * 5) * 2.6;
     const x = Math.cos(a) * rr, z = Math.sin(a) * rr;
     spots.push({ x, y: 0.02, z, ry: Math.atan2(Math.cos(a), Math.sin(a)) + Math.PI / 2 + (rnd(i * 7) - 0.5) * 1.2, n: 100 + i, pose: ONLOOKER[Math.floor(rnd(i * 17 + 3) * ONLOOKER.length)] });
   }
   posts.push(...figurePosts(spots));      // the onlookers on the gallery and at the booth stand in the way
-  // the upper deck packed: a row at its rail and a thinner one behind (out of Ramu's way: nothing stands in for them). They
-  // borrow the looks of the people on the gallery, so they are drawn in the same batches (no more draw calls than before).
+  // a few along the upper deck's rail (out of Ramu's way: nothing stands in for them; kept few for the frame rate). They
+  // borrow the looks of the people on the gallery, so they are drawn in the same batches (no more draw calls).
   const rail = spots.filter((s) => s.y > 1), deck: Spot[] = [];
-  for (let i = 0; i < 124; i++) {
-    const back = i >= 96, k = back ? (i - 96) / 28 : i / 96;
-    const a = DG0 + 0.04 + (k + (back ? 0.01 : 0)) * (DG1 - DG0 - 0.08) + (rnd(i * 1.9) - 0.5) * 0.02;
-    if (rnd(i * 2.7 + 4) < (back ? 0.3 : 0.15)) continue;
-    const r = DK0 + (back ? 0.95 : 0.38) + rnd(i * 5.3) * 0.12, p = wallPoint(a, r, DY), like = rail[(i * 7) % rail.length];
+  for (let i = 0; i < 26; i++) {
+    const a = DG0 + 0.06 + ((i + rnd(i * 1.9) * 0.6) / 26) * (DG1 - DG0 - 0.12);
+    const r = DK0 + 0.38 + rnd(i * 5.3) * 0.12, p = wallPoint(a, r, DY), like = rail[(i * 7) % rail.length];
     deck.push({ ...like, x: p.x, y: DY, z: p.z, ry: Math.atan2(Math.cos(a), Math.sin(a)) + (rnd(i * 6.3) - 0.5) * 0.6 });
   }
   addFigures(group, [...spots, ...deck]);

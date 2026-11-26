@@ -15,13 +15,14 @@ import { NIGHT } from './night';
  Pedestrians moves them (see Pedestrians.addRigged): an Actor only knows how to stand somewhere and play a clip.
 */
 
-export type RigName = 'uncle' | 'security' | 'goon' | 'girl' | 'boy' | 'aunty' | 'burqa' | 'kumar' | 'anchor' | 'buddha' | 'anaya';
+export type RigName = 'uncle' | 'security' | 'security_thin' | 'goon' | 'girl' | 'boy' | 'aunty' | 'burqa' | 'kumar' | 'anchor' | 'buddha' | 'anaya';
 
 /** height in metres (as built), used to match the walk clip's stride to the ground speed */
 /** `step`: how much of the walk clip's stride they take (a sari allows short steps only) */
 const RIGS: Record<RigName, { file: string; height: number; step?: number }> = {
   uncle: { file: 'models/uncle_rig.glb', height: 1.66 },
   security: { file: 'models/security_rig.glb', height: 1.72 },
+  security_thin: { file: 'models/security_thin_rig.glb', height: 1.75 },   // the thin guard: every other guard asked for (makeActors)
   goon: { file: 'models/uncle_rig.glb', height: 1.66 },        // the uncle's body in dark clothes
   girl: { file: 'models/college_girl_rig.glb', height: 1.58 },
   boy: { file: 'models/college_boy_rig.glb', height: 1.70 },
@@ -36,6 +37,7 @@ const RIGS: Record<RigName, { file: string; height: number; step?: number }> = {
 const LOOKS: Record<RigName, string[]> = {
   uncle: ['', 'uncle_b', 'uncle_c', 'uncle_d', 'uncle_e', 'uncle_f', 'uncle_g', 'uncle_h'],
   security: ['', 'security_b', 'security_c', 'security_d'],   // the uniform stays: dark skinned; no beard; a grey beard
+  security_thin: [''],
   goon: ['goon_a', 'goon_b'],
   girl: ['', 'college_girl_b', 'college_girl_c', 'college_girl_d', 'college_girl_e', 'college_girl_f', 'college_girl_g', 'college_girl_h', 'college_girl_i', 'college_girl_j'],
   boy: ['', 'college_boy_b', 'college_boy_c', 'college_boy_d', 'college_boy_e', 'college_boy_f', 'college_boy_g', 'college_boy_h', 'college_boy_i', 'college_boy_j'],
@@ -97,7 +99,7 @@ function hipsAt(clip: THREE.AnimationClip | undefined, end: boolean): THREE.Vect
 interface Source { scene: THREE.Object3D; clips: THREE.AnimationClip[]; lie: THREE.Vector3; material: THREE.MeshStandardMaterial }
 const cache = new Map<string, Promise<Source>>();     // by file: the goon is the uncle's model
 const lookCache = new Map<string, Promise<THREE.MeshStandardMaterial>>();
-const nextLook: Record<RigName, number> = { uncle: 0, security: 0, goon: 0, girl: 0, boy: 0, aunty: 0, burqa: 0, kumar: 0, anchor: 0, buddha: 0, anaya: 0 };
+const nextLook: Record<RigName, number> = { uncle: 0, security: 0, security_thin: 0, goon: 0, girl: 0, boy: 0, aunty: 0, burqa: 0, kumar: 0, anchor: 0, buddha: 0, anaya: 0 };
 
 /** The model's material wearing another texture (one material per look, shared by everyone who has that look). */
 function lookMaterial(look: string, base: THREE.MeshStandardMaterial): Promise<THREE.MeshStandardMaterial> {
@@ -198,7 +200,7 @@ export class Actor {
     this.face = new Face(body);
     if (liteSrc) this.addLite(body, liteSrc, material);
     this.step = RIGS[name].step ?? 1;
-    this.guard = name === 'security';
+    this.guard = name === 'security' || name === 'security_thin';
     this.stride = (RIGS[name].height / CLIP_HEIGHT) * this.step;
     this.lie = src.lie;
     this.mixer = new THREE.AnimationMixer(body);
@@ -354,7 +356,28 @@ function loadLite(name: RigName): Promise<Source> {
  * `n` people of one kind (clones of one loaded model), each with the next of that kind's looks. `lite`: the light body
  * (for many at once, seldom seen close: the kavi sammelan's audience).
  */
+/** guards made so far: every other one is the thin guard */
+let guards = 0;
+
+/**
+ `n` people of a kind. Security guards come as a mix of the two guards' bodies, the stout one (in his looks) and the thin
+ one (his own face: the stout one's looks are painted for another body); whoever asks for them still has 'security'.
+*/
 export async function makeActors(name: RigName, n: number, lite = false, pick?: string[]): Promise<Actor[]> {
+  if (name !== 'security') return makeKind(name, n, lite, pick);
+  const stout: number[] = [], thin: number[] = [];
+  for (let i = 0; i < n; i++) (guards++ % 2 ? thin : stout).push(i);
+  const [a, b] = await Promise.all([
+    stout.length ? makeKind('security', stout.length, lite, pick && stout.map((i) => pick[i % pick.length])) : Promise.resolve([]),
+    thin.length ? makeKind('security_thin', thin.length, lite).catch(() => makeKind('security', thin.length, lite)) : Promise.resolve([]),
+  ]);
+  const out: Actor[] = new Array(n);
+  stout.forEach((i, k) => { out[i] = a[k]; });
+  thin.forEach((i, k) => { out[i] = b[k]; });
+  return out;
+}
+
+async function makeKind(name: RigName, n: number, lite = false, pick?: string[]): Promise<Actor[]> {
   const src = await (lite ? loadLite(name) : load(name));
   const looks = LOOKS[name];
   // `pick`: these looks, in order (the story's own people, who must each look different)

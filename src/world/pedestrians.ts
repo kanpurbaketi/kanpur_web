@@ -76,6 +76,7 @@ interface Ped {
 const RIGGED: Record<RigName, { speed: [number, number]; linger: number; tough: number }> = {
   uncle: { speed: [0.95, 1.25], linger: 0.12, tough: TOUGH },
   security: { speed: [0.8, 1.0], linger: 0.45, tough: 5 },     // on his round until he sees Ramu, then after him; a harder man to put down
+  security_thin: { speed: [0.8, 1.0], linger: 0.45, tough: 5 },   // (never asked for by name: half of 'security' is him, see makeActors)
   goon: { speed: [1.05, 1.35], linger: 0.08, tough: TOUGH },
   burqa: { speed: [0.8, 1.05], linger: 0.25, tough: TOUGH },
   girl: { speed: [1.0, 1.3], linger: 0.15, tough: TOUGH },

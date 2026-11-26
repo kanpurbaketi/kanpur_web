@@ -169,6 +169,7 @@ export class Ramu {
     this.gestureT = 0;
     this.pose = clip;
     this.poseLast = false;
+    this.poseAt = null;
     this.snap(clip);
   }
 
@@ -187,8 +188,10 @@ export class Ramu {
   }
 
   /** change the held clip (eating, talking) while sitting; `last`: a once-only clip (a fall) held on its last frame */
-  holdClip(clip: string, last = false): void { if (this.pose) { this.pose = clip; this.poseLast = last; } }
+  /** the held pose's clip: playing, or held at its last frame (`last`), or held at `at` seconds into it */
+  holdClip(clip: string, last = false, at: number | null = null): void { if (this.pose) { this.pose = clip; this.poseLast = last; this.poseAt = at; } }
   private poseLast = false;
+  private poseAt: number | null = null;
 
   /** out of the held pose, standing at (x, z) on whatever is there at about height y */
   standUp(x: number, z: number, y: number): void {
@@ -816,8 +819,8 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
       this.play(this.gestureName, 0.25);
     } else if (this.pose) {
       set(this.pose, 'idle', 1);
-      const a = this.poseLast ? A[this.pose] : null;
-      if (a) { a.timeScale = 0; a.time = a.getClip().duration - 0.001; a.setEffectiveWeight(1); }
+      const a = this.poseLast || this.poseAt !== null ? A[this.pose] : null;
+      if (a) { a.timeScale = 0; a.time = this.poseLast ? a.getClip().duration - 0.001 : Math.min(a.getClip().duration - 0.001, Math.max(0, this.poseAt!)); a.setEffectiveWeight(1); }
     } else if (this.lockPick && hs < 0.8) {
       // the clips made for it (Katpootli): bent to a car's door, or crouched by a bike's front wheel, a glance round now and then
       if (this.lockPick.low) set(A.pick_low ? 'pick_low' : 'crouch', 'idle', 1);

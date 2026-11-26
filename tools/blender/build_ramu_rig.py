@@ -25,6 +25,7 @@ CHARS = {
     'ramu': ('ramu_teen/ramu_rigged.fbx', 'ramu_rig.glb', 1.52, 2048),
     'uncle': ('uncle/uncle_rigged.fbx', 'uncle_rig.glb', 1.66, 1024),
     'security': ('security/security_fat_rigged.fbx', 'security_rig.glb', 1.72, 1024),
+    'security_thin': ('common_assets/security_thin.fbx', 'security_thin_rig.glb', 1.75, 1024),   # the thin guard (actors.ts: half the guards)
     'college_girl': ('college_girl/college_girl_rigged.fbx', 'college_girl_rig.glb', 1.58, 1024),
     'college_boy': ('college_boy/college_boy_rigged.fbx', 'college_boy_rig.glb', 1.70, 1024),
     'aunty': ('aunty/aunty_rigged.fbx', 'aunty_rig.glb', 1.56, 1024),
@@ -47,7 +48,7 @@ UNUSED = {'gunplay', 'sweep fall'}    # clips that keep their travel: a man knoc
 # clips whose left arm the FBX leaves in the T-pose: that arm comes from the idle instead
 LEFT_ARM_FROM_IDLE = {'hungry'}
 RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling',
-             'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far'}
+             'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far', 'fall_back'}
 
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
@@ -246,6 +247,7 @@ FACE = {
     'ramu': dict(eyes=[(228, 362), (370, 362)], ew=52, mouth=(293, 490), mw=110),
     'uncle': dict(eyes=[(228, 292), (360, 292)], ew=52, mouth=(300, 421), mw=125, lid=0.6),       # his brows sit low
     'security': dict(eyes=[(222, 325), (365, 325)], ew=52, mouth=(298, 470), mw=100, lid=0.7),
+    'security_thin': dict(eyes=[(224, 340), (366, 340)], ew=50, mouth=(306, 472), mw=110, lid=0.7),
     'college_girl': dict(eyes=[(265, 283), (400, 283)], ew=48, mouth=(332, 412), mw=95),
     'college_boy': dict(eyes=[(232, 298), (355, 298)], ew=50, mouth=(295, 428), mw=110),
     'aunty': dict(eyes=[(198, 256), (322, 256)], ew=50, mouth=(262, 382), mw=110),
@@ -695,6 +697,7 @@ CLIP_RULES = (
     (('shove',), 'shove'), (('stumble',), 'shove'),
     (('block',), 'block'),
     (('getting up',), 'get_up'), (('get up',), 'get_up'), (('stand up',), 'get_up'),
+    (('falling', 'backward'), 'fall_back'),        # Ramu over backward off the well's rail, flat on his back down to the sand
     (('forward', 'death'), 'fall2'), (('falling forward',), 'fall2'),
     (('knocked',), 'fall'), (('death',), 'fall'), (('dying',), 'fall'), (('falling',), 'falling'),
     (('taking punch',), 'hit'), (('hit to body',), 'hit2'), (('body hit',), 'hit2'), (('reaction',), 'hit'), (('hit',), 'hit'),

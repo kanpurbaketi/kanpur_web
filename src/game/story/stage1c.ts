@@ -1050,21 +1050,27 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
     // he sways up there
     ramu.model.rotation.order = 'YXZ';               // (pitch and roll about his own axes)
     await d.tween(1.1, (k) => { ramu.model.rotation.z = 0.09 * Math.sin(k * Math.PI * 3) * (1 - k * 0.4); ramu.model.rotation.x = 0.05 * Math.sin(k * Math.PI * 2); });
-    // ---- his foot slips: slow, he goes over backward ----
+    // ---- his foot slips: slow, he goes over backward (falling_backwards: flat on his back, down the well) ----
     d.timeScale = 0.3;
     girl.gesture('offer', 'reach', 2);               // her hand out after him, too late
     const close = { pos: at3(onWell(RAIL_A + 0.05, GALLERY.r1 + 0.6), Y + 1.9), look: at3(rail, Y + 1.9), fov: 44 };
     d.shot(close, 0, d.pushIn(close, 0.06));
-    ramu.gesture('fall', 1.3);
-    await d.tween(0.45, (k) => { ramu.model.rotation.z = 0.06 * (1 - k); ramu.model.rotation.x = 0.35 * k * k; });
-    ramu.stopGesture();
-    ramu.holdClip('falling');
-    // down, back first; the camera falls with him from inside the well, the show going round between
-    const fall = jumpIn(ramu, RAIL_A, true);
+    // he tips over into the clip's first pose (lying back in the air), and down to lie level with the rail's top
+    ramu.holdClip('fall_back', false, 0);
+    const y0 = ramu.position.y;
+    await d.tween(0.45, (k) => { ramu.model.rotation.z = 0.06 * (1 - k); ramu.model.rotation.x = 0; ramu.position.y = y0 - (FB_LIFT - FB_ABOVE) * k * k; });
+    // down, back first; the camera falls with him from inside the well, the show going round between. His hips go down
+    // the fall's path (FB_ABOVE over where his feet would be); the last of the way is the clip's own drop onto the sand.
+    const fall = jumpIn(ramu, RAIL_A, true, true);
     let turn = toWell - faceGirl;
     turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+    let k1 = -1;
     await d.tween(fall.T, (k) => {
       fall.at(k);
+      const root = ramu.position.y - (FB_LIFT - FB_ABOVE);
+      if (root <= FB_FLOOR && k1 < 0) k1 = k;
+      ramu.position.y = Math.max(FB_FLOOR, root);
+      ramu.holdClip('fall_back', false, k1 < 0 ? 0 : FB_LAND * Math.min(1, (k - k1) / Math.max(0.01, 1 - k1)));
       // he twists round as he goes down, to land facing the middle (and the camera)
       const e = Math.min(1, Math.max(0, (k - 0.15) / 0.5));
       ramu.model.rotation.y = faceGirl + turn * e * e * (3 - 2 * e);
@@ -1075,9 +1081,8 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
     d.timeScale = 1;
     ramu.model.rotation.set(0, ramu.model.rotation.y, 0);
     void playSfx('thud', 1);
-    ramu.holdClip('fall', true);                 // and then he lies there
-    ramu.model.rotation.y = toWell;              // facing the middle: the clip throws him back toward the wall, with room to
-    ramu.gesture('fall');
+    // on his back on the sand: the rest of the clip (he settles), and then he lies there
+    void d.tween(FB_LEN - FB_LAND, (k) => ramu.holdClip('fall_back', false, FB_LAND + (FB_LEN - FB_LAND) * k)).then(() => ramu.holdClip('fall_back', true));
     const p = ramu.position, [ix, iz] = fromWell([p.x, p.z]);
     d.shot({ pos: v(p.x - ix * 1.6 - iz * 2.8, 1.1, p.z - iz * 1.6 + ix * 2.8), look: v(p.x - ix * 0.3, 0.3, p.z - iz * 0.3), fov: 46 }, 0);   // side on, along the wall
     await d.wait(2.4);
@@ -1096,13 +1101,13 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
   });
   // watched or skipped: down on the sand at the foot of the wall, the candy floss in his hand, the guards at the rail above
   d.timeScale = 1;
-  const end = jumpIn(ramu, RAIL_A, true);
+  const end = jumpIn(ramu, RAIL_A, true, true);
   end.at(1);
   ramu.model.rotation.set(0, 0, 0, 'XYZ');
   if (ramu.face) ramu.face.laughing = false;
   held.holder(ramu.model);
-  ramu.sitAt(ramu.position.x, ramu.position.y, ramu.position.z, toWell, 'fall');
-  ramu.holdClip('fall', true);                   // on his back on the sand
+  ramu.sitAt(ramu.position.x, FB_FLOOR, ramu.position.z, toWell, 'fall_back');
+  ramu.holdClip('fall_back', true);              // on his back on the sand
   if (ramu.face) { ramu.face.talking = false; ramu.face.smile = 1; ramu.face.shut = 1; }
   ramu.yaw = toWell + Math.PI;                   // the camera on the well's open side, not in the sand banked up behind him
   if (!shown) await d.scene(async () => { await d.wait(0.05); onFace(); await pass(); });   // skipped: the card over him lying there
@@ -1119,7 +1124,7 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
  round the wall so each comes past him just as he is at its height: one under his feet, one over his head, one
  between them and the camera.
 */
-function jumpIn(ramu: Ramu, a: number, slip = false): { T: number; at: (k: number) => void } {
+function jumpIn(ramu: Ramu, a: number, slip = false, flat = false): { T: number; at: (k: number) => void } {
   const y0 = GALLERY.y + 1.1, vy = slip ? 0.5 : 1.6, g = 9.8, floor = 0.1;
   const T = (vy + Math.sqrt(vy * vy + 2 * g * (y0 - floor))) / g;
   const r0 = WELL_R + 0.22, r1 = WELL_R - (slip ? 1.9 : 0.75);
@@ -1129,7 +1134,7 @@ function jumpIn(ramu: Ramu, a: number, slip = false): { T: number; at: (k: numbe
     const [x, z] = onWell(a, r);
     ramu.position.set(x, Math.max(floor, yAt(t)), z);
     // the leap: head first, then upright; the slip: over on his back, coming round to upright near the sand
-    ramu.model.rotation.x = slip ? 0.35 + 0.75 * Math.sin(Math.min(1, k * 1.25) * Math.PI) - 0.35 * k : -0.35 * Math.sin(Math.min(1, k * 1.4) * Math.PI);
+    if (!flat) ramu.model.rotation.x = slip ? 0.35 + 0.75 * Math.sin(Math.min(1, k * 1.25) * Math.PI) - 0.35 * k : -0.35 * Math.sin(Math.min(1, k * 1.4) * Math.PI);
   };
   // when he is at a height (falling): the time
   const when = (y: number) => (vy + Math.sqrt(Math.max(0, vy * vy + 2 * g * (y0 - y)))) / g;
@@ -1147,3 +1152,8 @@ function jumpIn(ramu: Ramu, a: number, slip = false): { T: number; at: (k: numbe
   return { T, at };
 }
 let jumped = false;
+/**
+ falling_backwards (assets/anims, Ramu's 'fall_back'): flat on his back in the air, his hips FB_LIFT over his position;
+ FB_LAND s in he is down on the ground; FB_LEN s, settled. On the way down his hips go FB_ABOVE over the fall's path.
+*/
+const FB_LEN = 3.0, FB_LAND = 1.0, FB_LIFT = 0.92, FB_ABOVE = 0.3, FB_FLOOR = 0.1;

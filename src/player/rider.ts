@@ -278,6 +278,9 @@ export class Rider {
     this.world(m1 ?? i1, along).sub(this.world(h, _v9)).normalize();
     if (p1) this.world(p1, across).sub(this.world(i1, _v9));
     else if (t1) this.world(i1, across).sub(this.world(t1, _v9));
+    // a right hand with only an index (the heavy guard's): the hand bone's own -x runs index to pinky (Mixamo's, as on
+    // the full hands, measured)
+    else if (side === 'Right') across.set(-1, 0, 0).applyQuaternion(h.getWorldQuaternion(_q2));
     else return false;
     across.addScaledVector(along, -across.dot(along)).normalize();
     return true;

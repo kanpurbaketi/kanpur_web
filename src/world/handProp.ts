@@ -8,8 +8,10 @@ import { Rider } from '../player/rider';
            the handle and the handle nearly upright, its head (the object's +y) at the mouth. The clip's arm is moved
            there (grab_mic's pose when the rig has it, else the hold's own IK); a clip that has the hand down at the chest keeps it there (the mic at the chest), and
            one that holds the arm out (handing it over) keeps its own. `grip`: metres of the handle below the fist
-   'hang'  carried by its top, upright (a lota by its neck): `grip` is the height of the neck above its origin
-   'palm'  sitting in the fist, the object's origin at the grip, turned with the hand (a fruit)
+   'hang'  carried by its top, upright (a lota by its neck): the neck in the curl of the closed fingers, never through the
+           palm; `grip` is the height of the neck above its origin
+   'palm'  lying in the open hand (a stone, a fruit): its surface on the palm's, the fingers closed round it as far as its
+           size lets them, turned with the hand; never through the palm
    'stick' a stick held in the fist (candy floss): the fingers closed round it, the thumb round from the other side, the
            stick (the object's +y) up through the ring they make; `grip`: metres of the stick below the fist
  Rigs without a right hand (none of ours) leave the object where it is. The object lives in `parent` (any frame).
@@ -17,6 +19,8 @@ import { Rider } from '../player/rider';
 
 export type HoldMode = 'mic' | 'hang' | 'palm' | 'stick';
 const GRIP = 0.06;
+/** in the open hand: the middle of the palm, this far from the wrist toward the knuckles; and the gap off its skin */
+const PALM_MID = 0.065, PALM_SKIN = 0.01;
 const UP = new THREE.Vector3(0, 1, 0);
 const v = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), f = new THREE.Vector3();
 const q = new THREE.Quaternion(), q2 = new THREE.Quaternion(), e = new THREE.Euler();
@@ -111,13 +115,35 @@ export class HandProp {
     hand.getWorldQuaternion(q);
     b.set(0, 1, 0).applyQuaternion(q);
     const grip = a.addScaledVector(b, GRIP);
-    if (this.mode === 'stick' && this.rig?.ok) {
+    if ((this.mode === 'stick' || this.mode === 'hang') && this.rig?.ok) {
       this.rig.grip('Right', 0.95, 0, -1);
       root.updateMatrixWorld(true);
     }
-    // in a closed fist (the IK's mic hold) the handle is in the curl of the fingers: in from the knuckles, on the palm's side
-    if ((this.mode === 'mic' || this.mode === 'stick') && this.rig?.hand('Right', m1, m2)) {
+    // in a closed fist (the IK's mic hold) the handle is in the curl of the fingers: in from the knuckles, on the palm's
+    // side (a lota by its neck too: the neck in the fist, never through the palm)
+    if ((this.mode === 'mic' || this.mode === 'stick' || this.mode === 'hang') && this.rig?.hand('Right', m1, m2)) {
       hand.getWorldPosition(grip).addScaledVector(m1, 0.075).addScaledVector(m2, 0.03);
+    }
+    // in the open hand (a stone, a fruit): lying on the palm, its surface on the palm's, the fingers closed round it as far
+    // as its size lets them (never through the palm)
+    let onPalm = false;
+    if (this.mode === 'palm' && this.rig?.hand('Right', m1, m2)) {
+      const r = this.radius();
+      this.rig.grip('Right', Math.max(0.25, Math.min(0.8, 0.9 - r * 6)), 0, 1);
+      root.updateMatrixWorld(true);
+      this.rig.hand('Right', m1, m2);
+      // the palm's middle: halfway from the wrist to the middle (or index) finger's knuckle (PALM_MID up the hand without one); its
+      // face the side the curled fingertips went to (the rig's own, whatever way its bones were made)
+      hand.getWorldPosition(grip);
+      const fin = boneAt(root, 'RightHandMiddle1', a) ? 'Middle' : boneAt(root, 'RightHandIndex1', a) ? 'Index' : '';
+      if (fin) {
+        // (an index-only hand's knuckle bone sits short, mid-palm: the palm's middle is a little past it)
+        grip.lerp(a, fin === 'Middle' ? 0.55 : 1.25);
+        if (boneAt(root, `RightHand${fin}3`, b) && b.sub(a).dot(m2) < 0) m2.negate();
+      }
+      else grip.addScaledVector(m1, PALM_MID);
+      grip.addScaledVector(m2, r + PALM_SKIN);
+      onPalm = true;
     }
     parent.updateWorldMatrix(true, false);
     const pq = parent.getWorldQuaternion(q2).invert();
@@ -150,9 +176,30 @@ export class HandProp {
       e.setFromQuaternion(root.getWorldQuaternion(q), 'YXZ');
       o.quaternion.setFromAxisAngle(UP, e.y).premultiply(pq);
     } else {
+      // (on the palm: the object's middle at `grip`, its bounding middle, not its origin)
+      if (onPalm) grip.sub(this.centre(q));
       o.position.copy(parent.worldToLocal(grip));
       o.quaternion.copy(q).premultiply(pq);
     }
+  }
+
+  /** the object's size: half its smallest side, world (a stone, a fruit), measured once */
+  private r = -1;
+  private mid = new THREE.Vector3();
+  private radius(): number {
+    if (this.r < 0) {
+      const o = this.object, keep = o.quaternion.clone(), pos = o.position.clone();
+      o.quaternion.identity(); o.position.set(0, 0, 0); o.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(o), size = box.getSize(new THREE.Vector3());
+      this.r = Math.min(size.x, size.y, size.z) / 2;                     // (world: with every scale over it)
+      o.worldToLocal(box.getCenter(this.mid));                            // (its own frame)
+      o.quaternion.copy(keep); o.position.copy(pos); o.updateMatrixWorld(true);
+    }
+    return this.r;
+  }
+  /** its bounding middle's offset from its origin, world, turned as `q` turns it */
+  private centre(q: THREE.Quaternion): THREE.Vector3 {
+    return this.mid.clone().multiply(this.object.getWorldScale(new THREE.Vector3())).applyQuaternion(q);
   }
 
   /** the mic arm: the clip's, moved to the hold (see 'mic') */
@@ -217,6 +264,12 @@ function findBoneCached(root: THREE.Object3D, suffix: string, out: THREE.Vector3
   let b = m.get(suffix);
   if (b === undefined) { b = findBone(root, suffix); m.set(suffix, b); }
   return b ? b.getWorldPosition(out) : root.getWorldPosition(out);
+}
+/** a bone's world position into `out`, false (and `out` untouched) when the rig has no such bone */
+function boneAt(root: THREE.Object3D, suffix: string, out: THREE.Vector3): boolean {
+  findBoneCached(root, suffix, m7);
+  if (!bones.get(root)?.get(suffix)) return false;
+  out.copy(m7); return true;
 }
 /** which way the body faces, level: from the shoulders (a rig's root can be turned round from its model) */
 const fl = new THREE.Vector3(), fr = new THREE.Vector3();

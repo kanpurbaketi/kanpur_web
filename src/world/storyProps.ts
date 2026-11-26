@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gltfLoader } from './gltf';
 
 /*
@@ -67,10 +68,12 @@ export function shoe(): THREE.Group {
 
 /** a fist-sized rock off the mela's ground: a lumpy grey-brown stone, its origin in its middle */
 export function rock(): THREE.Mesh {
-  const geo = new THREE.IcosahedronGeometry(0.075, 1);
+  // (its corners joined first: each shared corner is pushed out the same, so the surface stays whole, not torn into spikes)
+  const geo = mergeVertices(new THREE.IcosahedronGeometry(0.06, 1).deleteAttribute('normal').deleteAttribute('uv'));
   const p = geo.getAttribute('position');
   for (let i = 0; i < p.count; i++) {
-    const k = 0.8 + 0.4 * Math.abs(Math.sin(i * 12.9898) * 43758.5453 % 1);
+    const h = Math.abs(Math.sin(p.getX(i) * 127.1 + p.getY(i) * 311.7 + p.getZ(i) * 74.7) * 43758.5453) % 1;
+    const k = 0.85 + 0.3 * h;
     p.setXYZ(i, p.getX(i) * k * 1.15, p.getY(i) * k * 0.8, p.getZ(i) * k);
   }
   geo.computeVertexNormals();

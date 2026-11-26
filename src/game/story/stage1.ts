@@ -91,7 +91,7 @@ async function part1Food(d: Director, ramu: Ramu, keepers: CartKeepers, hooks: S
 
   // ---- beats 3-4: "ek samosa chaat", turned away ----
   const keeper = keepers.at(ramu.position.x, ramu.position.z, 9) ?? keepers.keepers[0];
-  if (keeper) await samosa(d, ramu, keeper);
+  if (keeper) await samosa(d, ramu, keeper, keepers);
   hooks.step(1);
   void refusals(d, ramu, keepers);
 }
@@ -224,7 +224,7 @@ async function turnedBack(d: Director, ramu: Ramu, q: GateQueue): Promise<void> 
   }
 }
 
-async function samosa(d: Director, ramu: Ramu, k: Keeper): Promise<void> {
+async function samosa(d: Director, ramu: Ramu, k: Keeper, all: CartKeepers): Promise<void> {
   await d.scene(async () => {
     // Ramu at the cart's front, facing the keeper, who looks up at him
     const kp = k.position;
@@ -236,8 +236,10 @@ async function samosa(d: Director, ramu: Ramu, k: Keeper): Promise<void> {
     await d.wait(0.5);
     await d.say('ramu', ramu.face, 'samosa');
     await d.wait(0.2);
-    // the keeper: no (from beside the cart, three-quarters on: from in front of him its boards and goods stand in the way)
-    const no = d.front(k, { dist: 0.7, side: 1.7, up: 0, drop: 0.14, fov: 36 });
+    // the keeper: no. The two of them side on, the cart between (its goods below their faces): from out along the row of
+    // carts, on the side with more room before the next cart (from beside the cart, the glass case and the kadhai's glow
+    // filled the frame, and Ramu was not in it; from behind Ramu, the goods hid the keeper)
+    const no = sideOn(d, ramu, k, all);
     d.shot(no, 0, d.pushIn(no, 0.03));
     await d.wait(0.35);
     k.gesture('head_no', 'samosa-no');
@@ -270,6 +272,45 @@ async function samosa(d: Director, ramu: Ramu, k: Keeper): Promise<void> {
   k.idle();
   k.face.angry = 0;
   void d.wait(3).then(() => { if (ramu.face) ramu.face.angry = 0; });
+}
+
+/** Ramu and the keeper side on across the cart, from out along the row of carts on the side with more room */
+function sideOn(d: Director, ramu: Ramu, k: Keeper, all: CartKeepers): { pos: THREE.Vector3; look: THREE.Vector3; fov: number } {
+  const rh = d.front(ramu, { dist: 0, fov: 40 }).look, kh = d.front(k, { dist: 0, fov: 40 }).look;
+  const mid = rh.clone().lerp(kh, 0.45);                                   // (a little nearer Ramu: the keeper is the one talking)
+  let ax = kh.x - rh.x, az = kh.z - rh.z;
+  const al = Math.hypot(ax, az) || 1;
+  ax /= al; az /= al;
+  const room = (sx: number, sz: number) => {
+    let best = Infinity;
+    for (const o of all.keepers) if (o !== k) best = Math.min(best, Math.hypot(o.cart.x - (mid.x + sx * 2.3), o.cart.z - (mid.z + sz * 2.3)));
+    return best;
+  };
+  const sx = -az, sz = ax, out = 2.3, back = 0.35;                       // out to the side, and a little back on Ramu's side (three-quarters on to the keeper)
+  const at = (side: number) => new THREE.Vector3(mid.x + sx * side * out - ax * back, Math.max(rh.y, kh.y) + 0.15, mid.z + sz * side * out - az * back);
+  const first = room(sx, sz) >= room(-sx, -sz) ? 1 : -1;
+  // ... unless something of the cart's (the sugarcane, the juice press) stands between that side and the keeper's face or
+  // chest: then the other side; and if that is blocked too, close on him from beside the cart (as it was)
+  const chest = kh.clone().setY(kh.y - 0.4);
+  const clear = (p: THREE.Vector3) => !blocked(ramu, k, p, kh) && !blocked(ramu, k, p, chest);
+  const look = new THREE.Vector3(mid.x, (rh.y + kh.y) / 2 - 0.12, mid.z);
+  for (const side of [first, -first]) if (clear(at(side))) return { pos: at(side), look, fov: 44 };
+  return d.front(k, { dist: 0.7, side: 1.7, up: 0, drop: 0.14, fov: 36 });
+}
+
+/** whether anything solid (not Ramu, not the keeper) is in the way from `from` to `to` */
+const sight = new THREE.Raycaster();
+function blocked(ramu: Ramu, k: Keeper, from: THREE.Vector3, to: THREE.Vector3): boolean {
+  let scene: THREE.Object3D = ramu.model;
+  while (scene.parent) scene = scene.parent;
+  const dir = to.clone().sub(from), len = dir.length() - 0.25;            // (short of his face: not his own head)
+  sight.set(from, dir.normalize());
+  sight.far = len;
+  const mine = (o: THREE.Object3D | null): boolean => { for (; o; o = o.parent) if (o === ramu.model || o === k.actor.root) return true; return false; };
+  return sight.intersectObjects(scene.children, true).some((h) => {
+    const o = h.object as THREE.Mesh;
+    return o.isMesh && o.visible && !mine(o) && !((o.material as THREE.Material).transparent);
+  });
 }
 
 /**

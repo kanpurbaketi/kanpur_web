@@ -614,7 +614,7 @@ function rideCam(d: Director, ramu: Ramu): void {
 async function rideWheel(d: Director, ramu: Ramu, mela: Mela): Promise<boolean> {
   const w = mela.giant, ui = new GripPrompt('leap');
   let following = true;
-  void d.until(() => { if (following) rideCam(d, ramu); return !following; });
+  void d.until(() => { if (following && !leaping) rideCam(d, ramu); return !following; });
   d.locked = true;                                      // (he is held; the keys are for the jump)
   try {
     for (let n = 0; n < JUMPS; n++) {
@@ -642,21 +642,45 @@ async function rideWheel(d: Director, ramu: Ramu, mela: Mela): Promise<boolean> 
 /** jump_far (assets/anims/Jump_fromplaceToanother.fbx): 1.03 s; the feet leave at 0.07 s, down again at 0.73 s */
 const JF_LEN = 1.03, JF_OFF = 0.07, JF_LAND = 0.73;
 
-/** a jump from his cabin's roof back to the roof of the one behind (higher, nearer the top), the wheel turning on */
+/** while a leap is on: the ride camera stands aside for the leap's own close shot */
+let leaping = false;
+/** the leaps' slow motion (the world's time, the wheel with it) */
+const LEAP_SLOW = 0.3;
+
+/**
+ a jump from his cabin's roof back to the roof of the one behind (higher, nearer the top), the wheel turning on: in slow
+ motion, the camera close on him in front of the wheel, a little ahead of him, swinging round with him from take-off to
+ landing (the two roofs in the shot), then back to the ride camera
+*/
 async function leap(d: Director, ramu: Ramu, mela: Mela): Promise<void> {
   const from = riding.cabin!, to = cabinAt(mela, thetaOf(mela, from) - STEP);
-  const a = new THREE.Vector3(), b = new THREE.Vector3(), off = soleOff(ramu);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), off = soleOff(ramu), mid = new THREE.Vector3(), dir = new THREE.Vector3();
   riding.cabin = null;
   ramu.gesture('jump_far', 1);
   ramu.model.rotation.y = Math.PI / 2;                  // west, the way he jumps
-  // the clip (Jump_fromplaceToanother, in place) springs him up and lands him: across between its take-off and landing
-  await d.tween(JF_LEN, (k) => {
-    roofSpot(from, a);
-    roofSpot(to, b);
-    const f = Math.max(0, Math.min(1, (k * JF_LEN - JF_OFF) / (JF_LAND - JF_OFF)));
-    a.lerp(b, sm(f));
-    ramu.position.set(a.x, a.y - off + Math.sin(Math.PI * f) * 0.25, a.z);
-  });
+  leaping = true;
+  d.timeScale = LEAP_SLOW;
+  try {
+    // the clip (Jump_fromplaceToanother, in place) springs him up and lands him: across between its take-off and landing
+    await d.tween(JF_LEN, (k) => {
+      roofSpot(from, a);
+      roofSpot(to, b);
+      dir.subVectors(b, a).setY(0).normalize();
+      mid.lerpVectors(a, b, 0.5);
+      const f = Math.max(0, Math.min(1, (k * JF_LEN - JF_OFF) / (JF_LAND - JF_OFF)));
+      a.lerp(b, sm(f));
+      ramu.position.set(a.x, a.y - off + Math.sin(Math.PI * f) * 0.25, a.z);
+      // close: 3.4 m out in front of the wheel, from ahead of him at take-off round to beside him at the landing, looking
+      // at him (and a little toward where he lands), so the whole leap is in the shot
+      // (up with the clip's own spring, which lifts him off the roof, so his head stays in the frame at the top)
+      const s = sm(k), along = 1.3 - 1.1 * s, lift = 0.7 * Math.sin(Math.PI * f), y = ramu.position.y + lift;
+      const p = ramu.position, lk = v(p.x + dir.x * 0.6 * (1 - s), y + 0.85, p.z + dir.z * 0.6 * (1 - s)).lerp(v(mid.x, y + 0.85, mid.z), 0.25);
+      d.shot({ pos: v(p.x + dir.x * along, y + 1.2 - 0.3 * s, p.z + 3.6 + dir.z * along), look: lk, fov: 48 }, 0);
+    });
+  } finally {
+    d.timeScale = 1;
+    leaping = false;
+  }
   riding.cabin = to;
   void playSfx('thud', 0.4);
   void d.tween(0.4, (k) => { ramu.model.rotation.y = Math.PI / 2 + (FACE_ROOF - Math.PI / 2) * k; });
@@ -782,6 +806,7 @@ async function stopAndJump(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promi
     ramu.gesture('jump_far', 1);
     d.shot(behind(ramu.position), 0);
     const T = 2.1, peak = 2.4, t0 = JF_OFF / T;
+    d.timeScale = 0.4;                                     // slow motion, the whole leap and fall
     await d.tween(T, (k) => {
       if (k * T > JF_LAND - 0.3) ramu.holdClip('falling');   // past the clip's top: falling the rest of the way
       const f = Math.max(0, (k - t0) / (1 - t0));
@@ -793,6 +818,7 @@ async function stopAndJump(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promi
       sh.pos.y += lift; sh.look.y += lift;
       d.shot(sh, 0);
     });
+    d.timeScale = 1;
     void playSfx('thud', 0.6);
     // boing, boing, boing
     d.shot({ pos: v(bounce.x - 4.5, 6.8, bounce.z + 6.5), look: v(bounce.x, 1.0, bounce.z), fov: 48 }, 0);
@@ -806,6 +832,7 @@ async function stopAndJump(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promi
     d.shot(d.front(ramu, { dist: 1.8, side: 0.4, up: 0.1, drop: 0.15, fov: 40 }), 0);
     await d.say('ramu', ramu.face, 'boing');
   });
+  d.timeScale = 1;
   // watched or skipped: on his feet on the castle's floor, the wheel stopped (it goes again a little later), the guards
   // coming from the wheel
   riding.cabin = null;

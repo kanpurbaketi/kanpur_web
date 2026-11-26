@@ -1100,14 +1100,23 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
       d.shot({ pos: v(p.x + ix * TOP_OUT, Math.min(p.y + TOP_UP, Y + TOP_MAX), p.z + iz * TOP_OUT), look: v(p.x, p.y + 0.3, p.z), fov: 52 }, 0);
     };
     fromTop(ramu.position);
+    // (and out off the rail as he goes over, TIP_IN m: his legs clear of it; his back square to the well, so that he lies
+    // with his head to its middle and his feet to the rail, and stays so all the way down)
     const y0 = ramu.position.y, y1 = onRail - (FR_LIFT - FB_ABOVE);
-    await d.tween(0.45, (k) => { ramu.holdClip('fall_reach', false, 0.45 * k); ramu.model.rotation.z = 0; ramu.model.rotation.x = 0; ramu.position.y = y0 + (y1 - y0) * k * k; });
+    const faceOut = Math.atan2(-(rail[0] - KUAN.x), -(rail[1] - KUAN.z));
+    let face0 = faceOut - faceGirl;
+    face0 = Math.atan2(Math.sin(face0), Math.cos(face0));
+    await d.tween(0.45, (k) => {
+      ramu.holdClip('fall_reach', false, 0.45 * k);
+      ramu.model.rotation.z = 0; ramu.model.rotation.x = 0;
+      ramu.model.rotation.y = faceGirl + face0 * sm(k);
+      const [x, z] = onWell(RAIL_A, WELL_R + 0.22 - TIP_IN * sm(k));
+      ramu.position.set(x, y0 + (y1 - y0) * k * k, z);
+    });
     // down, back first, reaching up after it; the camera falls with him from inside the well, the show going round
     // between. His hips go down the fall's path (FB_ABOVE over where his feet would be); the last of the way is
     // falling_backwards' own drop onto the sand.
-    const fall = jumpIn(ramu, RAIL_A, true, true);
-    let turn = toWell - faceGirl;
-    turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+    const fall = jumpIn(ramu, RAIL_A, true, true, TIP_IN);
     let k1 = -1;
     await d.tween(fall.T, (k) => {
       fall.at(k);
@@ -1120,9 +1129,7 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
         ramu.holdClip('fall_back', false, FB_LAND * Math.min(1, (k - k1) / Math.max(0.01, 1 - k1)));
         ramu.position.y = Math.max(FB_FLOOR, hips - FB_LIFT);
       }
-      // he twists round as he goes down, to land facing the middle (and the camera)
-      const e = Math.min(1, Math.max(0, (k - 0.15) / 0.5));
-      ramu.model.rotation.y = faceGirl + turn * e * e * (3 - 2 * e);
+      ramu.model.rotation.y = faceOut;
       fromTop(ramu.position);
     });
     d.timeScale = 1;
@@ -1148,12 +1155,12 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
   });
   // watched or skipped: down on the sand at the foot of the wall, the candy floss in his hand, the guards at the rail above
   d.timeScale = 1;
-  const end = jumpIn(ramu, RAIL_A, true, true);
+  const end = jumpIn(ramu, RAIL_A, true, true, TIP_IN);
   end.at(1);
   ramu.model.rotation.set(0, 0, 0, 'XYZ');
   if (ramu.face) ramu.face.laughing = false;
   held.holder(ramu.model);
-  ramu.sitAt(ramu.position.x, FB_FLOOR, ramu.position.z, toWell, 'fall_back');
+  ramu.sitAt(ramu.position.x, FB_FLOOR, ramu.position.z, Math.atan2(-(rail[0] - KUAN.x), -(rail[1] - KUAN.z)), 'fall_back');   // (his head to the middle, his feet to the wall)
   ramu.holdClip('fall_back', true);              // on his back on the sand
   if (ramu.face) { ramu.face.talking = false; ramu.face.smile = 1; ramu.face.shut = 1; }
   ramu.yaw = toWell + Math.PI;                   // the camera on the well's open side, not in the sand banked up behind him
@@ -1171,10 +1178,10 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
  round the wall so each comes past him just as he is at its height: one under his feet, one over his head, one
  between them and the camera.
 */
-function jumpIn(ramu: Ramu, a: number, slip = false, flat = false): { T: number; at: (k: number) => void } {
+function jumpIn(ramu: Ramu, a: number, slip = false, flat = false, from = 0): { T: number; at: (k: number) => void } {
   const y0 = GALLERY.y + 1.1, vy = slip ? 0.5 : 1.6, g = 9.8, floor = 0.1;
   const T = (vy + Math.sqrt(vy * vy + 2 * g * (y0 - floor))) / g;
-  const r0 = WELL_R + 0.22, r1 = WELL_R - (slip ? 2.4 : 0.75);           // (the slip: out away from the rail and the wall)
+  const r0 = WELL_R + 0.22 - from, r1 = WELL_R - (slip ? 2.4 : 0.75);           // (the slip: out away from the rail and the wall)
   const yAt = (t: number) => y0 + vy * t - 0.5 * g * t * t;
   const at = (k: number) => {
     const t = k * T, e = Math.min(1, k * 2.5), r = r0 + (r1 - r0) * (slip ? 1 - (1 - e) * (1 - e) : e);
@@ -1216,6 +1223,8 @@ const FB_LEN = 3.0, FB_LAND = 1.0, FB_LIFT = 0.92, FB_ABOVE = 0.3, FB_FLOOR = 0.
 const FR_LEN = 2.4, FR_LIFT = 0.68;
 /** the camera over him as he falls: TOP_UP above him (no higher than TOP_MAX over the gallery), TOP_OUT out toward the wall */
 const TOP_UP = 4.5, TOP_MAX = 3.6, TOP_OUT = 1.0;
+/** how far in off the rail he goes as he tips over (his legs, out in front of him, clear of it) */
+const TIP_IN = 1.0;
 /** where in fall_reach, `u` s into it: through once, then to and fro over its second half (the reach and the kicks going on) */
 function reachAt(u: number): number {
   if (u < FR_LEN) return u;

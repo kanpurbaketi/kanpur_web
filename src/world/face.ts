@@ -90,13 +90,21 @@ export function faceMaterial(mat: THREE.Material, m: Marks): void {
 #else
   vOpen = 0.0;
 #endif`);
-    // the inside of the open mouth: near black (a solid band where the lips part, not a smudge), and matt
+    // the inside of the open mouth: only the gap where the lips part (the lips keep their colour), a dark red-brown,
+    // deepest in its middle, lighter toward the lips (no teeth: drawn on these faces they followed the mesh's triangles,
+    // jagged). Matt
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 varying float vFaceDark;
 varying float vOpen;
 varying vec3 vRest;
-float mouthDark() { return smoothstep( 0.04, 0.3, vFaceDark ) * smoothstep( 0.02, 0.18, vOpen ); }
+// (vFaceDark is 1 on the line where the lips meet, falling off over the lips: the wider open, the more of it is gap)
+float mouthDark() { return smoothstep( mix( 0.6, 0.35, vOpen ), mix( 0.85, 0.65, vOpen ), vFaceDark ) * smoothstep( 0.03, 0.2, vOpen ); }
+vec3 mouthColour() {
+  float deep = smoothstep( 0.8, 1.0, vFaceDark );
+  vec3 c = mix( vec3( 0.16, 0.045, 0.04 ), vec3( 0.035, 0.009, 0.008 ), deep );
+  return c;
+}
 ${eyeMask}`)
       .replace('#include <map_pars_fragment>', `#include <map_pars_fragment>${sharp ? `
 uniform sampler2D faceMap;
@@ -134,13 +142,13 @@ vec3 faceDetail( vec3 base ) {
     diffuseColor.rgb = mix( diffuseColor.rgb, pow( c, vec3( 2.2 ) ), faceE );
   }
   float faceD = mouthDark();
-  diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.025, 0.01, 0.01 ), faceD );`)
+  diffuseColor.rgb = mix( diffuseColor.rgb, mouthColour(), faceD );`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix( roughnessFactor, 0.22, faceE );\n  roughnessFactor = mix( roughnessFactor, 1.0, faceD );')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance *= 1.0 - faceD;');
   };
   const key = mat.customProgramCacheKey.bind(mat);
   const marks = m.eyes.flat().map(f).join(',');
-  mat.customProgramCacheKey = () => key() + '|face' + marks + (m.tex ?? '');
+  mat.customProgramCacheKey = () => key() + '|face2' + marks + (m.tex ?? '');
   mat.needsUpdate = true;
 }
 
@@ -202,13 +210,16 @@ export class Face {
       if (this.next <= 0) {
         const r = Math.random();
         if (this.laughing) { this.target = this.target > 0.5 ? 0.35 + r * 0.15 : 0.8 + r * 0.2; this.next = 0.09 + Math.random() * 0.06; }
-        else if (r < 0.16) { this.target = 0; this.next = 0.18 + Math.random() * 0.35; }       // between words
-        else { this.target = this.target > 0.25 ? 0.05 + r * 0.15 : 0.35 + r * 0.6; this.next = 0.07 + Math.random() * 0.11; }
+        else if (r < 0.14) { this.target = 0; this.next = 0.18 + Math.random() * 0.35; }       // between words
+        // syllables: mostly a little open (the lips moving, 15-40%), now and then a wide vowel (55-65%), with the lips
+        // nearly meeting between them
+        else if (this.target > 0.12) { this.target = 0.02 + Math.random() * 0.06; this.next = 0.06 + Math.random() * 0.06; }
+        else { this.target = r > 0.85 ? 0.55 + Math.random() * 0.1 : 0.15 + Math.random() * 0.25; this.next = 0.09 + Math.random() * 0.1; }
       }
     } else this.target = 0;
     if (this.open === 0 && this.target === 0) { /* resting */ }
     else {
-      this.open += (this.target - this.open) * Math.min(1, dt * 22);
+      this.open += (this.target - this.open) * Math.min(1, dt * (this.laughing ? 22 : 15));   // (eased: the lips do not snap)
       if (this.target === 0 && this.open < 0.01) this.open = 0;
     }
     inf[this.iMouth] = this.open;

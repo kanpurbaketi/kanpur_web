@@ -1094,6 +1094,12 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
     // he tips over into the slow-mo fall (fall_reach: on his back in the air, both arms reaching up after the rail),
     // and down to lie level with the rail's top
     ramu.holdClip('fall_reach', false, 0);
+    // from the top: over the well, above him, looking down at him (and, as he goes down, at the show going round under him)
+    const fromTop = (p: THREE.Vector3) => {
+      const [ix, iz] = fromWell([p.x, p.z]);
+      d.shot({ pos: v(p.x + ix * TOP_OUT, Math.min(p.y + TOP_UP, Y + TOP_MAX), p.z + iz * TOP_OUT), look: v(p.x, p.y + 0.3, p.z), fov: 52 }, 0);
+    };
+    fromTop(ramu.position);
     const y0 = ramu.position.y, y1 = onRail - (FR_LIFT - FB_ABOVE);
     await d.tween(0.45, (k) => { ramu.holdClip('fall_reach', false, 0.45 * k); ramu.model.rotation.z = 0; ramu.model.rotation.x = 0; ramu.position.y = y0 + (y1 - y0) * k * k; });
     // down, back first, reaching up after it; the camera falls with him from inside the well, the show going round
@@ -1117,9 +1123,7 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
       // he twists round as he goes down, to land facing the middle (and the camera)
       const e = Math.min(1, Math.max(0, (k - 0.15) / 0.5));
       ramu.model.rotation.y = faceGirl + turn * e * e * (3 - 2 * e);
-      const p = ramu.position, [ix, iz] = fromWell([p.x, p.z]);
-      // in from him (toward the middle), a little round the ring, level with him
-      d.shot({ pos: v(p.x - ix * 4.6 - iz * 1.3, p.y + 0.5, p.z - iz * 4.6 + ix * 1.3), look: v(p.x, p.y + 0.7, p.z), fov: 50 }, 0);
+      fromTop(ramu.position);
     });
     d.timeScale = 1;
     ramu.model.rotation.set(0, ramu.model.rotation.y, 0);
@@ -1170,10 +1174,10 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
 function jumpIn(ramu: Ramu, a: number, slip = false, flat = false): { T: number; at: (k: number) => void } {
   const y0 = GALLERY.y + 1.1, vy = slip ? 0.5 : 1.6, g = 9.8, floor = 0.1;
   const T = (vy + Math.sqrt(vy * vy + 2 * g * (y0 - floor))) / g;
-  const r0 = WELL_R + 0.22, r1 = WELL_R - (slip ? 1.9 : 0.75);
+  const r0 = WELL_R + 0.22, r1 = WELL_R - (slip ? 2.4 : 0.75);           // (the slip: out away from the rail and the wall)
   const yAt = (t: number) => y0 + vy * t - 0.5 * g * t * t;
   const at = (k: number) => {
-    const t = k * T, r = r0 + (r1 - r0) * Math.min(1, k * 2.5);
+    const t = k * T, e = Math.min(1, k * 2.5), r = r0 + (r1 - r0) * (slip ? 1 - (1 - e) * (1 - e) : e);
     const [x, z] = onWell(a, r);
     ramu.position.set(x, Math.max(floor, yAt(t)), z);
     // the leap: head first, then upright; the slip: over on his back, coming round to upright near the sand
@@ -1210,6 +1214,8 @@ const SW_SWEEP = 0.8, SW_OFF = 1.15;
 const FB_LEN = 3.0, FB_LAND = 1.0, FB_LIFT = 0.92, FB_ABOVE = 0.3, FB_FLOOR = 0.1;
 /** fall_reach (made in Katpootli: tools/katpootli/clips.mjs): FR_LEN s; his hips FR_LIFT over his position */
 const FR_LEN = 2.4, FR_LIFT = 0.68;
+/** the camera over him as he falls: TOP_UP above him (no higher than TOP_MAX over the gallery), TOP_OUT out toward the wall */
+const TOP_UP = 4.5, TOP_MAX = 3.6, TOP_OUT = 1.0;
 /** where in fall_reach, `u` s into it: through once, then to and fro over its second half (the reach and the kicks going on) */
 function reachAt(u: number): number {
   if (u < FR_LEN) return u;

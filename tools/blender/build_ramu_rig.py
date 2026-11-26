@@ -43,12 +43,12 @@ BODY_LIFT = 0.92       # <1 lightens everything a little
 ANIMS = os.path.join(ROOT, 'assets', 'anims')   # Mixamo FBX clips, shared by every character (see import_mixamo_clips)
 KEEP_ROOT = {'fall', 'fall2', 'get_up'}
 # clips in the folder that nothing plays yet (every clip baked goes into every character's file): left out until used
-UNUSED = {'gunplay', 'sweep fall'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
+UNUSED = {'gunplay'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
 # clips only Ramu plays (stage 1, part 3: hanging from the giant wheel, flying off it, the leap from the well): not baked into the others
 # clips whose left arm the FBX leaves in the T-pose: that arm comes from the idle instead
 LEFT_ARM_FROM_IDLE = {'hungry'}
 RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling',
-             'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far', 'fall_back', 'hang_jump', 'fall_balance'}
+             'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far', 'fall_back', 'hang_jump', 'fall_balance', 'climb_rail', 'fall_sweep'}
 
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
@@ -687,6 +687,8 @@ CLIP_RULES = (
     # Ramu on the giant wheel (stage 1, part 3); "Hanging Idle" is not the standing idle
     (('jump', 'freehang'), 'hang_jump'),            # Ramu's leap up to a cabin's edge ("Jump To Freehang"; not his jump)
     (('losing', 'balance'), 'fall_balance'),        # Ramu on the well's rail, arms going round ("Falling From Losing Balance")
+    (('climbing',), 'climb_rail'),                  # Ramu up onto the well's inner rail ("Climbing"; its run up cut off in the game)
+    (('sweep', 'fall'), 'fall_sweep'),              # Ramu's feet swept off the rail ("Sweep Fall"; its travel removed)
     (('hanging', 'idle'), 'hang_idle'), (('stand', 'freehang'), 'hang_start'), (('braced', 'free'), 'hang_braced'), (('braced', 'drop'), 'hang_drop'),
     (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
     (('throw',), 'throw'),                          # the audience pelting a bad poet

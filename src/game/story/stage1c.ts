@@ -1057,22 +1057,40 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
     // overhead came between the camera and his head)
     const outside = { pos: at3(onWell(RAIL_A + 0.17, GALLERY.r1 - 0.35), Y + 1.45), look: at3(rail, Y + 1.85), fov: 54 };
     d.shot(outside, 0);
-    const [sx, sz] = [ramu.position.x, ramu.position.z];
-    await d.tween(0.55, (k) => ramu.position.set(sx + (rail[0] - sx) * k, Y + 1.1 * Math.sin(k * Math.PI / 2), sz + (rail[1] - sz) * k));
-    c.guards.forEach((q) => q.faceTowards(...rail));
-    // he loses his balance up there: the arms go round (Falling From Losing Balance, its part on the ledge), his soles
-    // kept on the rail's top (the clip stands on a ledge of its own)
+    // he climbs up onto it (Climbing, from where its run up ends), facing the well: the clip's ledge is higher than the
+    // rail, so he is let down by the difference as he goes up, and moved in onto the rail as he climbs
+    const onRail = Y + RAIL_TOP;
+    const [sx, sz] = onWell(RAIL_A, WELL_R + 0.22 + CL_BACK);
+    const faceWell = Math.atan2(-(KUAN.x - sx), -(KUAN.z - sz));
+    ramu.sitAt(sx, Y, sz, faceWell, 'climb_rail');
+    ramu.holdClip('climb_rail', false, CL_FROM);
     ramu.model.rotation.order = 'YXZ';               // (pitch and roll about his own axes, for the slip)
-    const onRail = ramu.position.y;
-    await d.tween(FBL_TO - FBL_FROM, (k) => {
-      ramu.holdClip('fall_balance', false, FBL_FROM + (FBL_TO - FBL_FROM) * k);
+    await d.tween(CL_TO - CL_FROM, (k) => {
+      const t = CL_FROM + (CL_TO - CL_FROM) * k, f = sm(Math.min(1, (t - CL_FROM) / (CL_TOP - CL_FROM)));
+      ramu.holdClip('climb_rail', false, t);
+      ramu.position.set(sx + (rail[0] - sx) * f, Y - (CL_LEDGE - RAIL_TOP) * f, sz + (rail[1] - sz) * f);
+      if (t >= CL_TOP) ramu.position.y = onRail - soleOff(ramu);   // up: his soles on the rail's top
+    });
+    c.guards.forEach((q) => q.faceTowards(...rail));
+    // up there, he turns round to face them (his back to the well), and stands on the rail (Sweep Fall's first part)
+    ramu.holdClip('fall_sweep', false, 0);
+    let turn0 = faceGirl - faceWell;
+    turn0 = Math.atan2(Math.sin(turn0), Math.cos(turn0));
+    await d.tween(0.6, (k) => {
+      ramu.model.rotation.y = faceWell + turn0 * sm(k);
       ramu.position.y = onRail - soleOff(ramu);
     });
-    // ---- his foot slips: slow, he goes over backward (falling_backwards: flat on his back, down the well) ----
+    await d.tween(SW_SWEEP, (k) => {
+      ramu.holdClip('fall_sweep', false, SW_SWEEP * k);
+      ramu.position.y = onRail - soleOff(ramu);
+    });
+    // ---- his feet go from under him: slow, he goes over backward (Sweep Fall, then falling_backwards down the well) ----
     d.timeScale = 0.3;
     girl.gesture('offer', 'reach', 2);               // her hand out after him, too late
-    const close = { pos: at3(onWell(RAIL_A + 0.05, GALLERY.r1 + 0.6), Y + 1.9), look: at3(rail, Y + 1.9), fov: 44 };
+    // (close, from along the gallery inside its outer rail: from out past it, a lamp post stood in front of him)
+    const close = { pos: at3(onWell(RAIL_A + 0.1, GALLERY.r1 - 0.45), Y + 1.6), look: at3(rail, Y + 2.0), fov: 46 };
     d.shot(close, 0, d.pushIn(close, 0.06));
+    await d.tween(SW_OFF - SW_SWEEP, (k) => ramu.holdClip('fall_sweep', false, SW_SWEEP + (SW_OFF - SW_SWEEP) * k));
     // he tips over into the clip's first pose (lying back in the air), and down to lie level with the rail's top
     ramu.holdClip('fall_back', false, 0);
     const y0 = ramu.position.y, y1 = onRail - (FB_LIFT - FB_ABOVE);
@@ -1174,6 +1192,12 @@ let jumped = false;
  falling_backwards (assets/anims, Ramu's 'fall_back'): flat on his back in the air, his hips FB_LIFT over his position;
  FB_LAND s in he is down on the ground; FB_LEN s, settled. On the way down his hips go FB_ABOVE over the fall's path.
 */
-/** fall_balance (Falling From Losing Balance): from FBL_FROM s he wobbles, arms going round, to FBL_TO s, where its own fall (forward) begins */
-const FBL_FROM = 0.9, FBL_TO = 4.3;
+/**
+ climb_rail (Climbing): its run up ends at CL_FROM s (his hands go up for the ledge); up on it, his feet on its top, by
+ CL_TOP s; standing there at CL_TO s. Its ledge is CL_LEDGE m high; the inner rail's top is RAIL_TOP over the gallery's
+ floor. He starts CL_BACK m back from the rail (the hands reach it).
+*/
+const CL_FROM = 0.8, CL_TOP = 2.8, CL_TO = 3.4, CL_LEDGE = 1.45, RAIL_TOP = 1.1, CL_BACK = 0.4;
+/** fall_sweep (Sweep Fall): standing till SW_SWEEP s; his feet up and his head going back over by SW_OFF s (then its own fall to the ground) */
+const SW_SWEEP = 0.8, SW_OFF = 1.15;
 const FB_LEN = 3.0, FB_LAND = 1.0, FB_LIFT = 0.92, FB_ABOVE = 0.3, FB_FLOOR = 0.1;

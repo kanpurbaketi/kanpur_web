@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { addFigures, figure, figurePosts, ONLOOKER, Spot } from './figures';
 import { banner, Bulbs, Geo, litMat, rnd } from './geo';
-import { beamMaterial } from './night';
+import { beamMaterial, NIGHT } from './night';
 import { cloneCar, loadPBR } from './vehicleModels';
 import { Actor, makeActors, RigName } from './actors';
 
@@ -27,6 +27,98 @@ const YK = H / 8.2;
 */
 export const WELL_SHOW = { t: 0, shift: [0, 0, 0, 0, 0, 0], ride: [] as { a0: number; w: number; y0: number }[], yk: H / 8.2 };            // the vehicles' heights on the wall were set for a wall 8.2 m high
 const TAU = Math.PI * 2;
+const STEEL = '#e4e7ea', STEEL_D = '#a3a9af';       // white-painted steel, as the fair's wells are now: the rails, posts and the upper deck
+/** the LED tubes' white: past 1, so the bloom catches it at night */
+const LED = NIGHT ? new THREE.Color(2.6, 2.6, 2.8) : new THREE.Color(1.1, 1.1, 1.15);
+
+/**
+ The drum's inside: weathered grey upright planks in lengths with butt joints, the grain, nail rows over the battens behind,
+ and the tyres' rubber, streaked round in the bands the bikes and cars run in, soot along the bottom. One tile is 40 planks
+ (a sixth of the way round) by the wall's height.
+*/
+function plankTexture(): THREE.CanvasTexture {
+  const W = 2048, HP = 1024, N = 40, pw = W / N, m = HP / H;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = HP;
+  const g = c.getContext('2d')!;
+  const yp = (y: number) => HP - y * m;
+  for (let i = 0; i < N; i++) {
+    const x0 = i * pw, l = 42 + rnd(i * 1.7) * 16, hue = 26 + rnd(i * 2.3) * 16, sat = 5 + rnd(i * 3.9) * 11;
+    let y = 0, k = 0;
+    while (y < H) {
+      const y1 = Math.min(H, y + 2.2 + rnd(i * 5.1 + k * 7.3) * 3.6);
+      g.fillStyle = `hsl(${hue},${sat}%,${l + (rnd(i * 9.7 + k * 3.1) - 0.5) * 9}%)`;
+      g.fillRect(x0, yp(y1), pw, (y1 - y) * m);
+      for (let s = 0; s < 8; s++) {          // grain
+        const gx = x0 + 3 + rnd(i * 13 + k * 5 + s * 1.3) * (pw - 6);
+        g.strokeStyle = `rgba(32,24,18,${0.07 + rnd(i + s * 2.7 + k) * 0.13})`;
+        g.lineWidth = 0.6 + rnd(s * 4.1 + i) * 1.3;
+        g.beginPath();
+        g.moveTo(gx, yp(y));
+        for (let yy = y; yy <= y1; yy += 0.35) g.lineTo(gx + Math.sin(yy * 1.9 + s + i * 0.7) * 1.5, yp(yy));
+        g.stroke();
+      }
+      if (rnd(i * 4.3 + k * 1.9) < 0.25) {     // a knot
+        const kx = x0 + pw * (0.3 + rnd(i + k * 2.2) * 0.4), ky = yp(y + (y1 - y) * rnd(i * 2 + k));
+        g.fillStyle = 'rgba(40,28,20,.45)';
+        g.beginPath(); g.ellipse(kx, ky, 3.5, 6, 0, 0, TAU); g.fill();
+      }
+      if (y > 0) { g.fillStyle = 'rgba(22,16,12,.75)'; g.fillRect(x0, yp(y) - 1, pw, 2.5); }
+      y = y1; k++;
+    }
+    g.fillStyle = 'rgba(14,10,8,.9)'; g.fillRect(x0, 0, 2.5, HP);              // the gap between planks
+    g.fillStyle = 'rgba(255,250,240,.07)'; g.fillRect(x0 + 2.5, 0, 2, HP);      // and the plank's worn edge
+  }
+  g.fillStyle = 'rgba(26,20,18,.8)';
+  for (const yb of [0.45, 2.6, 4.9, 7.2, 9.5, 11.8]) for (let i = 0; i < N; i++) for (const d of [0.28, 0.72]) {
+    g.beginPath(); g.arc(i * pw + d * pw, yp(yb), 1.7, 0, TAU); g.fill();
+  }
+  for (let s = 0; s < 1100; s++) {             // rubber: the cars' band low down, the bikes' wider above it
+    const band = rnd(s * 1.3) < 0.3 ? 3.0 + rnd(s * 2.1) * 1.8 : 5.2 + rnd(s * 2.9) * 6.6;
+    const y0 = yp(band), x = rnd(s * 3.7) * W, len = 150 + rnd(s * 5.3) * 800, dy = (rnd(s * 4.4) - 0.5) * 50;
+    g.strokeStyle = `rgba(16,12,10,${0.03 + rnd(s * 7.1) * 0.09})`;
+    g.lineWidth = 1 + rnd(s * 9.3) * 5;
+    for (const o of [0, -W]) {                 // drawn twice so a streak running off the right edge comes back in at the left
+      g.beginPath();
+      g.moveTo(x + o, y0);
+      g.bezierCurveTo(x + o + len * 0.33, y0 + dy * 0.2 + (rnd(s) - 0.5) * 20, x + o + len * 0.66, y0 + dy * 0.6, x + o + len, y0 + dy);
+      g.stroke();
+    }
+  }
+  const soot = g.createLinearGradient(0, yp(2.2), 0, HP);
+  soot.addColorStop(0, 'rgba(28,22,18,0)');
+  soot.addColorStop(1, 'rgba(28,22,18,.65)');
+  g.fillStyle = soot;
+  g.fillRect(0, yp(2.2), W, 2.2 * m);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  return t;
+}
+
+/** a railing panel's steel mesh: upright bars and an X across, white on clear (one panel to a texture repeat) */
+let meshCanvas: HTMLCanvasElement | null = null;
+function meshTexture(panels: number): THREE.CanvasTexture {
+  if (!meshCanvas) {
+    const c = (meshCanvas = document.createElement('canvas'));
+    c.width = 256; c.height = 128;
+    const g = c.getContext('2d')!;
+    g.strokeStyle = '#fff';
+    g.lineWidth = 3;
+    for (let x = 8; x < 256; x += 16) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 128); g.stroke(); }
+    g.lineWidth = 6;
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(256, 128); g.moveTo(0, 128); g.lineTo(256, 0); g.stroke();
+    g.lineWidth = 8;
+    g.beginPath(); g.moveTo(0, 2); g.lineTo(256, 2); g.moveTo(0, 126); g.lineTo(256, 126); g.moveTo(2, 0); g.lineTo(2, 128); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(meshCanvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.repeat.x = panels;
+  t.anisotropy = 4;
+  return t;
+}
 
 const wallPoint = (a: number, r: number, y: number) => new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
 /** y-rotation that turns a box's x axis along the circle's tangent at angle a */
@@ -76,25 +168,43 @@ function carModel(file: string, dancer: RigName, n: number): THREE.Group {
 export function buildMautKuan() {
   const group = new THREE.Group();
   const posts: [number, number, number, number?, number?][] = [];
-  const g = new Geo(), bulbs = new Bulbs();
+  const g = new Geo(), bulbs = new Bulbs(), leds = new Geo();
   const R = WELL_R;
+  const PH = 4.7;          // the tall posts on the inner rail, over the upper deck's crowd
+  /** an arm out from a tall post's top over the well, an LED flood at its end tilted down into the drum */
+  const ledFlood = (a: number) => {
+    const foot = wallPoint(a, R + 0.2, H + PH - 0.3), end = wallPoint(a, R - 0.7, H + PH + 0.15);
+    g.rod(foot, end, 0.035, STEEL, 4);
+    const t = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a)), n = new THREE.Vector3(-Math.cos(a), -1.1, -Math.sin(a)).normalize();
+    const b = new THREE.Vector3().crossVectors(t, n), mm = new THREE.Matrix4().makeBasis(t, n, b);
+    g.add(new THREE.BoxGeometry(0.75, 0.1, 0.34), STEEL_D, mm.clone().setPosition(end));
+    const face = end.clone().addScaledVector(n, 0.055);
+    leds.add(new THREE.BoxGeometry(0.66, 0.01, 0.26), LED, mm.clone().setPosition(face));
+    const h = face.clone().addScaledVector(n, 0.12);
+    bulbs.add(h.x, h.y, h.z, '#f2f5ff', -1, NIGHT ? 3.2 : 1.6);
+  };
 
-  // the wooden drum: dark upright planks, steel hoops on the outside
-  const PL = 144;
-  const wood = ['#3a2c21', '#43352a', '#2c211a', '#3d2d22', '#4a1c16'];   // dark, with a few blood-stained planks
-  for (let i = 0; i < PL; i++) {
-    const a = ((i + 0.5) / PL) * TAU, p = wallPoint(a, R + 0.07, H / 2);
-    g.box(p.x, p.y, p.z, (TAU * R) / PL + 0.02, H, 0.14, wood[rnd(i * 3.1) < 0.09 ? 4 : (i * 7 + Math.floor(rnd(i) * 3)) % 4], tangentRy(a));
-  }
+  // the wooden drum: weathered grey upright planks inside (one textured cylinder), steel hoops on the outside
   for (const y of [0.7, H * 0.36, H * 0.66, H - 0.5]) for (let i = 0; i < 72; i++) {
     const a0 = (i / 72) * TAU, a1 = ((i + 1) / 72) * TAU;
     g.rod(wallPoint(a0, R + 0.2, y), wallPoint(a1, R + 0.2, y), 0.05, '#555a60', 4);
   }
-  g.cyl(0, 0, 0, R + 0.1, 0.1, '#8d7048', 48);      // sand floor
-  g.cyl(0, 0.1, 0, R * 0.56, 0.025, '#6b1414', 40);
-  g.cyl(0, 0.1, 0, R * 0.5, 0.03, '#7d6240', 40);
+  g.cyl(0, 0, 0, R + 0.1, 0.1, '#5a4a3a', 48);      // under the plank floor
+  const planks = plankTexture();
+  planks.repeat.x = 6;
+  const wallMat = new THREE.MeshStandardMaterial({ map: planks, bumpMap: planks, bumpScale: 1.2, roughness: 0.92, side: THREE.BackSide,
+    emissiveMap: planks, emissive: new THREE.Color(NIGHT ? 0.2 : 0.03, NIGHT ? 0.2 : 0.03, NIGHT ? 0.22 : 0.03) });   // (at night as if the LED floods lit it all round)
+  const wall = new THREE.Mesh(new THREE.CylinderGeometry(R, R, H, 128, 1, true), wallMat);
+  wall.position.y = H / 2;
+  group.add(wall);
+  const floorTex = planks.clone();
+  floorTex.repeat.set(1.9, 1.85);
+  const floorMesh = new THREE.Mesh(new THREE.CircleGeometry(R + 0.02, 72).rotateX(-Math.PI / 2),
+    new THREE.MeshStandardMaterial({ map: floorTex, color: '#8a8580', roughness: 0.95, emissiveMap: floorTex, emissive: wallMat.emissive }));
+  floorMesh.position.y = 0.105;
+  group.add(floorMesh);
 
-  // gallery: a ring floor on a scaffold, a railing with X lattice, a plain outer rail the banners hang from
+  // gallery: a ring floor on a scaffold, white steel railings with mesh panels, the outer one the banners hang from
   const RG0 = R + 0.05, RG1 = R + 1.8, NG = 96;
   // the round stair: it winds up the outside of the scaffold from its foot (at A0) to a landing level with the gallery (ending
   // at A1). The angle falls as it climbs; the last LAND of the way is the landing, where the gallery's outer rail is open.
@@ -120,36 +230,22 @@ export function buildMautKuan() {
     const skip = inGap(am);   // gap in the outer rail where the stair's landing meets the gallery
     {
       const ri = R + 0.2, tall = i % 4 === 0;
-      for (const [y, rr] of [[1.12, 0.04], [0.62, 0.028], [0.14, 0.028]] as const) g.rod(wallPoint(a0, ri, H + y), wallPoint(a1, ri, H + y), rr, '#d9541e', 4);
-      g.rod(wallPoint(a0, ri, H + 0.12), wallPoint(a1, ri, H + 1.1), 0.012, '#c8501a', 3);
-      g.rod(wallPoint(a0, ri, H + 1.1), wallPoint(a1, ri, H + 0.12), 0.012, '#c8501a', 3);
-      g.rod(wallPoint(a0, ri, H), wallPoint(a0, ri, H + (tall ? 3.3 : 1.12)), tall ? 0.05 : 0.03, tall ? '#3a6bb0' : '#d9541e', 5);
+      for (const [y, rr] of [[1.12, 0.04], [0.62, 0.028], [0.14, 0.028]] as const) g.rod(wallPoint(a0, ri, H + y), wallPoint(a1, ri, H + y), rr, STEEL, 4);
+      g.rod(wallPoint(a0, ri, H), wallPoint(a0, ri, H + (tall ? PH : 1.12)), tall ? 0.06 : 0.03, STEEL, 5);
     }
     if (!skip) {
       const ro = RG1 - 0.05;
-      g.rod(wallPoint(a0, ro, H + 1.12), wallPoint(a1, ro, H + 1.12), 0.035, '#d9541e', 4);
-      g.rod(wallPoint(a0, ro, H + 0.5), wallPoint(a1, ro, H + 0.5), 0.025, '#d9541e', 4);
-      g.rod(wallPoint(a0, ro, H), wallPoint(a0, ro, H + 1.12), 0.03, '#d9541e', 4);
+      g.rod(wallPoint(a0, ro, H + 1.12), wallPoint(a1, ro, H + 1.12), 0.035, STEEL, 4);
+      g.rod(wallPoint(a0, ro, H + 0.5), wallPoint(a1, ro, H + 0.5), 0.025, STEEL, 4);
+      g.rod(wallPoint(a0, ro, H), wallPoint(a0, ro, H + 1.12), 0.03, STEEL, 4);
     }
-    // strings of bulbs along the top, floods on the tall posts
-    if (i % 4 === 0 && !skip) {
-      const p = wallPoint(a0, R + 0.25, H + 3.3);
-      for (let k = -1; k <= 1; k += 2) {
-        const q = wallPoint(a0 + k * 0.025, R + 0.35, H + 3.15);
-        bulbs.add(q.x, q.y, q.z, (i / 4) % 2 ? '#ff3a22' : '#fff2d8', -1, 1.1);
-      }
-      g.box(p.x, p.y - 0.05, p.z, 0.5, 0.35, 0.12, '#2a2a2e', tangentRy(a0));
-      const sk = wallPoint(a0, R + 0.2, H + 3.62);                       // a skull on top of each tall post
-      g.sphere(sk.x, sk.y, sk.z, 0.2, '#e8e2cf', 1, 1.05, 1);
-      g.box(sk.x, sk.y - 0.2, sk.z, 0.2, 0.12, 0.2, '#e8e2cf', tangentRy(a0));
-      for (const e of [-1, 1]) { const q = wallPoint(a0 + e * 0.012, R + 0.2 - 0.17, H + 3.64); g.sphere(q.x, q.y, q.z, 0.055, '#120808'); }
-    }
-    const rb = wallPoint(a0, RG1, H + 3.0);
-    bulbs.add(rb.x, rb.y, rb.z, i % 2 ? '#ff2a1a' : '#fff2d8', (i % 8) / 8, 1.0);
+    // on each tall post an arm out over the well with an LED flood at its end, tilted down into the drum
+    if (i % 4 === 0) ledFlood(a0);
   }
-  for (let i = 0; i < NG; i++) {   // the bulb string along the top rim, drooping between the tall posts
-    const a0 = (i / NG) * TAU;
-    if (i % 4 === 0) g.rod(wallPoint(a0, R + 0.2, H + 1.12), wallPoint(a0, R + 0.2, H + 3.3), 0.012, '#3a6bb0', 3);
+  for (let i = 0; i < NG; i += 4) {   // an LED strip from post top to post top all round
+    const a0 = (i / NG) * TAU, a1 = ((i + 4) / NG) * TAU;
+    leds.rod(wallPoint(a0, R + 0.2, H + PH - 0.05), wallPoint(a1, R + 0.2, H + PH - 0.05), 0.025, LED, 4);
+    g.rod(wallPoint(a0, R + 0.2, H + PH), wallPoint(a1, R + 0.2, H + PH), 0.04, STEEL, 4);
   }
   // central pole
   g.cyl(0, 0.1, 0, 0.11, H + 1.4, '#1a1a1d', 8);
@@ -163,8 +259,8 @@ export function buildMautKuan() {
     g.box(p.x, p.y, p.z, ((RS0 + RS1) / 2) * DA + 0.06, 0.08, RS1 - RS0, i % 2 ? '#8a7a64' : '#7f705b', tangentRy(a));
     for (const [r, rail] of [[RS0 + 0.04, 0.028], [RS1 - 0.04, 0.035]] as const) {
       g.rod(wallPoint(a, r, y - 0.14), wallPoint(an, r, yn - 0.14), 0.06, '#6e747b', 4);              // stringer
-      g.rod(wallPoint(a, r, y + 1.0), wallPoint(an, r, yn + 1.0), rail, '#d9541e', 4);                 // handrail
-      if (i % 3 === 0) g.rod(wallPoint(a, r, y), wallPoint(a, r, y + 1.0), 0.022, '#d9541e', 4);
+      g.rod(wallPoint(a, r, y + 1.0), wallPoint(an, r, yn + 1.0), rail, STEEL, 4);                 // handrail
+      if (i % 3 === 0) g.rod(wallPoint(a, r, y), wallPoint(a, r, y + 1.0), 0.022, STEEL, 4);
       if (i % 6 === 3 && y > 0.6) g.rod(wallPoint(a, r, 0), wallPoint(a, r, y - 0.1), 0.05, '#6e747b', 5);
     }
     if (i % 4 === 0) { const q = wallPoint(a, RS1, y + 1.12); bulbs.add(q.x, q.y, q.z, (i / 4) % 2 ? '#ff3a22' : '#fff2d8', (i % 16) / 16, 1.0); }
@@ -174,16 +270,53 @@ export function buildMautKuan() {
     g.box(p.x, p.y, p.z, ((RG1 + RS1) / 2) * (LAND / 4) + 0.06, 0.1, RS1 - RG1 + 0.1, '#7a6a55', tangentRy(a));
   }
   for (const y of [1.0, 0.5]) {
-    g.rod(wallPoint(A1 + LAND, RS1 - 0.04, H + y), wallPoint(A1, RS1 - 0.04, H + y), 0.03, '#d9541e', 4);
-    g.rod(wallPoint(A1, RS1 - 0.04, H + y), wallPoint(A1, RG1, H + y), 0.03, '#d9541e', 4);              // closed at the far end
+    g.rod(wallPoint(A1 + LAND, RS1 - 0.04, H + y), wallPoint(A1, RS1 - 0.04, H + y), 0.03, STEEL, 4);
+    g.rod(wallPoint(A1, RS1 - 0.04, H + y), wallPoint(A1, RG1, H + y), 0.03, STEEL, 4);              // closed at the far end
   }
   for (const r of [RS1 - 0.04, RG1 + 0.3]) g.rod(wallPoint(A1, r, 0), wallPoint(A1, r, H + 1.0), 0.06, '#6e747b', 5);
+  // the upper deck: a second ring of standing room above and behind the gallery, out over the stair, with its own rail at
+  // the front and the back, on steel columns (from the gallery's outer rail in front, from the ground outside the stair
+  // behind). It is open over the stair's last stretch and the landing (DG1 round to DG0), so a climber there, and the camera
+  // behind him, are never under it.
+  const DY = H + 2.4, DK0 = RG1 + 0.05, DK1 = RS1 + 0.3, DG0 = A1 + LAND + 0.95, DG1 = A1 + TAU - 0.06, ND = 66, dda = (DG1 - DG0) / ND;
+  for (let i = 0; i < ND; i++) {
+    const a = DG0 + (i + 0.5) * dda, rm = (DK0 + DK1) / 2, p = wallPoint(a, rm, DY - 0.06);
+    g.box(p.x, p.y, p.z, rm * dda + 0.03, 0.1, DK1 - DK0, i % 2 ? '#86898c' : '#7d8083', tangentRy(a));
+    const a0 = DG0 + i * dda, a1 = a0 + dda;
+    for (const [r, front] of [[DK0 + 0.05, true], [DK1 - 0.05, false]] as const) {
+      g.rod(wallPoint(a0, r, DY + 1.1), wallPoint(a1, r, DY + 1.1), 0.04, STEEL, 4);
+      g.rod(wallPoint(a0, r, DY + 0.1), wallPoint(a1, r, DY + 0.1), 0.03, STEEL, 4);
+      g.rod(wallPoint(a0, r, DY), wallPoint(a0, r, DY + 1.1), 0.03, STEEL, 4);
+      if (front) leds.rod(wallPoint(a0, r, DY + 1.17), wallPoint(a1, r, DY + 1.17), 0.02, LED, 3);
+    }
+    for (const r of [DK0, DK1]) g.rod(wallPoint(a0, r, DY - 0.14), wallPoint(a1, r, DY - 0.14), 0.06, STEEL_D, 4);
+    if (i % 3 === 0) {
+      const b = DG0 + Math.min(ND, i + 3) * dda;
+      g.rod(wallPoint(a0, DK0, H + 1.12), wallPoint(a0, DK0, DY), 0.06, STEEL, 5);
+      g.rod(wallPoint(a0, DK1, 0), wallPoint(a0, DK1, DY), 0.08, STEEL, 5);
+      g.rod(wallPoint(a0, DK0, DY - 0.12), wallPoint(a0, DK1, DY - 0.9), 0.04, STEEL_D, 4);
+      for (const [y0, y1] of [[0.3, DY * 0.5], [DY * 0.5, DY - 0.2]]) {
+        g.rod(wallPoint(a0, DK1, y0), wallPoint(b, DK1, y1), 0.025, STEEL_D, 4);
+        g.rod(wallPoint(a0, DK1, y1), wallPoint(b, DK1, y0), 0.025, STEEL_D, 4);
+      }
+      const c = wallPoint(a0, DK1, 0);
+      posts.push([c.x, c.z, 0.12, DY]);
+    }
+  }
+  for (const a of [DG0, DG1]) {     // the deck's two ends closed
+    const c = wallPoint(a, DK1, 0);
+    g.rod(wallPoint(a, DK1, 0), wallPoint(a, DK1, DY + 1.1), 0.08, STEEL, 5);
+    posts.push([c.x, c.z, 0.12, DY]);
+    for (const y of [0.1, 0.6, 1.1]) g.rod(wallPoint(a, DK0 + 0.05, DY + y), wallPoint(a, DK1 - 0.05, DY + y), 0.035, STEEL, 4);
+  }
+
   // ticket booth by the foot of the stair
   const BA = A0 + 0.5, BX = Math.cos(BA) * (RS1 + 1.8), BZ = Math.sin(BA) * (RS1 + 1.8);
   g.box(BX, 1.3, BZ, 1.8, 2.6, 1.6, '#c9a34a');
   g.box(BX, 2.65, BZ, 2.2, 0.12, 2.0, '#b3261e');
   g.box(BX + 0.92, 1.1, BZ, 0.1, 0.9, 1.0, '#26323d');
   group.add(new THREE.Mesh(g.build(), litMat({ metalness: 0.15, roughness: 0.8 })));
+  group.add(new THREE.Mesh(leds.build(), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
   group.add(bulbs.object(0.8));
 
   // painted words on the inside of the drum, and the hung banners outside
@@ -206,43 +339,24 @@ export function buildMautKuan() {
     m.position.y = y0 + h / 2;
     group.add(m);
   };
+  // the steel mesh in the railings' panels (one panel between each two uprights)
+  const meshBand = (a0: number, a1: number, r: number, y0: number, h: number, panels: number) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, Math.ceil(((a1 - a0) / TAU) * 192), 1, true, Math.PI / 2 - a1, a1 - a0),
+      new THREE.MeshStandardMaterial({ map: meshTexture(panels), color: STEEL, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.3 }));
+    m.position.y = y0 + h / 2;
+    group.add(m);
+  };
+  meshBand(0, TAU, R + 0.2, H + 0.14, 0.98, NG);
+  meshBand(A1 + LAND, A1 + TAU, RG1 - 0.05, H + 0.02, 1.1, Math.round(((TAU - LAND) / TAU) * NG));
+  meshBand(DG0, DG1, DK0 + 0.05, DY + 0.1, 1.0, ND);
+  meshBand(DG0, DG1, DK1 - 0.05, DY + 0.1, 1.0, ND);
   arcBand(Math.PI / 2, 1.3, R - 0.005, H * 0.5, 3.4, pmat);
   arcBand(-Math.PI / 2, 1.3, R - 0.005, H * 0.5, 3.4, pmat);
-  // a painted skull and crossbones, glowing red eyes
-  const sc = document.createElement('canvas');
-  sc.width = 1024; sc.height = 640;
-  const sg = sc.getContext('2d')!;
-  sg.lineCap = 'round';
-  sg.strokeStyle = 'rgba(226,218,194,.92)';
-  sg.lineWidth = 46;
-  for (const d of [-1, 1]) { sg.beginPath(); sg.moveTo(512 - d * 330, 60); sg.lineTo(512 + d * 330, 560); sg.stroke(); }
-  sg.fillStyle = 'rgba(232,226,207,.96)';
-  sg.beginPath(); sg.ellipse(512, 270, 200, 190, 0, 0, Math.PI * 2); sg.fill();
-  sg.beginPath(); sg.roundRect(402, 380, 220, 120, 28); sg.fill();
-  sg.strokeStyle = 'rgba(40,25,20,.85)';
-  sg.lineWidth = 7;
-  for (let k = 0; k < 5; k++) { sg.beginPath(); sg.moveTo(430 + k * 41, 440); sg.lineTo(430 + k * 41, 500); sg.stroke(); }
-  for (const d of [-1, 1]) {
-    const gl = sg.createRadialGradient(512 + d * 80, 270, 8, 512 + d * 80, 270, 78);
-    gl.addColorStop(0, 'rgba(255,70,40,1)'); gl.addColorStop(0.45, 'rgba(120,10,10,1)'); gl.addColorStop(1, 'rgba(10,4,4,1)');
-    sg.fillStyle = gl;
-    sg.beginPath(); sg.ellipse(512 + d * 80, 270, 66, 76, d * 0.2, 0, Math.PI * 2); sg.fill();
-  }
-  sg.fillStyle = 'rgba(20,8,8,.95)';
-  sg.beginPath(); sg.moveTo(512, 320); sg.lineTo(486, 372); sg.lineTo(538, 372); sg.closePath(); sg.fill();
-  const stex = new THREE.CanvasTexture(sc);
-  stex.colorSpace = THREE.SRGBColorSpace;
-  stex.wrapS = THREE.RepeatWrapping;
-  stex.repeat.x = -1;
-  stex.offset.x = 1;
-  const smat = new THREE.MeshStandardMaterial({ map: stex, emissiveMap: stex, emissive: new THREE.Color(0.18, 0.1, 0.08), transparent: true, roughness: 1, side: THREE.BackSide, depthWrite: false });
-  arcBand(0, 0.85, R - 0.006, H * 0.3, 6.4, smat);
-  arcBand(Math.PI, 0.85, R - 0.006, H * 0.3, 6.4, smat);
   // opaque cladding behind the planks, so nothing that rides the wall can show through from outside
   const skin = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.17, R + 0.17, H, 64, 1, true), new THREE.MeshStandardMaterial({ color: '#2a2018', roughness: 1, side: THREE.DoubleSide }));
   skin.position.y = H / 2;
   group.add(skin);
-  const cap = new THREE.Mesh(new THREE.RingGeometry(R - 0.02, R + 0.25, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#2a2018', roughness: 1 }));
+  const cap = new THREE.Mesh(new THREE.RingGeometry(R - 0.02, R + 0.25, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: STEEL_D, roughness: 0.7 }));
   cap.position.y = H - 0.02;
   group.add(cap);
   const outer = (a: number, tex: THREE.Texture) => arcBand(a, 1.2, RG1 - 0.02, H + 0.1, 1.0, new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: new THREE.Color(0.55, 0.55, 0.55), roughness: 0.8 }));
@@ -261,7 +375,7 @@ export function buildMautKuan() {
     const a = ((i + 0.5) / 112) * TAU + (rnd(i) - 0.5) * 0.03;
     if (inGap(a, 0.06)) continue;                     // the way in from the stair is kept clear
     if (wrap(a - GALLERY.girl + 0.45) < 0.9) continue;  // and the rail either side of the girl's spot (stage 1's end)
-    if (rnd(i * 3 + 1) < 0.5) continue;               // a thin crowd: Ramu runs round the gallery
+    if (rnd(i * 3 + 1) < 0.2) continue;               // a few gaps: Ramu runs round the gallery behind them
     const r = R + 0.4 + rnd(i * 5) * 0.12, p = wallPoint(a, r, H - 0.01);   // leaning on the rail: the outer half is free
     const kid = rnd(i * 9 + 2) < 0.12;
     spots.push({
@@ -274,8 +388,18 @@ export function buildMautKuan() {
     const x = Math.cos(a) * rr, z = Math.sin(a) * rr;
     spots.push({ x, y: 0.02, z, ry: Math.atan2(Math.cos(a), Math.sin(a)) + Math.PI / 2 + (rnd(i * 7) - 0.5) * 1.2, n: 100 + i, pose: ONLOOKER[Math.floor(rnd(i * 17 + 3) * ONLOOKER.length)] });
   }
-  addFigures(group, spots);
   posts.push(...figurePosts(spots));      // the onlookers on the gallery and at the booth stand in the way
+  // the upper deck packed: a row at its rail and a thinner one behind (out of Ramu's way: nothing stands in for them). They
+  // borrow the looks of the people on the gallery, so they are drawn in the same batches (no more draw calls than before).
+  const rail = spots.filter((s) => s.y > 1), deck: Spot[] = [];
+  for (let i = 0; i < 124; i++) {
+    const back = i >= 96, k = back ? (i - 96) / 28 : i / 96;
+    const a = DG0 + 0.04 + (k + (back ? 0.01 : 0)) * (DG1 - DG0 - 0.08) + (rnd(i * 1.9) - 0.5) * 0.02;
+    if (rnd(i * 2.7 + 4) < (back ? 0.3 : 0.15)) continue;
+    const r = DK0 + (back ? 0.95 : 0.38) + rnd(i * 5.3) * 0.12, p = wallPoint(a, r, DY), like = rail[(i * 7) % rail.length];
+    deck.push({ ...like, x: p.x, y: DY, z: p.z, ry: Math.atan2(Math.cos(a), Math.sin(a)) + (rnd(i * 6.3) - 0.5) * 0.6 });
+  }
+  addFigures(group, [...spots, ...deck]);
 
   // moving vehicles: bikes ride near-horizontal bands high on the wall, cars lower and tilted
   interface Veh { obj: THREE.Group; a0: number; w: number; y0: number; amp: number; sp: number; phi: number; ph: number; off: number }
@@ -371,6 +495,6 @@ export function buildMautKuan() {
     post: posts,
     rails,
     floor,
-    light: [0, H + 2.5, 0, '#ff8a60'] as [number, number, number, string],
+    light: [0, H + 3.5, 0, '#eef1ff'] as [number, number, number, string],
   };
 }

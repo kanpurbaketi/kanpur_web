@@ -57,6 +57,26 @@ export function prepareFace(mesh: THREE.Mesh): void {
     out[i] = lat * Math.exp(-(((y - my) / 0.0045) ** 2));
   }
   g.setAttribute('faceDark', new THREE.BufferAttribute(out, 1));
+  // how far down the lower lip goes at full opening, along the mouth (the mouth_open key: the first morph target), at
+  // each vertex's x: across the gap the shader reads where between the lips it is (0 the upper, 1 the lower) from how
+  // far down the point has gone over that
+  const key = g.morphAttributes.position?.[0];
+  const drop = new Float32Array(pos.count), line = new Float32Array(pos.count).fill(my);
+  if (key) {
+    const N = 24, bins = new Float32Array(N), w = m.mhw * 1.1, lineY = new Float32Array(N), lineN = new Float32Array(N);
+    const bin = (x: number) => Math.max(0, Math.min(N - 1, Math.round(((x - mx) / w * 0.5 + 0.5) * (N - 1))));
+    for (let i = 0; i < pos.count; i++) {
+      if (out[i] < 0.6) continue;                     // (the lips' inner edges only: the chin below them goes further)
+      const dy = g.morphTargetsRelative ? key.getY(i) : key.getY(i) - pos.getY(i);
+      const b = bin(pos.getX(i));
+      bins[b] = Math.min(bins[b], dy);
+      lineY[b] += pos.getY(i); lineN[b]++;
+    }
+    for (let b = 0; b < N; b++) lineY[b] = lineN[b] ? lineY[b] / lineN[b] : my;
+    for (let i = 0; i < pos.count; i++) { const b = bin(pos.getX(i)); drop[i] = -bins[b]; line[i] = lineY[b]; }
+  }
+  g.setAttribute('faceDrop', new THREE.BufferAttribute(drop, 1));
+  g.setAttribute('faceLine', new THREE.BufferAttribute(line, 1));
 }
 
 /** The material's shader darkens the parted lips (by the mouth's opening, the first shape key). Once per material. */
@@ -81,7 +101,10 @@ export function faceMaterial(mat: THREE.Material, m: Marks): void {
     prev.call(mat, sh, r);
     if (sharp) Object.assign(sh.uniforms, { faceMap: { value: faceMap }, faceOn: ready });
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', `#include <common>\nattribute float faceDark;\nvarying float vFaceDark;\nvarying float vOpen;\nvarying vec3 vRest;${sharp ? '\nattribute vec2 faceUv;\nvarying vec2 vFaceUv;' : ''}`)
+      .replace('#include <common>', `#include <common>\nattribute float faceDark;\nattribute float faceDrop;\nattribute float faceLine;\nvarying float vFaceDark;\nvarying float vOpen;\nvarying vec3 vRest;\nvarying float vDown;\nvarying float vDrop;${sharp ? '\nattribute vec2 faceUv;\nvarying vec2 vFaceUv;' : ''}`)
+      .replace('#include <morphtarget_vertex>', `#include <morphtarget_vertex>
+  vDown = faceLine - transformed.y;          // (below where the lips meet here, now)
+  vDrop = faceDrop;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
   vRest = position;
   vFaceDark = faceDark;${sharp ? '\n  vFaceUv = faceUv;' : ''}
@@ -98,12 +121,23 @@ export function faceMaterial(mat: THREE.Material, m: Marks): void {
 varying float vFaceDark;
 varying float vOpen;
 varying vec3 vRest;
+varying float vDown;
+varying float vDrop;
 // (vFaceDark is 1 on the line where the lips meet, falling off over the lips: the wider open, the more of it is gap)
-float mouthDark() { return smoothstep( mix( 0.6, 0.35, vOpen ), mix( 0.85, 0.65, vOpen ), vFaceDark ) * smoothstep( 0.03, 0.2, vOpen ); }
+float mouthEdge() { return smoothstep( mix( 0.6, 0.35, vOpen ), mix( 0.85, 0.65, vOpen ), vFaceDark ); }
+float mouthDark() { return mouthEdge() * smoothstep( 0.03, 0.2, vOpen ); }
 vec3 mouthColour() {
   float deep = smoothstep( 0.8, 1.0, vFaceDark );
   vec3 c = mix( vec3( 0.16, 0.045, 0.04 ), vec3( 0.035, 0.009, 0.008 ), deep );
-  return c;
+  // the teeth, a thin white line along the top of the opening and one along the bottom. Above where the lips met
+  // (t < 0) the opening ends where the dark comes in (its soft edge: the upper teeth along it); below, t is how far down
+  // of the lower lip's drop here a point now is (1 at the lower lip: the lower teeth just over it)
+  float t = vDown / max( vDrop * vOpen, 1e-5 );
+  float e = mouthEdge();
+  float top = ( 1.0 - step( 0.0, t ) ) * ( 1.0 - smoothstep( 0.62, 0.88, e ) );
+  float bottom = smoothstep( 0.74, 0.84, t );
+  float teeth = max( top, bottom * 0.9 ) * smoothstep( 0.12, 0.3, vOpen );
+  return mix( c, vec3( 0.72, 0.68, 0.61 ), teeth );
 }
 ${eyeMask}`)
       .replace('#include <map_pars_fragment>', `#include <map_pars_fragment>${sharp ? `
@@ -148,7 +182,7 @@ vec3 faceDetail( vec3 base ) {
   };
   const key = mat.customProgramCacheKey.bind(mat);
   const marks = m.eyes.flat().map(f).join(',');
-  mat.customProgramCacheKey = () => key() + '|face2' + marks + (m.tex ?? '');
+  mat.customProgramCacheKey = () => key() + '|face3' + marks + (m.tex ?? '');
   mat.needsUpdate = true;
 }
 

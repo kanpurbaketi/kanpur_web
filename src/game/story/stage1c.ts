@@ -495,22 +495,51 @@ const JUMPS = 3, CALL_AT = 0.5;
 const CAUGHT_AT = 2.75;
 
 const riding: { cabin: THREE.Object3D | null } = { cabin: null };
-const fl = new THREE.Vector3(), fr = new THREE.Vector3(), roofAt = new THREE.Vector3(), wpos = new THREE.Vector3();
-let footBones: [THREE.Object3D, THREE.Object3D] | null = null;
+const roofAt = new THREE.Vector3(), wpos = new THREE.Vector3();
+/** the bones his soles are measured from, each with how far its sole surface is below it (the ankle, the ball, the toe tip) */
+let soleBones: [THREE.Object3D, number][] | null = null;
+const sp = new THREE.Vector3(), lp = new THREE.Vector3();
 const sm = (x: number): number => { const k = Math.max(0, Math.min(1, x)); return k * k * (3 - 2 * k); };
 const wrapA = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
-/** how far his soles are above his position, in this frame of his clip */
-function soleOff(ramu: Ramu): number {
-  if (!footBones) {
-    const l = findBone(ramu.model, 'LeftFoot'), r = findBone(ramu.model, 'RightFoot');
-    if (l && r) footBones = [l, r];
+function soles(ramu: Ramu): [THREE.Object3D, number][] {
+  if (!soleBones) {
+    soleBones = [];
+    for (const side of ['Left', 'Right']) for (const [b, m] of [['Foot', 0.07], ['ToeBase', 0.03], ['Toe_End', 0.015]] as const) {
+      const bone = findBone(ramu.model, side + b);
+      if (bone) soleBones.push([bone, m]);
+    }
   }
-  if (!footBones) return 0;
+  return soleBones;
+}
+
+/** how far his lowest sole (heel, ball or toe tip) is above his position, in this frame of his clip */
+function soleOff(ramu: Ramu): number {
+  const bs = soles(ramu);
+  if (!bs.length) return 0;
   ramu.model.updateWorldMatrix(true, true);
-  footBones[0].getWorldPosition(fl);
-  footBones[1].getWorldPosition(fr);
-  return Math.min(fl.y, fr.y) - 0.07 - ramu.position.y;
+  let low = Infinity;
+  for (const [b, m] of bs) low = Math.min(low, b.getWorldPosition(sp).y - m);
+  return low - ramu.position.y;
+}
+
+/**
+ Lifts him so that no sole is under the roof of a cabin it is over: never a foot through a cabin (the jump clip's take-off
+ and landing crouch lower than the pose he was placed for). The cabin: its roof (top 0.02 below the pivot) over the box.
+*/
+function aboveRoofs(ramu: Ramu, mela: Mela): void {
+  const bs = soles(ramu);
+  ramu.model.updateWorldMatrix(true, true);
+  let lift = 0;
+  for (const [b, m] of bs) {
+    b.getWorldPosition(sp);
+    for (const cb of mela.giant.cabins) {
+      cb.worldToLocal(lp.copy(sp));
+      const sole = lp.y - m;
+      if (Math.abs(lp.x) < 1.1 && Math.abs(lp.z) < 0.75 && sole < -0.01 && sole > -1.45) lift = Math.max(lift, -0.01 - sole);
+    }
+  }
+  if (lift > 0) ramu.position.y += lift;
 }
 
 /** where his soles go on `cabin`'s roof (world) */
@@ -670,6 +699,7 @@ async function leap(d: Director, ramu: Ramu, mela: Mela): Promise<void> {
       const f = Math.max(0, Math.min(1, (k * JF_LEN - JF_OFF) / (JF_LAND - JF_OFF)));
       a.lerp(b, sm(f));
       ramu.position.set(a.x, a.y - off + Math.sin(Math.PI * f) * 0.25, a.z);
+      aboveRoofs(ramu, mela);
       // close: 3.4 m out in front of the wheel, from ahead of him at take-off round to beside him at the landing, looking
       // at him (and a little toward where he lands), so the whole leap is in the shot
       // (up with the clip's own spring, which lifts him off the roof, so his head stays in the frame at the top)
@@ -812,6 +842,7 @@ async function stopAndJump(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promi
       const f = Math.max(0, (k - t0) / (1 - t0));
       ramu.position.lerpVectors(at, bounce, f);
       ramu.position.y += Math.sin(f * Math.PI) * peak - off * (1 - f);
+      aboveRoofs(ramu, mela);
       // up with the clip's own spring (it lifts him ~0.85 m off the roof before he drops), so he stays in the frame
       const lift = 0.85 * Math.sin(Math.PI * Math.max(0, Math.min(1, (k * T - JF_OFF) / (JF_LAND - JF_OFF))));
       const sh = behind(ramu.position, f);

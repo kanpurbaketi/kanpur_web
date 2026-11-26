@@ -437,7 +437,9 @@ async function anchorCalls(d: Director, ramu: Ramu, s: Sammelan): Promise<void> 
     await d.say('ramu', ramu.face, 'me');
     await d.wait(0.3);
     // up out of the chair, round the end of the table and over to the mic, the anchor waiting there for him
+    // (the last of it: short of the anchor by an arm's reach, not into him)
     const path = micPath(s);
+    path[path.length - 1] = shortOf(path[path.length - 2], s.micSide, [anchor.position.x, anchor.position.z], HAND_GAP);
     const side = { pos: v(path[1][0] + fx * 3.6 - fz * 2.2, A + 1.5, path[1][1] + fz * 3.6 + fx * 2.2), look: v(path[1][0] + fx * 0.8, A + 0.9, path[1][1] + fz * 0.8), fov: 48 };
     d.shot(side, 0);
     ramu.gesture('rise', 1.1);
@@ -445,7 +447,7 @@ async function anchorCalls(d: Director, ramu: Ramu, s: Sammelan): Promise<void> 
     await d.tween(1.0, (k) => ramu.position.set(seat[0] + (path[0][0] - seat[0]) * k, A, seat[1] + (path[0][1] - seat[1]) * k));
     ramu.stopGesture();
     anchor.faceTowards(...s.micSide);
-    await walkRamu(d, ramu, path, 1.3, 'walk');
+    await walkRamu(d, ramu, path, 1.3, 'walk', 'idle');      // (there, he stands: no more walking on the spot)
     // the handover: the anchor holds the mic out, Ramu takes it (the hands meet ~0.7 s in)
     ramu.faceTowards(anchor.position.x, anchor.position.z);
     anchor.faceTowards(ramu.position.x, ramu.position.z);
@@ -504,8 +506,26 @@ function micPath(s: Sammelan): [number, number][] {
     [cx + fx * 2.3 + ox * 1.1, cz + fz * 2.3 + oz * 1.1], s.micSide];
 }
 
-/** Ramu walks through the points at `speed` m/s on the stage, playing `clip` (the walk, or with the mic: mic_walk) */
-async function walkRamu(d: Director, ramu: Ramu, pts: [number, number][], speed: number, clip: string): Promise<void> {
+/** how far apart Ramu and the anchor stand for the mic to pass between them (their bodies apart, the arms out) */
+const HAND_GAP = 1.05;
+
+/** `to` (on the way from `from`), or, if that is nearer `who` than `gap`, the point on the way that far from them */
+function shortOf(from: [number, number], to: [number, number], who: [number, number], gap: number): [number, number] {
+  if (Math.hypot(to[0] - who[0], to[1] - who[1]) >= gap) return to;
+  const dx = to[0] - from[0], dz = to[1] - from[1], len = Math.hypot(dx, dz) || 1;
+  // back along the way until `gap` from them (the near root of |from + t*dir - who| = gap)
+  const ux = dx / len, uz = dz / len, wx = from[0] - who[0], wz = from[1] - who[1];
+  const b = wx * ux + wz * uz, c = wx * wx + wz * wz - gap * gap, disc = b * b - c;
+  if (disc < 0 || c < 0) return to;
+  const t = Math.max(0, -b - Math.sqrt(disc));
+  return [from[0] + ux * t, from[1] + uz * t];
+}
+
+/**
+ Ramu walks through the points at `speed` m/s on the stage, playing `clip` (the walk, or with the mic: mic_walk); there,
+ `then` (a standing clip), if given: not the walk going on on the spot
+*/
+async function walkRamu(d: Director, ramu: Ramu, pts: [number, number][], speed: number, clip: string, then?: string): Promise<void> {
   const y = ramu.position.y;
   ramu.sitAt(ramu.position.x, y, ramu.position.z, ramu.facing, clip);
   for (const [x, z] of pts) {
@@ -514,6 +534,7 @@ async function walkRamu(d: Director, ramu: Ramu, pts: [number, number][], speed:
     ramu.model.rotation.y = Math.atan2(-(x - x0), -(z - z0));
     await d.tween(len / speed, (k) => ramu.position.set(x0 + (x - x0) * k, y, z0 + (z - z0) * k));
   }
+  if (then) ramu.holdClip(then);
 }
 
 /** at the mic, facing the audience, holding it (up to his mouth as he talks: mic_talk) */

@@ -864,7 +864,7 @@ export class Mela {
       this.props.push(mic);
       return {
         kumar, anchor, poets: ps, seats: seatW, seatY: SEAT_Y, facing: FACE, floor: FLOOR, ground,
-        mic: toW(MIC[0], MIC[1]), micProp: mic, micSide: toW(MIC[0] - 0.85, MIC[1] - 0.25), aside: toW(MIC[0] - 1.8, MIC[1] - 0.5), lota: new HandProp(lotaObj, 'hang', MUG_HANDLE.up, MUG_HANDLE.out), lotaAt: [lx, lz] as [number, number],
+        mic: toW(MIC[0], MIC[1]), micProp: mic, micSide: toW(MIC[0] - 0.85, MIC[1] - 0.25), aside: toW(MIC[0] + 1.3, MIC[1] - 0.6), lota: new HandProp(lotaObj, 'hang', MUG_HANDLE.up, MUG_HANDLE.out), lotaAt: [lx, lz] as [number, number],
         door: toW(doorX, -D / 2 - 2.6), behind: toW(doorX, -D / 2 - 0.8), inside: toW(doorX, -D / 2 + 1.3),
         exit: [[seats[0], SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z - 1.5], [st0 - 0.7, SEAT_Z - 1.5],
           [st0 - 0.5, scz], [st0 + 4.2, scz], [st0 + 7.5, scz + 1.5]].map(([x, z]) => toW(x, z)),

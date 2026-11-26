@@ -187,8 +187,10 @@ export class Ramu {
   }
 
   /** change the held clip (eating, talking) while sitting; `last`: a once-only clip (a fall) held on its last frame */
-  holdClip(clip: string, last = false): void { if (this.pose) { this.pose = clip; this.poseLast = last; } }
+  /** the held pose's clip (`speed`: its pace, e.g. slowed for one character's slow motion while the world goes on) */
+  holdClip(clip: string, last = false, speed = 1): void { if (this.pose) { this.pose = clip; this.poseLast = last; this.poseSpeed = speed; } }
   private poseLast = false;
+  private poseSpeed = 1;
 
   /** out of the held pose, standing at (x, z) on whatever is there at about height y */
   standUp(x: number, z: number, y: number): void {
@@ -815,7 +817,7 @@ totalEmissiveRadiance = diffuseColor.rgb * uGlow;`);
       this.gestureT -= dt;
       this.play(this.gestureName, 0.25);
     } else if (this.pose) {
-      set(this.pose, 'idle', 1);
+      set(this.pose, 'idle', this.poseSpeed);
       const a = this.poseLast ? A[this.pose] : null;
       if (a) { a.timeScale = 0; a.time = a.getClip().duration - 0.001; a.setEffectiveWeight(1); }
     } else if (this.lockPick && hs < 0.8) {

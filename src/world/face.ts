@@ -124,6 +124,8 @@ varying vec3 vRest;
 varying float vDown;
 varying float vDrop;
 // (vFaceDark is 1 on the line where the lips meet, falling off over the lips: the wider open, the more of it is gap)
+// how far out the teeth go from the mouth's middle, of its half width
+const float TEETH_W = 0.36;
 float mouthEdge() { return smoothstep( mix( 0.6, 0.35, vOpen ), mix( 0.85, 0.65, vOpen ), vFaceDark ); }
 float mouthDark() { return mouthEdge() * smoothstep( 0.03, 0.2, vOpen ); }
 vec3 mouthColour() {
@@ -136,7 +138,9 @@ vec3 mouthColour() {
   float e = mouthEdge();
   float top = ( 1.0 - step( 0.0, t ) ) * ( 1.0 - smoothstep( 0.62, 0.88, e ) );
   float bottom = smoothstep( 0.74, 0.84, t );
-  float teeth = max( top, bottom * 0.9 ) * smoothstep( 0.12, 0.3, vOpen );
+  // (both only across the middle of the mouth, fading well before its corners: two lines, never a ring round the opening)
+  float side = abs( vRest.x - ${f(m.mouth[0])} ) / ${f(m.mhw)};
+  float teeth = max( top, bottom * 0.9 ) * smoothstep( 0.12, 0.3, vOpen ) * ( 1.0 - smoothstep( TEETH_W - 0.14, TEETH_W, side ) );
   return mix( c, vec3( 0.72, 0.68, 0.61 ), teeth );
 }
 ${eyeMask}`)
@@ -182,7 +186,7 @@ vec3 faceDetail( vec3 base ) {
   };
   const key = mat.customProgramCacheKey.bind(mat);
   const marks = m.eyes.flat().map(f).join(',');
-  mat.customProgramCacheKey = () => key() + '|face3' + marks + (m.tex ?? '');
+  mat.customProgramCacheKey = () => key() + '|face4' + marks + f(m.mouth[0]) + f(m.mhw) + (m.tex ?? '');
   mat.needsUpdate = true;
 }
 

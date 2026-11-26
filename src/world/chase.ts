@@ -56,8 +56,9 @@ export class Chase {
     });
   }
 
-  /** start the trail afresh: from `from` (behind him, where the guards are) to where he is now */
-  resetTrail(from: [number, number][]): void {
+  /** start the trail afresh: from `from` (behind him, where the guards are) to where he is now; `keepWays`: each guard
+   * still goes its own way first (spawn's `via`: up the stage's stairs) */
+  resetTrail(from: [number, number][], keepWays = false): void {
     this.trail.length = 0;
     const h = this.him();
     const pts = [...from.map(([x, z]) => new THREE.Vector3(x, 0.05, z)), h.clone()];
@@ -66,7 +67,7 @@ export class Chase {
       for (let j = 0; j < n; j++) this.trail.push(a.clone().lerp(b, j / n));
     }
     this.trail.push(h.clone());
-    for (const g of this.g) { g.k = -1; g.via = []; }
+    for (const g of this.g) { g.k = -1; if (!keepWays) g.via = []; }
   }
 
   /** the guards standing at `spots` (one each), facing him, off their way, each to come on along the trail from its start */

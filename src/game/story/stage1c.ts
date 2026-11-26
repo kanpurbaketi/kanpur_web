@@ -73,6 +73,9 @@ export function chaseFor(mela: Mela, ramu: Ramu): Chase {
  Part 2's end: four guards after him. On the stage (`stairs`): from beyond the foot of its stairs, up them and across the
  stage at him; otherwise (a test start down on the ground) from the sammelan's gates, round the audience.
 */
+/** how far out past the stage stairs' foot the guards of part 2's last scene come from */
+const STAIRS_BACK = 5;
+
 export async function sendGuards(mela: Mela, s: Sammelan, ramu: Ramu, stairs = true): Promise<void> {
   const c = chaseFor(mela, ramu);
   if (c.guards.length) return;
@@ -81,11 +84,12 @@ export async function sendGuards(mela: Mela, s: Sammelan, ramu: Ramu, stairs = t
   if (stairs) {
     const [fx, fz] = s.exit[5], [bx, bz] = s.exit[6], top = s.exit[4];
     const ux = bx - fx, uz = bz - fz, ul = Math.hypot(ux, uz) || 1;      // away from the stairs' foot
-    const spots: [number, number][] = [0, 1, 2, 3].map((i) => [bx + (ux / ul) * (i * 1.1) + (-uz / ul) * ((i % 2) - 0.5), bz + (uz / ul) * (i * 1.1) + (ux / ul) * ((i % 2) - 0.5)]);
+    // (a way back from the stairs' foot: seen running in and up them, ~2.5 s to the top)
+    const spots: [number, number][] = [0, 1, 2, 3].map((i) => [bx + (ux / ul) * (STAIRS_BACK + i * 1.1) + (-uz / ul) * ((i % 2) - 0.5), bz + (uz / ul) * (STAIRS_BACK + i * 1.1) + (ux / ul) * ((i % 2) - 0.5)]);
     await c.spawn(4, spots, x, z, () => [[fx, fz], top]);
     for (const g of c.guards) g.floor = s.ground;
   } else await c.spawn(4, s.gates, x, z, (gx, gz) => s.route(gx, gz, z));
-  c.resetTrail([]);
+  c.resetTrail([], true);                // (their ways kept: the trail's reset had them float straight at him, up off the ground)
   c.go();
 }
 
@@ -136,8 +140,9 @@ export async function stage1Part3(d: Director, ramu: Ramu, mela: Mela, hooks: St
       const fromStairs: Restart = { at: [sx, sz], ry, behind: [back(3.5), back(4.5), back(5.5), back(6.5)] };
       c.hard = false;
       // a head start: the scene cut just short of their hands; back along their way, 4.5 m and more off him
+      // (guards still up on the stage, where he jumped off it: they come down after him along his way, as they are)
       const r = ramu.position;
-      c.place(c.guards.map((g, i) => {
+      if (c.guards.every((g) => g.position.y < 0.5)) c.place(c.guards.map((g, i) => {
         const dx = g.position.x - r.x, dz = g.position.z - r.z, l = Math.hypot(dx, dz) || 1, want = Math.max(l, 4.5 + i * 0.9);
         return [r.x + (dx / l) * want, r.z + (dz / l) * want];
       }));

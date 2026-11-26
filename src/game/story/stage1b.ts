@@ -186,23 +186,72 @@ async function kumarBack(d: Director, ramu: Ramu, s: Sammelan, throwers: Thrower
   d.shot(af, 0, d.pushIn(af, 0.04));
   await d.wait(0.3);
   await d.say('anchor', anchor.face, 'pakdo');
-  // the guards, up the stage's stairs at him; mission 6 ("Run!") starts before they lay hands on him
+  // the guards, up the stage's stairs at him
   ramu.faceTowards(s.exit[4][0], s.exit[4][1]);
   await guards(ramu, s);
-  const rx = ramu.position.x, rz = ramu.position.z;
+  const rx = ramu.position.x, rz = ramu.position.z, foot2 = s.exit[5];
   const ax = top[0] - rx, az = top[1] - rz, al = Math.hypot(ax, az) || 1;
-  // over his shoulder, from behind him, the stairs' top ahead
-  d.shot({ pos: v(rx - (ax / al) * 2.6 + (az / al) * 0.9, s.floor + 2.1, rz - (az / al) * 2.6 - (ax / al) * 0.9), look: v(top[0], s.floor + 0.6, top[1]), fov: 50 }, 0);
+  // from behind them, in line with the stairs: they run in past the camera and up the stairs, and beyond, on the stage,
+  // him (till the first of them is up there)
+  d.shot({ pos: v(foot2[0] + (ax / al) * 7 + fx * 1.4, s.floor + 1.1, foot2[1] + (az / al) * 7 + fz * 1.4),
+    look: v(top[0] + (rx - top[0]) * 0.35, s.floor + 0.5, top[1] + (rz - top[1]) * 0.35), fov: 50 }, 0);
   const t0 = performance.now();
-  await d.until(() => d.skipped || performance.now() - t0 > 8000 || nearestGuard(ramu) < 3.2);
+  await d.until(() => d.skipped || performance.now() - t0 > 7000 || guardUp(ramu, s));
+  // and he is off: the mic dropped, a dash to the stage's front edge and a jump down off it, onto the ground before the
+  // dari, and away (mission 6 starts down there, the guards still up on the stage)
+  await jumpOff(d, ramu, s);
 }
 
-/** how far the nearest of the story's guards is from Ramu (Infinity with none) */
-function nearestGuard(ramu: Ramu): number {
-  if (!theMela) return Infinity;
-  let best = Infinity;
-  for (const g of chaseFor(theMela, ramu).guards) best = Math.min(best, Math.hypot(g.position.x - ramu.position.x, g.position.z - ramu.position.z));
-  return best;
+/** where he jumps from (the stage's front edge, in line with him) and lands (on the ground, before the audience) */
+function jumpLine(ramu: Ramu, s: Sammelan): { edge: [number, number]; land: [number, number] } {
+  const [fx, fz] = [-Math.sin(s.facing), -Math.cos(s.facing)];            // out toward the audience
+  let { x, z } = ramu.position;
+  for (let i = 0; i < 80 && s.ground(x + fx * 0.1, z + fz * 0.1) >= s.floor - 0.05; i++) { x += fx * 0.1; z += fz * 0.1; }
+  return { edge: [x - fx * 0.15, z - fz * 0.15], land: [x + fx * JUMP_OUT, z + fz * JUMP_OUT] };
+}
+/** how far out past the stage's edge he lands (the audience's dari starts ~3 m out) */
+const JUMP_OUT = 1.5;
+/** jump_far (stage1c.ts): 1.03 s; the feet leave at 0.07 s, down again at 0.73 s */
+const JF_LEN = 1.03, JF_OFF = 0.07, JF_LAND = 0.73;
+
+/** is the first of the guards up the stairs, on the stage? */
+function guardUp(ramu: Ramu, s: Sammelan): boolean {
+  if (!theMela) return true;
+  const top = s.exit[4];
+  return chaseFor(theMela, ramu).guards.some((g) => Math.hypot(g.position.x - top[0], g.position.z - top[1]) < 1.6);
+}
+
+/** drop the mic where he stands */
+function dropMic(s: Sammelan, x: number, z: number): void {
+  const m = s.micProp;
+  m.holder(null);
+  m.object.position.set(x + 0.3, s.floor + 0.03, z + 0.2);
+  m.object.rotation.set(0, 0.6, Math.PI / 2);
+}
+
+/** the dash to the front edge and the jump down off the stage */
+async function jumpOff(d: Director, ramu: Ramu, s: Sammelan): Promise<void> {
+  const { edge, land } = jumpLine(ramu, s);
+  dropMic(s, ramu.position.x, ramu.position.z);
+  // the guards pull up at the top of the stairs as he goes (mission 6 sets them on him again, down off the stage after him)
+  if (theMela) chaseFor(theMela, ramu).stop();
+  const ly = s.ground(land[0], land[1]);
+  const [fx, fz] = [-Math.sin(s.facing), -Math.cos(s.facing)];
+  // side on, out in front of the stage and off to the side away from the stairs: the edge, the drop and where he lands
+  const sx = -fz, sz = fx, side = Math.sign((edge[0] - s.exit[4][0]) * sx + (edge[1] - s.exit[4][1]) * sz) || 1;
+  const mid = [(edge[0] + land[0]) / 2, (edge[1] + land[1]) / 2];
+  d.shot({ pos: v(mid[0] + fx * 2.2 + sx * side * 5.2, ly + 1.3, mid[1] + fz * 2.2 + sz * side * 5.2), look: v(mid[0] - fx * 0.6, (s.floor + ly) / 2 + 0.7, mid[1] - fz * 0.6), fov: 50 }, 0);
+  await walkRamu(d, ramu, [edge], 4.2, 'run');
+  // the jump: off the edge, a little up, and down onto the ground
+  ramu.model.rotation.y = s.facing;
+  ramu.gesture('jump_far', 1);
+  const y0 = s.floor;
+  await d.tween(JF_LEN, (k) => {
+    const f = Math.max(0, Math.min(1, (k * JF_LEN - JF_OFF) / (JF_LAND - JF_OFF)));
+    ramu.position.set(edge[0] + (land[0] - edge[0]) * f, y0 + (ly - y0) * f * f + Math.sin(Math.PI * f) * 0.3, edge[1] + (land[1] - edge[1]) * f);
+  });
+  void playSfx('thud', 0.5);
+  ramu.position.set(land[0], ly, land[1]);
 }
 
 /** the four guards from the sammelan's gates, after him (stage1c.ts: the chase) */
@@ -246,13 +295,15 @@ function foundOut(ramu: Ramu, s: Sammelan, throwers: Throwers): void {
   anchor.idle();
   anchor.faceTowards(ramu.position.x, ramu.position.z);
   void guards(ramu, s);
-  // the mic dropped where he stood, Ramu on his feet and his own again
-  const m = s.micProp;
-  m.holder(null);
-  m.object.position.set(s.mic[0] + 0.3, s.floor + 0.03, s.mic[1] + 0.2);
-  m.object.rotation.set(0, 0.6, Math.PI / 2);
-  ramu.standUp(ramu.position.x, ramu.position.z, s.floor);
-  ramu.yaw = ramu.facing;
+  // the mic dropped (at the mic, if it is still in his hand: a skip), Ramu down off the stage, on his feet and his own again
+  const { land } = jumpLine(ramu, s);
+  if (ramu.position.y > s.ground(land[0], land[1]) + 0.3) {
+    dropMic(s, s.mic[0], s.mic[1]);
+    ramu.position.set(land[0], s.ground(land[0], land[1]), land[1]);
+  }
+  ramu.standUp(ramu.position.x, ramu.position.z, s.ground(ramu.position.x, ramu.position.z));
+  ramu.model.rotation.y = s.facing;
+  ramu.yaw = s.facing;
 }
 
 /** the poets clap for a few seconds, then go back to what they were doing */
@@ -289,12 +340,15 @@ async function takeSeat(d: Director, ramu: Ramu, s: Sammelan): Promise<void> {
 }
 
 const SIT_FWD = 0.05;
+/** Ramu on the armchair's cushion: the seats are set for the grown-up poets, and his (shorter) sitting pose put his
+ * thighs 12-17 cm into the cushion (its top 0.375 m above the stage; his thighs' joints at ~0.29) */
+const SIT_LIFT = 0.15;
 
 /** beat 3: Ramu in the armchair, a fruit off Kumar's plate, eating; the poet beside him gives him a look */
 async function sitAndEat(d: Director, ramu: Ramu, s: Sammelan): Promise<void> {
   const [cx, cz] = s.seats[0], poet = s.poets[0];
   // a little forward on the seat: his (shorter) shins clear of the armchair's front panel
-  ramu.sitAt(cx - Math.sin(s.facing) * SIT_FWD, s.seatY, cz - Math.cos(s.facing) * SIT_FWD, s.facing, 'sit_eat');
+  ramu.sitAt(cx - Math.sin(s.facing) * SIT_FWD, s.seatY + SIT_LIFT, cz - Math.cos(s.facing) * SIT_FWD, s.facing, 'sit_eat');
   ramu.yaw = s.facing;
   fruit = foodMesh('apple').then((m) => {
     s.group.add(m);
@@ -493,7 +547,12 @@ async function lotaScene(d: Director, ramu: Ramu, s: Sammelan): Promise<boolean>
   const { kumar } = s, poet = s.poets[0];
   s.quiet.add(kumar).add(poet);
   kumar.face.talking = poet.face.talking = false;
-  const toPoet = s.facing + 0.5, toKumar = s.facing - 0.5;      // the poet sits on Kumar's left, to the north
+  // each turned in his seat most of the way to the other (the head turns the rest): the poet sits right beside Kumar,
+  // ~100 degrees round from the way they face, more than the head alone turns (half a turn and the head put the
+  // back of the poet's head to the camera)
+  const part = (from: number, to: number) => from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * 0.6;
+  const toPoet = part(s.facing, kumar.towards(poet.position.x, poet.position.z));
+  const toKumar = part(s.facing, poet.towards(kumar.position.x, kumar.position.z));
   let skipped = false;
   await d.scene(async () => {
     // Ramu at the back-stage door, the curtain before him

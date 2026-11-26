@@ -214,6 +214,14 @@ const C = {
     [0.14, M(body(-18, -14, -26), arms(45, -40, 25), legs(10, 30, -20, 50, 4))],
     [0.45, M(body(28, 10, -10), arms(30, 120, 20), legs(25, 30, -25, 70, 4))],
     [0.8, M(body(32, 12, -14), arms(30, 140, 15), legs(20, 20, -30, 75, 4))]] },
+  // ---- the slow-mo fall: over backward and down (into the well), the back arched, both arms reaching up and out for where
+  // he fell from, the head up looking after it, the legs lifting and kicking slowly; the game holds it through the fall
+  fall_reach: { len: 2.4, keys: [
+    [0, M(body(-14, -10, -18), { hips: { bend: -45 } }, arms(58, 145, 20), legs(40, 30, 25, 45, 6))],
+    [0.6, M(body(-12, -8, 18), { hips: { bend: -72 } }, arms(34, 118, 14), { rightUpperArm: { raise: 44 } }, legs(55, 45, 35, 60, 8))],
+    [1.2, M(body(-10, -6, 30, 0, 4), { hips: { bend: -85 } }, arms(30, 128, 22), { leftUpperArm: { raise: 48 }, leftLowerArm: { bend: 34 } }, legs(65, 55, 30, 40, 9))],
+    [1.8, M(body(-10, -8, 28, 6, -3), { hips: { bend: -86 } }, arms(46, 112, 12), { rightLowerArm: { bend: 30 } }, legs(40, 30, 62, 70, 9))],
+    [2.4, M(body(-10, -6, 30, 0, 2), { hips: { bend: -85 } }, arms(36, 124, 20), legs(58, 50, 38, 48, 9))]] },
 };
 
 const name = process.argv[2], c = C[name];

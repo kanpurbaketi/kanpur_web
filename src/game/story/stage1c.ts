@@ -1091,22 +1091,29 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
     const close = { pos: at3(onWell(RAIL_A + 0.1, GALLERY.r1 - 0.45), Y + 1.6), look: at3(rail, Y + 2.0), fov: 46 };
     d.shot(close, 0, d.pushIn(close, 0.06));
     await d.tween(SW_OFF - SW_SWEEP, (k) => ramu.holdClip('fall_sweep', false, SW_SWEEP + (SW_OFF - SW_SWEEP) * k));
-    // he tips over into the clip's first pose (lying back in the air), and down to lie level with the rail's top
-    ramu.holdClip('fall_back', false, 0);
-    const y0 = ramu.position.y, y1 = onRail - (FB_LIFT - FB_ABOVE);
-    await d.tween(0.45, (k) => { ramu.model.rotation.z = 0; ramu.model.rotation.x = 0; ramu.position.y = y0 + (y1 - y0) * k * k; });
-    // down, back first; the camera falls with him from inside the well, the show going round between. His hips go down
-    // the fall's path (FB_ABOVE over where his feet would be); the last of the way is the clip's own drop onto the sand.
+    // he tips over into the slow-mo fall (fall_reach: on his back in the air, both arms reaching up after the rail),
+    // and down to lie level with the rail's top
+    ramu.holdClip('fall_reach', false, 0);
+    const y0 = ramu.position.y, y1 = onRail - (FR_LIFT - FB_ABOVE);
+    await d.tween(0.45, (k) => { ramu.holdClip('fall_reach', false, 0.45 * k); ramu.model.rotation.z = 0; ramu.model.rotation.x = 0; ramu.position.y = y0 + (y1 - y0) * k * k; });
+    // down, back first, reaching up after it; the camera falls with him from inside the well, the show going round
+    // between. His hips go down the fall's path (FB_ABOVE over where his feet would be); the last of the way is
+    // falling_backwards' own drop onto the sand.
     const fall = jumpIn(ramu, RAIL_A, true, true);
     let turn = toWell - faceGirl;
     turn = Math.atan2(Math.sin(turn), Math.cos(turn));
     let k1 = -1;
     await d.tween(fall.T, (k) => {
       fall.at(k);
-      const root = ramu.position.y - (FB_LIFT - FB_ABOVE);
-      if (root <= FB_FLOOR && k1 < 0) k1 = k;
-      ramu.position.y = Math.max(FB_FLOOR, root);
-      ramu.holdClip('fall_back', false, k1 < 0 ? 0 : FB_LAND * Math.min(1, (k - k1) / Math.max(0.01, 1 - k1)));
+      const hips = ramu.position.y + FB_ABOVE;
+      if (hips - FB_LIFT <= FB_FLOOR && k1 < 0) k1 = k;
+      if (k1 < 0) {
+        ramu.holdClip('fall_reach', false, reachAt(0.45 + k * fall.T));
+        ramu.position.y = hips - FR_LIFT;
+      } else {
+        ramu.holdClip('fall_back', false, FB_LAND * Math.min(1, (k - k1) / Math.max(0.01, 1 - k1)));
+        ramu.position.y = Math.max(FB_FLOOR, hips - FB_LIFT);
+      }
       // he twists round as he goes down, to land facing the middle (and the camera)
       const e = Math.min(1, Math.max(0, (k - 0.15) / 0.5));
       ramu.model.rotation.y = faceGirl + turn * e * e * (3 - 2 * e);
@@ -1201,3 +1208,11 @@ const CL_FROM = 0.8, CL_TOP = 2.8, CL_TO = 3.4, CL_LEDGE = 1.45, RAIL_TOP = 1.1,
 /** fall_sweep (Sweep Fall): standing till SW_SWEEP s; his feet up and his head going back over by SW_OFF s (then its own fall to the ground) */
 const SW_SWEEP = 0.8, SW_OFF = 1.15;
 const FB_LEN = 3.0, FB_LAND = 1.0, FB_LIFT = 0.92, FB_ABOVE = 0.3, FB_FLOOR = 0.1;
+/** fall_reach (made in Katpootli: tools/katpootli/clips.mjs): FR_LEN s; his hips FR_LIFT over his position */
+const FR_LEN = 2.4, FR_LIFT = 0.68;
+/** where in fall_reach, `u` s into it: through once, then to and fro over its second half (the reach and the kicks going on) */
+function reachAt(u: number): number {
+  if (u < FR_LEN) return u;
+  const w = (u - FR_LEN) % FR_LEN, h = FR_LEN / 2;
+  return w < h ? FR_LEN - w : w;
+}

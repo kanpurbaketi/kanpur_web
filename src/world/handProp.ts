@@ -22,6 +22,11 @@ export type HoldMode = 'mic' | 'hang' | 'palm' | 'stick';
 const GRIP = 0.06;
 /** in the open hand: the middle of the palm, this far from the wrist toward the knuckles; and the gap off its skin */
 const PALM_MID = 0.065, PALM_SKIN = 0.01;
+/** in the fist of a hand with only an index: from the wrist, this many times the way to its knuckle bone; and in toward
+ the palm by this share of that */
+const FIST_ALONG = 1.15, FIST_IN = 0.35;
+/** by a handle: the body this much further out from the fist than the handle's bar is from it */
+const FIST_ROOM = 0.02;
 const UP = new THREE.Vector3(0, 1, 0);
 const v = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), f = new THREE.Vector3();
 const q = new THREE.Quaternion(), q2 = new THREE.Quaternion(), e = new THREE.Euler();
@@ -125,7 +130,15 @@ export class HandProp {
     // in a closed fist (the IK's mic hold) the handle is in the curl of the fingers: in from the knuckles, on the palm's
     // side (a lota by its neck too: the neck in the fist, never through the palm)
     if ((this.mode === 'mic' || this.mode === 'stick' || this.mode === 'hang') && this.rig?.hand('Right', m1, m2)) {
-      hand.getWorldPosition(grip).addScaledVector(m1, 0.075).addScaledVector(m2, 0.03);
+      hand.getWorldPosition(grip);
+      if (this.mode === 'stick' && !boneAt(root, 'RightHandMiddle1', a) && boneAt(root, 'RightHandIndex1', a)) {
+        // a hand with only an index (the girl's) round a stick: the fist measured on it, not an adult's offsets. Its
+        // knuckle bone sits mid-palm: the curl of the fingers a little past it, in on the palm's side (the side the
+        // closed fingertip went to)
+        if (boneAt(root, 'RightHandIndex3', b) && b.clone().sub(a).dot(m2) < 0) m2.negate();
+        const len = grip.distanceTo(a);
+        grip.lerp(a, FIST_ALONG).addScaledVector(m2, len * FIST_IN);
+      } else grip.addScaledVector(m1, 0.075).addScaledVector(m2, 0.03);
     }
     // in the open hand (a stone, a fruit): lying on the palm, its surface on the palm's, the fingers closed round it as far
     // as its size lets them (never through the palm)
@@ -183,7 +196,7 @@ export class HandProp {
       const away = hand.getWorldPosition(m4).sub(root.getWorldPosition(m5)).setY(0);
       away.addScaledVector(side, -away.dot(side));
       if (away.lengthSq() > 1e-4) side.addScaledVector(away.normalize(), 0.8).normalize();
-      grip.addScaledVector(UP, -this.grip).addScaledVector(side, this.handleOut);
+      grip.addScaledVector(UP, -this.grip).addScaledVector(side, this.handleOut + FIST_ROOM);   // (a closed fist is thicker than the fingers through a real handle)
       o.position.copy(parent.worldToLocal(grip));
       o.quaternion.setFromAxisAngle(UP, Math.atan2(side.z, -side.x)).premultiply(pq);
     } else if (this.mode === 'hang') {

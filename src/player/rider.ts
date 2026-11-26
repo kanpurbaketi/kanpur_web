@@ -339,7 +339,7 @@ export class Rider {
     if (amt <= 0 || !this.knuckles(side, _v8, across)) return;
     if (side === 'Left') across.negate();
     // a hand with only an index (the other fingers skinned onto it, fading in past the knuckles) closes the more for it
-    if (!b[side + 'HandMiddle1']) amt *= 1.45;
+    if (!b[side + 'HandMiddle1']) amt *= 1.2;
     for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) {
       const k = f === 'Index' ? 1 - 0.55 * pinch : 1;
       for (let j = 1; j <= 3; j++) {

@@ -2,14 +2,15 @@ import * as THREE from 'three';
 import { Rider } from '../player/rider';
 
 /*
- A thing held in somebody's right hand (the anchor's mic, the lota, a fruit), put there every frame after their clip has
+ A thing held in somebody's right hand (the anchor's mic, the mug, a fruit), put there every frame after their clip has
  moved the hand. The hand bone points along the fingers; `GRIP` up it is the middle of the closed fist.
    'mic'   held as a stand-up comic holds one: the fist just under the chin, the elbow down by the ribs, the fingers round
            the handle and the handle nearly upright, its head (the object's +y) at the mouth. The clip's arm is moved
            there (grab_mic's pose when the rig has it, else the hold's own IK); a clip that has the hand down at the chest keeps it there (the mic at the chest), and
            one that holds the arm out (handing it over) keeps its own. `grip`: metres of the handle below the fist
-   'hang'  carried by its top, upright (a lota by its neck): the neck in the curl of the closed fingers, never through the
-           palm; `grip` is the height of the neck above its origin
+   'hang'  carried by its top, upright (a lota by its neck, a mug by its handle): what is held in the curl of the closed
+           fingers, never through the palm; `grip` is its height above the object's origin, `handleOut` how far out
+           from the axis it is (a mug's handle; the body then hangs beside the fist)
    'palm'  lying in the open hand (a stone, a fruit): its surface on the palm's, the fingers closed round it as far as its
            size lets them, turned with the hand; never through the palm
    'stick' a stick held in the fist (candy floss): the fingers closed round it, the thumb round from the other side, the
@@ -67,7 +68,9 @@ export class HandProp {
    hand shake. Then the clip's pose is put back first. */
   private arm: { bone: THREE.Object3D; pre: THREE.Quaternion; post: THREE.Quaternion }[] = [];
 
-  constructor(readonly object: THREE.Object3D, public mode: HoldMode, readonly grip = 0.07) {}
+  /** `handleOut`, for 'hang': the part held is this far out from the object's axis toward its +x (a mug's handle): that
+   goes in the fist, the body hanging beside it on the index finger's side */
+  constructor(readonly object: THREE.Object3D, public mode: HoldMode, readonly grip = 0.07, readonly handleOut = 0) {}
 
   /** in `root`'s right hand from now on (null: let go, the object stays where it was) */
   holder(root: THREE.Object3D | null): void {
@@ -170,6 +173,19 @@ export class HandProp {
       this.stickDir.lerp(through, 0.35).normalize();
       o.position.copy(parent.worldToLocal(grip.clone().addScaledVector(this.stickDir, -this.grip)));
       o.quaternion.setFromUnitVectors(UP, this.stickDir).premultiply(pq);
+    } else if (this.mode === 'hang' && this.handleOut > 0 && this.rig?.hand('Right', m1, m2)) {
+      // by a handle (a mug): the handle's bar in the curl of the fingers, the body out past the index finger's side and away from the body,
+      // upright, its +x (the handle) turned back toward the fist
+      const side = m3.crossVectors(m1, m2).setY(0);
+      if (side.lengthSq() < 1e-4) facing(root, side);
+      side.normalize();
+      // and out from the body as much (not into the leg or a long kurta's skirt)
+      const away = hand.getWorldPosition(m4).sub(root.getWorldPosition(m5)).setY(0);
+      away.addScaledVector(side, -away.dot(side));
+      if (away.lengthSq() > 1e-4) side.addScaledVector(away.normalize(), 0.8).normalize();
+      grip.addScaledVector(UP, -this.grip).addScaledVector(side, this.handleOut);
+      o.position.copy(parent.worldToLocal(grip));
+      o.quaternion.setFromAxisAngle(UP, Math.atan2(side.z, -side.x)).premultiply(pq);
     } else if (this.mode === 'hang') {
       // upright, turned as the holder is
       o.position.copy(parent.worldToLocal(grip.addScaledVector(UP, -this.grip)));

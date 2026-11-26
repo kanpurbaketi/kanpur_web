@@ -4,7 +4,7 @@ import { gltfLoader } from './gltf';
 import { Actor, makeActors, RigName } from './actors';
 import { HandProp } from './handProp';
 import { Person } from './person';
-import { lota, LOTA_NECK } from './storyProps';
+import { mug, MUG_HANDLE } from './storyProps';
 import { addFoods, FoodName, FoodSpot } from './foods';
 import { addGrass, grassWind, GrassSpot } from './grass';
 import { groundDecals } from './roadDirt';
@@ -857,14 +857,14 @@ export class Mela {
       const mic = new HandProp(micObj, 'mic', 0.07);
       this.group.add(micObj);
       mic.holder(anchor.actor.root);
-      // the first poet's lota, on the floor under the table's edge in front of him (he bends down for it: pick_up)
-      const lotaObj = lota(), [lx, lz] = toW(seats[1] - 0.08, SEAT_Z + LOTA_Z);
+      // the first poet's lota (an enamel mug), on the floor under the table's edge in front of him (he bends down for it: pick_up)
+      const lotaObj = mug(), [lx, lz] = toW(seats[1] - 0.08, SEAT_Z + LOTA_Z);
       lotaObj.position.set(lx, FLOOR, lz);
       this.group.add(lotaObj);
       this.props.push(mic);
       return {
         kumar, anchor, poets: ps, seats: seatW, seatY: SEAT_Y, facing: FACE, floor: FLOOR, ground,
-        mic: toW(MIC[0], MIC[1]), micProp: mic, micSide: toW(MIC[0] - 0.85, MIC[1] - 0.25), aside: toW(MIC[0] - 1.8, MIC[1] - 0.5), lota: new HandProp(lotaObj, 'hang', LOTA_NECK), lotaAt: [lx, lz] as [number, number],
+        mic: toW(MIC[0], MIC[1]), micProp: mic, micSide: toW(MIC[0] - 0.85, MIC[1] - 0.25), aside: toW(MIC[0] - 1.8, MIC[1] - 0.5), lota: new HandProp(lotaObj, 'hang', MUG_HANDLE.up, MUG_HANDLE.out), lotaAt: [lx, lz] as [number, number],
         door: toW(doorX, -D / 2 - 2.6), behind: toW(doorX, -D / 2 - 0.8), inside: toW(doorX, -D / 2 + 1.3),
         exit: [[seats[0], SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z + 0.55], [seats[0] - 0.9, SEAT_Z - 1.5], [st0 - 0.7, SEAT_Z - 1.5],
           [st0 - 0.5, scz], [st0 + 4.2, scz], [st0 + 7.5, scz + 1.5]].map(([x, z]) => toW(x, z)),

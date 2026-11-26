@@ -1,11 +1,12 @@
 """
 Stage props from downloaded models (assets/common_assets) into the game's form:
 
-  /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_props.py -- [--preview DIR] [--only sofas|mic|carousel]
+  /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_props.py -- [--preview DIR] [--only sofas|mic|carousel|handmic|grass|mug]
 
 public/models/sofas.glb   from sofa_set.glb (a SketchUp living-room set, in inches): the three-seater, the two-seater and
                           one armchair, each its own object ('sofa3', 'sofa2', 'chair'), facing forward, standing on the
                           ground, centred, in metres. The side tables, lamps and the glass table are left out.
+public/models/mug.glb     from soviet_enamel_mug.zip: one object 'mug', 9.5 cm tall, the handle toward +x (build_mug).
 public/models/mic.glb     from boom-mic.zip (an FBX mic on a boom stand, 2K PBR maps): one object 'mic', 1.6 m tall,
                           its base at the origin, the boom reaching forward; the textures cut to 512.
 public/models/carousel.glb from wip-cgma-merry-go-round-carousel.zip (an FBX carousel standing in a little garden
@@ -400,6 +401,58 @@ def build_handmic():
     preview([o], 'handmic')
 
 
+# ---- the enamel mug ------------------------------------------------------------------------------------------------------
+MUG_H = 0.095                                     # an enamel mug, 9.5 cm tall
+
+
+def build_mug():
+    """soviet_enamel_mug.zip (Sketchfab, Rusty-exe, CC BY 4.0; a glTF, 3.8k faces, 2K maps): one object 'mug', 9.5 cm tall,
+    standing on y = 0, the middle of its body on the origin, its handle out toward +x (the game's); maps cut to 512.
+    Prints where the handle's middle is: what the hand holds it by (storyProps.MUG_HANDLE)."""
+    reset()
+    tmp = tempfile.mkdtemp()
+    zipfile.ZipFile(os.path.join(ASSETS, 'soviet_enamel_mug.zip')).extractall(tmp)
+    bpy.ops.import_scene.gltf(filepath=os.path.join(tmp, 'scene.gltf'))
+    bake_transforms()
+    o = meshes()[0]
+    o.name = o.data.name = 'mug'
+    vs = [v.co for v in o.data.vertices]
+    # the body: a round tub, its width across y; its middle in x is where y reaches furthest out. The handle sticks out
+    # past the body's rim on one side in x
+    ymax = max(abs(v.y) for v in vs)
+    rim = [v.x for v in vs if abs(v.y) > ymax * 0.97]
+    cx = sum(rim) / len(rim)
+    zlo, zhi = min(v.z for v in vs), max(v.z for v in vs)
+    o.data.transform(Matrix.Translation(Vector((-cx, 0, -zlo))))
+    vs = [v.co for v in o.data.vertices]
+    if -min(v.x for v in vs) > max(v.x for v in vs):     # the handle toward -x: turn it round to +x
+        o.data.transform(Matrix.Rotation(math.pi, 4, 'Z'))
+    o.data.transform(Matrix.Scale(MUG_H / (zhi - zlo), 4))
+    vs = [v.co for v in o.data.vertices]
+    r = max(abs(v.y) for v in vs)
+    hand = [v for v in vs if v.x > r * 1.02]             # the handle: what is out past the body
+    hx = (min(v.x for v in hand) + max(v.x for v in hand)) / 2
+    hz = (min(v.z for v in hand) + max(v.z for v in hand)) / 2
+    for m in o.data.materials:
+        if not m or not m.use_nodes: continue
+        for n in m.node_tree.nodes:
+            if n.type == 'TEX_IMAGE' and n.image:
+                im = n.image; im.pixels[0]                  # (loaded first: an unloaded image says it is 0 x 0)
+                if im.size[0] <= 512: continue
+                im.scale(512, 512)
+                path = os.path.join(tmp, 'small_' + os.path.basename(im.filepath or im.name) + '.png')
+                im.filepath_raw = path; im.file_format = 'PNG'; im.save()
+                # (the import packs its images: the exporter would write the packed 2K original, so the small one goes in)
+                small = bpy.data.images.load(path)
+                small.colorspace_settings.name = im.colorspace_settings.name
+                n.image = small
+    s = box(o)
+    print('mug tris', tris(o), 'size', [round(v, 3) for v in s[1] - s[0]], 'body r', round(r, 4),
+          'handle (x, height)', round(hx, 4), round(hz, 4), 'out to', round(max(v.x for v in hand), 4))
+    export([o], 'mug.glb', images='JPEG')
+    preview([o], 'mug')
+
+
 # ---- grass ---------------------------------------------------------------------------------------------------------------
 GRASS_KEEP = {'tuft': 0.32, 'sprig': 0.45}       # the share of its blades each keeps
 
@@ -478,4 +531,5 @@ if want('sofas'): build_sofas()
 if want('mic'): build_mic()
 if want('carousel'): build_carousel()
 if want('handmic'): build_handmic()
+if want('mug'): build_mug()
 if want('grass'): build_grass()

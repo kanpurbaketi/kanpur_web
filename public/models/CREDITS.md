@@ -41,3 +41,9 @@ licence still to be filled in):
 | sofas.glb | sofa_set.glb | |
 | mic.glb | boom-mic.zip | |
 | carousel.glb | wip-cgma-merry-go-round-carousel.zip | |
+
+## Licensed models
+
+| Model | Source | Author | Licence |
+|---|---|---|---|
+| mug.glb | [Soviet Enamel Mug](https://sketchfab.com/3d-models/soviet-enamel-mug-15418a900807467495ea46f574effd20) (assets/common_assets/soviet_enamel_mug.zip; tools/blender/build_props.py --only mug) | [Rusty-exe](https://sketchfab.com/dustyrusty) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |

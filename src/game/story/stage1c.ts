@@ -1038,10 +1038,13 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
       void round(d, q, GIRL_A + side(i) * (0.48 + (i % 2) * 0.08), closeTo(i), 3.8, lane(i), -side(i));
     });
     girl.walkTo(...girlBack, 0.8);                   // she backs off from the rail, scared
-    // high, from outside, down onto the gallery: him in the middle, a pair coming round at him from each side
-    const wide = { pos: at3(onWell(RAIL_A, GALLERY.r1 + 6), Y + 8), look: at3(onWell(RAIL_A, rIn), Y + 0.6), fov: 50 };
+    // close in front of him from over the well, at a head's height (under the lamps' glare), wide: him in the middle,
+    // the gallery curving away either side, and a pair coming round it at him from each side (from outside and above,
+    // the upper deck was in the way, and higher up they were too small to make out)
+    const MEET_A = GIRL_A + 0.075;
+    const wide = { pos: at3(onWell(MEET_A, WELL_R - WIDE_IN), Y + 1.9), look: at3(onWell(MEET_A, rIn), Y + 1.1), fov: 62 };
     d.shot(wide, 0, d.pushIn(wide, 0.05));
-    await d.wait(1.5);
+    await d.wait(2.3);
     // he looks one way, then the other: nowhere to go
     d.shot(d.front(ramu, { dist: 1.6, side: 0.2, up: 0.05, drop: 0.12, fov: 40 }), 0);
     for (const s of [1, -1]) {
@@ -1225,6 +1228,8 @@ const FR_LEN = 2.4, FR_LIFT = 0.68;
 const TOP_UP = 4.5, TOP_MAX = 3.6, TOP_OUT = 1.0;
 /** how far in off the rail he goes as he tips over (his legs, out in front of him, clear of it) */
 const TIP_IN = 1.0;
+/** the shot of the guards coming round at him from both sides: this far in over the well from its wall */
+const WIDE_IN = 4.6;
 /** where in fall_reach, `u` s into it: through once, then to and fro over its second half (the reach and the kicks going on) */
 function reachAt(u: number): number {
   if (u < FR_LEN) return u;

@@ -405,6 +405,9 @@ function hangFrom(mela: Mela, ramu: Ramu): void {
   });
 }
 
+/** hang_jump (assets/anims/Jump To Freehang.fbx): the spring up starts HJ_UP s in, the hands are at the edge by HJ_GRIP s */
+const HJ_UP = 0.55, HJ_GRIP = 1.0;
+
 /** at E: he runs at the wheel, jumps for a cabin coming up and it lifts him off his feet; the guards jump for his feet;
  * he climbs up onto its roof, and one of them goes round to the east side, where the cabins come down */
 async function grabWheel(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise<void> {
@@ -432,12 +435,15 @@ async function grabWheel(d: Director, ramu: Ramu, c: Chase, mela: Mela): Promise
       ramu.position.set(E[0] + (under[0] - E[0]) * k, 0.08, E[1] + (under[1] - E[1]) * k);
       for (const q of c.guards) { q.position.z -= 0.06; q.driven = 4.5; }
     });
-    // the jump, the hands on the edge, up he goes
+    // the jump (Jump To Freehang: down, and a spring up for the edge), the hands on it, and he hangs there swinging
     ramu.model.rotation.y = 0;
     ramu.holdClip('hang_idle');
     hanging.cabin = cabin; hanging.slip = 0; hanging.w = 0; hanging.ground = 0.08;
-    ramu.gesture('hang_start', 1.2);
-    await d.tween(1.0, (k) => { hanging.w = Math.min(1, Math.max(0, (k - 0.35) / 0.55)); });
+    ramu.gesture('hang_jump', 1);
+    // close, from out in front of the wheel: his feet up to the cabin's edge he springs for
+    d.shot({ pos: v(under[0] + 1.6, 1.3, under[1] + 4.6), look: v(under[0], (g0.y + 0.6) / 2 + 0.3, under[1]), fov: 50 }, 0);
+    // off the ground as the clip springs (HJ_UP), his hands on the edge as they reach it (HJ_GRIP)
+    await d.tween(HJ_GRIP, (k) => { hanging.w = sm((k * HJ_GRIP - HJ_UP) / (HJ_GRIP - HJ_UP)); });
     hanging.w = 1;
     for (const q of c.guards) { q.driven = null; }
     c.guards.forEach((q, i) => { q.walkTo(under[0] + (i - 1.5) * 0.7, under[1] + 0.6 + (i % 2) * 0.5, 4.2); });
@@ -1042,14 +1048,21 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
     await d.wait(0.25);
 
     // ---- up onto the inner rail, his back to the well, facing her ----
-    const outside = { pos: at3(onWell(RAIL_A + 0.1, GALLERY.r1 + 1.4), Y + 2.0), look: at3(rail, Y + 1.85), fov: 46 };   // from out past her, the well behind him
+    // from along the gallery past her, the well behind him (inside the gallery's outer rail: from out past it, the upper deck
+    // overhead came between the camera and his head)
+    const outside = { pos: at3(onWell(RAIL_A + 0.17, GALLERY.r1 - 0.35), Y + 1.45), look: at3(rail, Y + 1.85), fov: 54 };
     d.shot(outside, 0);
     const [sx, sz] = [ramu.position.x, ramu.position.z];
     await d.tween(0.55, (k) => ramu.position.set(sx + (rail[0] - sx) * k, Y + 1.1 * Math.sin(k * Math.PI / 2), sz + (rail[1] - sz) * k));
     c.guards.forEach((q) => q.faceTowards(...rail));
-    // he sways up there
-    ramu.model.rotation.order = 'YXZ';               // (pitch and roll about his own axes)
-    await d.tween(1.1, (k) => { ramu.model.rotation.z = 0.09 * Math.sin(k * Math.PI * 3) * (1 - k * 0.4); ramu.model.rotation.x = 0.05 * Math.sin(k * Math.PI * 2); });
+    // he loses his balance up there: the arms go round (Falling From Losing Balance, its part on the ledge), his soles
+    // kept on the rail's top (the clip stands on a ledge of its own)
+    ramu.model.rotation.order = 'YXZ';               // (pitch and roll about his own axes, for the slip)
+    const onRail = ramu.position.y;
+    await d.tween(FBL_TO - FBL_FROM, (k) => {
+      ramu.holdClip('fall_balance', false, FBL_FROM + (FBL_TO - FBL_FROM) * k);
+      ramu.position.y = onRail - soleOff(ramu);
+    });
     // ---- his foot slips: slow, he goes over backward (falling_backwards: flat on his back, down the well) ----
     d.timeScale = 0.3;
     girl.gesture('offer', 'reach', 2);               // her hand out after him, too late
@@ -1057,8 +1070,8 @@ async function gallery(d: Director, ramu: Ramu, c: Chase, mela: Mela, pass: () =
     d.shot(close, 0, d.pushIn(close, 0.06));
     // he tips over into the clip's first pose (lying back in the air), and down to lie level with the rail's top
     ramu.holdClip('fall_back', false, 0);
-    const y0 = ramu.position.y;
-    await d.tween(0.45, (k) => { ramu.model.rotation.z = 0.06 * (1 - k); ramu.model.rotation.x = 0; ramu.position.y = y0 - (FB_LIFT - FB_ABOVE) * k * k; });
+    const y0 = ramu.position.y, y1 = onRail - (FB_LIFT - FB_ABOVE);
+    await d.tween(0.45, (k) => { ramu.model.rotation.z = 0; ramu.model.rotation.x = 0; ramu.position.y = y0 + (y1 - y0) * k * k; });
     // down, back first; the camera falls with him from inside the well, the show going round between. His hips go down
     // the fall's path (FB_ABOVE over where his feet would be); the last of the way is the clip's own drop onto the sand.
     const fall = jumpIn(ramu, RAIL_A, true, true);
@@ -1156,4 +1169,6 @@ let jumped = false;
  falling_backwards (assets/anims, Ramu's 'fall_back'): flat on his back in the air, his hips FB_LIFT over his position;
  FB_LAND s in he is down on the ground; FB_LEN s, settled. On the way down his hips go FB_ABOVE over the fall's path.
 */
+/** fall_balance (Falling From Losing Balance): from FBL_FROM s he wobbles, arms going round, to FBL_TO s, where its own fall (forward) begins */
+const FBL_FROM = 0.9, FBL_TO = 4.3;
 const FB_LEN = 3.0, FB_LAND = 1.0, FB_LIFT = 0.92, FB_ABOVE = 0.3, FB_FLOOR = 0.1;

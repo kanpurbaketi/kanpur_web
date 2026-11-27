@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cullFar, splitInstances } from './chunks';
 import { gltfLoader } from './gltf';
 
 /*
@@ -59,8 +60,10 @@ export function addFoods(parent: THREE.Object3D, spots: FoodSpot[], shadows = fa
       });
       im.castShadow = shadows;
       im.receiveShadow = true;
-      im.computeBoundingSphere();
-      parent.add(im);
+      // in squares, each drawn only when in view and within 70 m (fruit on a stall)
+      const sq = splitInstances(im, 15);
+      cullFar(sq, 70);
+      parent.add(sq);
     }
   }).catch((err) => console.error('foods failed to load', err));
 }

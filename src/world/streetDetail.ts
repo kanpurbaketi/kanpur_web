@@ -1,5 +1,6 @@
 import { FOOTPATHS } from './footpaths';
 import * as THREE from 'three';
+import { cullFar, splitInstances } from './chunks';
 import { walkAlong } from './city';
 import { makeGroundMaterial, SURF } from './ground';
 import { MeshBuilder, offsetLines } from './meshBuilder';
@@ -141,7 +142,10 @@ export class StreetDetail {
       im.setMatrixAt(i, mat);
     });
     im.castShadow = true;
-    this.group.add(im);
+    // in squares, each drawn only when in view and within 260 m
+    const sq = splitInstances(im, 60);
+    cullFar(sq, 260);
+    this.group.add(sq);
     this.drawCalls++;
   }
 

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cullFar, splitInstances } from './chunks';
 import { Geo, litMat, rnd } from './geo';
 import { walkAlong } from './city';
 import { offsetLines } from './meshBuilder';
@@ -213,8 +214,10 @@ export function groundDecals(spots: Partial<Record<Decal, [number, number, numbe
     });
     im.receiveShadow = true;
     im.renderOrder = 1;
-    im.computeBoundingSphere();
-    group.add(im);
+    // in squares, each drawn only when in view and within 160 m (a mark on the road is lost further off)
+    const sq = splitInstances(im, 50);
+    cullFar(sq, 160);
+    group.add(sq);
   });
   return group;
 }

@@ -5,6 +5,7 @@ cut down to a few thousand triangles and baked to a plain mesh. One file per cha
 the game puts the character's own texture, or any of its looks (tools/people/make_variants.py), on them.
 
   /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_figures.py -- [--char NAME] [--preview DIR]
+  ... -- --tris 1200 --suffix _far      the far versions (figures/<name>_far.glb)
 
 Input: public/models/<name>_rig.glb (tools/blender/build_ramu_rig.py). Output: public/models/figures/<name>.glb.
 Blender: Z up, the character faces -Y (glTF +Z). Every pose stands or sits on z = 0, centred on the hips.
@@ -22,6 +23,8 @@ if '--char' in argv:
 TRIS = 7000            # per figure: there are hundreds of them in view at the stage
 if '--tris' in argv:
     TRIS = int(argv[argv.index('--tris') + 1])
+# the far version (--suffix _far --tris 1200): the same poses, cut down further, drawn past a few tens of metres
+SUFFIX = argv[argv.index('--suffix') + 1] if '--suffix' in argv else ''
 # Ramu himself (--char ramu --tris 40000): only the poses he takes on a vehicle, at full detail, for the player's camera
 RAMU_POSES = ('ride', 'drive')
 
@@ -171,7 +174,7 @@ def build(char):
         if o not in made:
             bpy.data.objects.remove(o, do_unlink=True)
     os.makedirs(os.path.join(MODELS, 'figures'), exist_ok=True)
-    path = os.path.join(MODELS, 'figures', char + '.glb')
+    path = os.path.join(MODELS, 'figures', char + SUFFIX + '.glb')
     bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', export_yup=True, export_apply=False, export_skins=False,
                               export_animations=False, export_materials='NONE', export_draco_mesh_compression_enable=False)
     print('FIG exported', os.path.relpath(path, ROOT), round(os.path.getsize(path) / 1e3), 'kB')

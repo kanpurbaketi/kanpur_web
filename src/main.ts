@@ -1,4 +1,5 @@
 import { Actor } from './world/actors';
+import { updateCull } from './world/chunks';
 import { FOOTPATHS } from './world/footpaths';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -616,6 +617,7 @@ void main() {
     sky.position.copy(camera.position);
     Actor.eye.copy(camera.position);                 // (people near it wear their full bodies)
     Actor.zoom = Math.tan((camera.fov * Math.PI) / 360) / Math.tan((70 * Math.PI) / 360);
+    updateCull(camera.position, Actor.zoom);         // (the far trees, grass, figures and street things left out)
     updateGlow(dt, camera, innerHeight * renderer.getPixelRatio());
     if (NIGHT) lightPool.update(focus.x, focus.z);
     lampPools?.update(camera.position.x, camera.position.z);

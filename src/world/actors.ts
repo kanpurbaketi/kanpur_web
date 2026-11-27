@@ -56,6 +56,8 @@ const LOOKS: Record<RigName, string[]> = {
 };
 /** nearer than this (metres from the camera) a person wears the full body; further, the light one */
 const LOD_NEAR = 24;
+/** further than this, the far body (models/<name>_rig_far.glb, 2500 triangles: tools/blender/build_rig_far.py) */
+const LOD_FAR = 40;
 /** further than this they are not drawn at all */
 const CULL_FAR = 85;
 const _at = new THREE.Vector3();
@@ -210,21 +212,51 @@ export class Actor {
   /** how zoomed in the camera is (1 at a 70 degree field of view; a cutscene's long lens is less): distances are counted
    as they look on screen, so a guard 25 m off in a close shot across the well keeps his full body */
   static zoom = 1;
-  private full: THREE.Object3D[] = [];
-  private lite: THREE.Object3D[] = [];
-  private far = false;
+  /** the bodies it wears by distance (the full one, the light one, the far one) and where each gives way to the next */
+  private levels: THREE.Object3D[][] = [];
+  private bounds: number[] = [];
+  private level = 0;
+  /** its bones, and whether three works out their matrices this frame (not on the frames a far one is not posed) */
+  private bones: THREE.Object3D[] = [];
+  private bonesLive = true;
+  /** the body was moved this frame (by the root: walking, turning), so its bones' places changed though it was not posed */
+  private carried = true;
   private skipped = 0;
   private frame = 0;
   /** a security guard: standing is the guard's stance (guard_stand: feet apart, chest out, looking about), not the idle */
   private guard = false;
 
-  constructor(name: RigName, src: Source, material = src.material, liteSrc?: Source) {
+  constructor(name: RigName, src: Source, material = src.material, liteSrc?: Source, farSrc?: Source, near = LOD_NEAR) {
     const body = clone(src.scene);
     if (material !== src.material) body.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = material; });
     body.rotation.y = Math.PI;                   // the file faces +Z, the game's people face -Z
     this.root.add(body);
     this.face = new Face(body);
-    if (liteSrc) this.addLite(body, liteSrc, material);
+    const own: THREE.Object3D[] = [];
+    body.traverse((o) => {
+      if ((o as THREE.SkinnedMesh).isSkinnedMesh) own.push(o);
+      if ((o as THREE.Bone).isBone) this.bones.push(o);
+    });
+    this.levels.push(own);
+    if (liteSrc) { const l = this.addLite(body, liteSrc, material); if (l) { this.levels.push(l); this.bounds.push(near); } }
+    if (farSrc) { const l = this.addLite(body, farSrc, material); if (l) { this.levels.push(l); this.bounds.push(LOD_FAR); } }
+    // a far one on a frame it is not posed, standing where it stood: its body's matrices and its skeletons' bone matrices
+    // are as they were last frame, so three neither walks its bones nor works them out again
+    // (not drawn at all, far off: nothing, until it is drawn again)
+    const walk = body.updateMatrixWorld.bind(body);
+    let stale = false;
+    body.updateMatrixWorld = (force?: boolean) => {
+      if (!body.visible) { stale = true; return; }
+      if (stale) { stale = false; force = true; }
+      this.carried = !!force;
+      if (force || this.bonesLive) walk(force);
+    };
+    for (const l of this.levels) for (const m of l) {
+      const sk = (m as THREE.SkinnedMesh).skeleton;
+      if (!sk) continue;
+      const update = sk.update.bind(sk);
+      sk.update = () => { if (this.bonesLive || this.carried) update(); };
+    }
     this.step = RIGS[name].step ?? 1;
     this.guard = name === 'security' || name === 'security_thin';
     this.stride = (RIGS[name].height / CLIP_HEIGHT) * this.step;
@@ -244,23 +276,22 @@ export class Actor {
    The light body (a fifth of the triangles, no face keys) worn beside the full one, on the full one's skeleton: the same
    bones by name, so one mixer moves both. update() shows one or the other by how far off the camera is.
   */
-  private addLite(body: THREE.Object3D, liteSrc: Source, material: THREE.Material): void {
+  private addLite(body: THREE.Object3D, liteSrc: Source, material: THREE.Material): THREE.Object3D[] | null {
     const bones = new Map<string, THREE.Bone>();
     body.traverse((o) => { if ((o as THREE.Bone).isBone) bones.set(o.name, o as THREE.Bone); });
-    body.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) this.full.push(o); });
     const liteBody = clone(liteSrc.scene);
     const meshes: THREE.SkinnedMesh[] = [];
     liteBody.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) meshes.push(o as THREE.SkinnedMesh); });
-    const parent = this.full[0]?.parent ?? body;
-    for (const m of meshes) {
-      const mapped = m.skeleton.bones.map((b) => bones.get(b.name));
-      if (mapped.some((b) => !b)) return;            // not the same skeleton after all: the full body only
-      m.bind(new THREE.Skeleton(mapped as THREE.Bone[], m.skeleton.boneInverses), m.bindMatrix);
+    const parent = this.levels[0][0]?.parent ?? body;
+    const mapped = meshes.map((m) => m.skeleton.bones.map((b) => bones.get(b.name)));
+    if (!meshes.length || mapped.some((l) => l.some((b) => !b))) return null;   // not the same skeleton after all
+    meshes.forEach((m, i) => {
+      m.bind(new THREE.Skeleton(mapped[i] as THREE.Bone[], m.skeleton.boneInverses), m.bindMatrix);
       m.material = material;
       m.visible = false;
       parent.add(m);
-      this.lite.push(m);
-    }
+    });
+    return meshes;
   }
 
   private chestBone: THREE.Object3D | null | undefined;
@@ -342,22 +373,30 @@ export class Actor {
     // far across the fair they are a few pixels high: not drawn (the body only: the story hides people by their root)
     const body = this.root.children[0];
     if (body) body.visible = d < CULL_FAR;
-    if (this.lite.length) {
-      const far = d > (this.far ? LOD_NEAR - 3 : LOD_NEAR);       // (a little give, so nobody flickers on the line)
-      if (far !== this.far) {
-        this.far = far;
-        for (const m of this.full) m.visible = !far;
-        for (const m of this.lite) m.visible = far;
+    if (this.bounds.length) {
+      let level = 0;
+      while (level < this.bounds.length && d > this.bounds[level] - (this.level > level ? 3 : 0)) level++;   // (a little give, so nobody flickers on the line)
+      if (level !== this.level) {
+        this.level = level;
+        this.levels.forEach((l, i) => { for (const m of l) m.visible = i === level; });
       }
     }
     // far off, the body is moved every other or every third frame (by the time gone by): nobody can tell, and the
     // crowd's bones are much of the frame's work
-    const every = d > 70 ? 3 : d > 35 ? 2 : 1;
+    // (out of sight past CULL_FAR: a few times a second, so a clip still ends and the story waiting on it goes on)
+    const every = d >= CULL_FAR ? 8 : d > 70 ? 3 : d > 35 ? 2 : 1;
     this.skipped += dt;
-    if (++this.frame % every !== 0) return false;
+    // on the frames it is not posed its bones keep last frame's matrices: three need not work them out again (with a crowd
+    // of a few hundred, some 20,000 bones, that was a fifth of the frame)
+    const posed = ++this.frame % every === 0;
+    if (posed !== this.bonesLive) {
+      this.bonesLive = posed;
+      for (const b of this.bones) b.matrixAutoUpdate = posed;
+    }
+    if (!posed) return false;
     this.mixer.update(this.skipped);
     this.skipped = 0;
-    if (!this.far) this.face.update(dt * every);
+    if (this.level === 0) this.face.update(dt * every);
     return true;
   }
 }
@@ -385,8 +424,8 @@ export async function makeTinted(name: RigName, key: string, paint: (im: CanvasI
     });
     tinted.set(`${name}/${key}`, p);
   }
-  const [mat, far] = await Promise.all([p, loadLite(name).catch(() => undefined)]);
-  return new Actor(name, src, mat, far);
+  const [mat, lite, far] = await Promise.all([p, loadLite(name).catch(() => undefined), loadLite(name, '_far').catch(() => undefined)]);
+  return new Actor(name, src, mat, lite, far);
 }
 
 /** How many looks a kind has (the model as built counts as one). */
@@ -423,8 +462,8 @@ const liteCache = new Map<string, Promise<Source>>();
  * about a fifth, no face keys. It plays the full file's clips and wears its material: its face UVs are passed on to the
  * face shader, and its mouth never darkens.
  */
-function loadLite(name: RigName): Promise<Source> {
-  const file = RIGS[name].file.replace('.glb', '_lite.glb');
+function loadLite(name: RigName, suffix = '_lite'): Promise<Source> {
+  const file = RIGS[name].file.replace('.glb', `${suffix}.glb`);
   let p = liteCache.get(file);
   if (!p) {
     p = Promise.all([load(name), gltfLoader().loadAsync(file)]).then(([full, gltf]) => {
@@ -476,6 +515,7 @@ async function makeKind(name: RigName, n: number, lite = false, pick?: string[])
   const looks = LOOKS[name];
   // `pick`: these looks, in order (the story's own people, who must each look different)
   const mats = await Promise.all(Array.from({ length: n }, (_, i) => lookMaterial(pick ? pick[i % pick.length] : looks[nextLook[name]++ % looks.length], src.material)));
-  const far = lite ? undefined : await loadLite(name).catch(() => undefined);     // the light body for when they are far off
-  return mats.map((m) => new Actor(name, src, m, far));
+  // the light body for when they are further off (the lite ones wear it already), and the far body beyond that
+  const [liteSrc, far] = await Promise.all([lite ? undefined : loadLite(name).catch(() => undefined), loadLite(name, '_far').catch(() => undefined)]);
+  return mats.map((m) => new Actor(name, src, m, liteSrc, far));
 }

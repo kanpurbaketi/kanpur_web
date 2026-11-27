@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { gltfLoader } from './gltf';
+import { cullFar, splitInstances } from './chunks';
+import { gltfLoader, PHONE } from './gltf';
 import { lookCount, rigMaterial } from './actors';
 
 /*
@@ -31,12 +32,17 @@ export interface Spot {
   n?: number;
 }
 
-const cache = new Map<FigureKind, Promise<Map<string, THREE.BufferGeometry>>>();
+const cache = new Map<string, Promise<Map<string, THREE.BufferGeometry>>>();
 
-function poses(kind: FigureKind): Promise<Map<string, THREE.BufferGeometry>> {
-  let p = cache.get(kind);
+/** m (as it looks on screen) up to which a still figure is drawn in full; then its far version (models/figures/<name>_far.glb,
+ *  1200 triangles to the full one's 7000) out to FIG_FAR, and nothing past that */
+const FIG_NEAR = PHONE ? 18 : 32, FIG_FAR = 170;
+
+function poses(kind: FigureKind, far = false): Promise<Map<string, THREE.BufferGeometry>> {
+  const file = `models/figures/${FILES[kind]}${far ? '_far' : ''}.glb`;
+  let p = cache.get(file);
   if (!p) {
-    p = gltfLoader().loadAsync(`models/figures/${FILES[kind]}.glb`).then((gltf) => {
+    p = gltfLoader().loadAsync(file).then((gltf) => {
       const out = new Map<string, THREE.BufferGeometry>();
       gltf.scene.traverse((o) => {
         const m = o as THREE.Mesh;
@@ -44,7 +50,7 @@ function poses(kind: FigureKind): Promise<Map<string, THREE.BufferGeometry>> {
       });
       return out;
     });
-    cache.set(kind, p);
+    cache.set(file, p);
   }
   return p;
 }
@@ -103,16 +109,26 @@ export function addFigures(parent: THREE.Object3D, spots: Spot[]): void {
   });
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3();
   for (const g of groups.values()) {
-    Promise.all([poses(g.kind), rigMaterial(g.kind, g.look)]).then(([geo, mat]) => {
-      const geometry = geo.get(g.pose);
+    Promise.all([poses(g.kind), poses(g.kind, true).catch(() => null), rigMaterial(g.kind, g.look)]).then(([geo, farGeo, mat]) => {
+      const geometry = geo.get(g.pose), farGeometry = farGeo?.get(g.pose);
       if (!geometry) return;
-      const im = new THREE.InstancedMesh(geometry, mat, g.spots.length);
-      g.spots.forEach((s, i) => {
-        q.setFromAxisAngle(UP, s.ry);
-        im.setMatrixAt(i, m.compose(v.set(s.x, s.y, s.z), q, sc.setScalar(s.s ?? 1)));
-      });
-      im.frustumCulled = false;
-      parent.add(im);
+      // in squares (each drawn only when in view), the full figures near, the far ones beyond
+      const make = (gm: THREE.BufferGeometry) => {
+        const im = new THREE.InstancedMesh(gm, mat, g.spots.length);
+        g.spots.forEach((s, i) => {
+          q.setFromAxisAngle(UP, s.ry);
+          im.setMatrixAt(i, m.compose(v.set(s.x, s.y, s.z), q, sc.setScalar(s.s ?? 1)));
+        });
+        return splitInstances(im, 30);
+      };
+      const near = make(geometry);
+      cullFar(near, farGeometry ? FIG_NEAR : FIG_FAR);
+      parent.add(near);
+      if (farGeometry) {
+        const far = make(farGeometry);
+        cullFar(far, FIG_FAR, FIG_NEAR);
+        parent.add(far);
+      }
     }).catch((e) => console.error('figures failed to load', e));
   }
 }

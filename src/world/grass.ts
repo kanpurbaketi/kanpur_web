@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cullFar, splitInstances } from './chunks';
 import { gltfLoader } from './gltf';
 
 /*
@@ -48,6 +49,9 @@ function load() {
   }));
 }
 
+/** m past which grass is not drawn */
+const GRASS_FAR = 70;
+
 /** Put grass at `spots` under `parent` (in its frame); it appears once the model is in. */
 export function addGrass(parent: THREE.Object3D, spots: GrassSpot[]): void {
   load().then((items) => {
@@ -60,8 +64,10 @@ export function addGrass(parent: THREE.Object3D, spots: GrassSpot[]): void {
         const im = new THREE.InstancedMesh(p.geo, p.mat, list.length);
         list.forEach((s, i) => im.setMatrixAt(i, m.compose(v.set(s.x, s.y, s.z), q.setFromAxisAngle(up, s.ry), sc.setScalar(s.s))));
         im.receiveShadow = true;
-        im.computeBoundingSphere();
-        parent.add(im);
+        // in squares, each drawn only when in view and near (a tuft is lost on the ground past GRASS_FAR)
+        const g = splitInstances(im, 20);
+        cullFar(g, GRASS_FAR);
+        parent.add(g);
       }
     }
   }).catch((err) => console.error('grass failed to load', err));

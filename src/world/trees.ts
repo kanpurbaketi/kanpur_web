@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cullFar, splitInstances } from './chunks';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { leafTexture } from './textures';
 
@@ -58,14 +59,18 @@ export function makeTrees(spots: TreeSpot[]): THREE.Object3D[] {
     for (const im of [trunk, crown]) {
       im.castShadow = true;
       im.receiveShadow = true;
-      im.computeBoundingSphere();
-      out.push(im);
+      // in squares, each drawn only when in view, none past TREE_FAR (lost in the haze by then)
+      const g = splitInstances(im, 50);
+      cullFar(g, TREE_FAR);
+      out.push(g);
     }
   });
   return out;
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+/** m past which a tree is not drawn */
+const TREE_FAR = 650;
 /** Touch devices get about half the leaf cards (crowns stay full, just slightly more see-through). */
 const CARD_SCALE = typeof matchMedia !== 'undefined' && !matchMedia('(pointer: fine)').matches ? 0.55 : 1;
 

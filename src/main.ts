@@ -41,6 +41,7 @@ import { type Part3From, stage1Part3 } from './game/story/stage1c';
 import { CartKeepers } from './world/cartKeepers';
 import { GateQueue } from './world/gateQueue';
 import { CityAmbience } from './game/ambience';
+import { playSfx, preloadSfx } from './game/story/sfx';
 import { onLang, t, tk } from './i18n';
 
 /*
@@ -261,7 +262,11 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   const health = new Health(() => { ramu.position.set(spawnAt[0], 0, spawnAt[1]); ramu.releaseKeys(); stats.count('knockouts'); });
   if (params.has('debug')) (window as unknown as { __health: Health }).__health = health;
   // goons (dark-clothed men in the crowd) run at Ramu and punch / kick; his own punch staggers them
-  const mugged = (d: number) => { const was = health.value; health.hurt(d); if (health.value < was) ramu.flinch(); };
+  const mugged = (d: number) => { const was = health.value; health.hurt(d); if (health.value < was) { ramu.flinch(); void playSfx('punch', 0.9); } };
+  // the sound effects load once sound may play (the first key or click)
+  const sfxGo = () => { preloadSfx(); removeEventListener('keydown', sfxGo); removeEventListener('pointerdown', sfxGo); };
+  addEventListener('keydown', sfxGo);
+  addEventListener('pointerdown', sfxGo);
   const away = (x: number, z: number, y = 0): [number, number] => world.resolve(x, z, 0.3, y);
   peds.onHurt = mugged;
   peds.resolve = away;
@@ -462,6 +467,7 @@ void main() {
       punchLand = -1;
       const t = ramu.isPunching ? punchTarget() : null;
       const r = t ? t.crowd.hit(ramu.position.x, ramu.position.z, t.fx, t.fz) : null;
+      if (r) void playSfx('punch', r === 'block' ? 0.35 : r === 'out' ? 1.2 : 1);   // a blocked one only glances
       if (r === 'hit' || r === 'out') stats.count('punches');
       if (r === 'out') stats.count('beaten');
     }

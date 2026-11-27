@@ -1,3 +1,5 @@
+import { FOOTPATHS } from './footpaths';
+import { addFigures, figurePosts, ONLOOKER, Spot } from './figures';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { walkAlong } from './city';
@@ -15,7 +17,10 @@ import { centroid, DRIVABLE, MapData, P2, hash2, pointInPoly } from './types';
  Everything is procedural, merged into a few meshes; bulbs and signboards glow at night.
 */
 
-type Kind = 'chai' | 'paan' | 'chaat' | 'juice' | 'fruit' | 'momos' | 'kulfi';
+export type Kind = 'chai' | 'paan' | 'chaat' | 'juice' | 'fruit' | 'momos' | 'kulfi';
+/** a stall put at a given spot (stage 1's carts outside the mela): its kind, where (y: the ground), which way it faces */
+/** `live`: its keeper is a rigged person placed by the story (src/world/cartKeepers.ts), and nobody stands buying at it */
+export interface VendorSpot { kind: Kind; x: number; y: number; z: number; rot: number; live?: boolean }
 const KINDS: { kind: Kind; weight: number; r: number; label: string; sub: string; bg: string; fg: string }[] = [
   { kind: 'chai', weight: 28, r: 1.7, label: 'चाय', sub: 'TEA STALL', bg: '#1f6f43', fg: '#ffe9a8' },
   { kind: 'paan', weight: 22, r: 1.1, label: 'पान भंडार', sub: 'PAN • CIGARETTE', bg: '#b3261e', fg: '#fff1c9' },
@@ -25,6 +30,8 @@ const KINDS: { kind: Kind; weight: number; r: number; label: string; sub: string
   { kind: 'momos', weight: 8, r: 1.1, label: 'मोमोज़', sub: 'MOMOS • CHOWMEIN', bg: '#c62828', fg: '#ffe45c' },
   { kind: 'kulfi', weight: 8, r: 1.0, label: 'कुल्फी', sub: 'KULFI • ICE CREAM', bg: '#1c4f9c', fg: '#ffffff' },
 ];
+/** how far a cart of this kind reaches from its middle (its collision circle) */
+export const cartRadius = (kind: Kind): number => KINDS.find((k) => k.kind === kind)?.r ?? 1.2;
 const TOTAL_WEIGHT = KINDS.reduce((a, k) => a + k.weight, 0);
 
 const FOOD = new Set(['restaurant', 'cafe', 'fast_food', 'food_court', 'ice_cream', 'bakery', 'confectionery', 'sweets', 'bar', 'pub', 'biergarten']);
@@ -268,8 +275,17 @@ export class Vendors {
   /** where signboards hang: [x, z, facing angle] (for test scripts / debugging) */
   readonly signSpots: [number, number, number][] = [];
 
-  constructor(map: MapData, occupied: (x: number, z: number) => boolean, avoid: [number, number, number][], lights: LightPool | null, desktop = true) {
+  constructor(map: MapData, occupied: (x: number, z: number) => boolean, avoid: [number, number, number][], lights: LightPool | null, desktop = true,
+              extra: VendorSpot[] = []) {
     const geos: THREE.BufferGeometry[] = [];
+    const people: Spot[] = [];
+    // where a cart goes beside a road: wholly on the raised footpath (a small cart, at its back edge) or wholly past it
+    const DEPTH: Partial<Record<Kind, number>> = { chai: 1.95, paan: 0.9 };
+    const roadside = (w: number, walk: boolean, kind: Kind, rr: number): [number, number] => {
+      if (!walk) return [w / 2 + 1.0 + rr * 0.6, 0.02];
+      const d = DEPTH[kind] ?? 0.5;
+      return d <= 0.5 ? [w / 2 + 2.2 - d - 0.02, 0.16] : [w / 2 + 2.2 + d + 0.1, 0.02];
+    };
     const bulbs = new Bulbs();
     const atlas = new SignAtlas();
     const placed: P2[] = [];
@@ -292,7 +308,7 @@ export class Vendors {
     };
     const info = (kind: Kind) => KINDS.find((k) => k.kind === kind)!;
 
-    const place = (kind: Kind, x: number, y: number, z: number, rot: number, seed: number): void => {
+    const place = (kind: Kind, x: number, y: number, z: number, rot: number, seed: number, live = false): void => {
       const I = info(kind);
       const g = new Geo();
       const M = new THREE.Matrix4().makeRotationY(rot).setPosition(x, y, z);
@@ -314,6 +330,17 @@ export class Vendors {
       placed.push([x, z]);
       this.posts.push([x, z, I.r]);
       this.stats.vendors++;
+      // the one who sells, behind it (a paan wala sits inside his gumti, out of sight), and now and then somebody buying
+      const n = Math.floor(hash2(x * 1.7, z * 2.3) * 9973);
+      if (kind !== 'paan' && !live) {
+        const [kx, kz] = W((hash2(x, z + 3) - 0.5) * 0.6, kind === 'chai' ? -0.45 : -0.85);
+        people.push({ x: kx, y: Math.max(y, FOOTPATHS.at(kx, kz)), z: kz, ry: rot + Math.PI + (hash2(x + 5, z) - 0.5) * 0.4, pose: hash2(x, z + 9) < 0.6 ? 'stand' : 'talk', n });
+      }
+      const buyers = live ? 0 : hash2(x + 2, z - 7) < 0.55 ? (hash2(x - 4, z) < 0.35 ? 2 : 1) : 0;
+      for (let b = 0; b < buyers; b++) {
+        const [bx, bz] = W((b ? 0.55 : -0.35) + (hash2(x + b, z) - 0.5) * 0.4, kind === 'chai' ? 2.2 : kind === 'paan' ? 1.15 : 1.05);
+        people.push({ x: bx, y: FOOTPATHS.at(bx, bz) || Math.max(0.02, y - 0.14), z: bz, ry: rot + (hash2(x, z + b) - 0.5) * 0.7, pose: ONLOOKER[Math.floor(hash2(x + b, z + 1) * ONLOOKER.length)], n: n + b + 1 });
+      }
       if (NIGHT && lights && (this.stats.vendors % 3 === 0)) lights.add(x, 2.6, z, '#ffc27a', 32, 9);
     };
 
@@ -322,6 +349,9 @@ export class Vendors {
       for (const k of KINDS) { a -= k.weight; if (a <= 0) return k.kind; }
       return 'chai';
     };
+
+    // 0. the ones asked for, where they are asked for
+    for (const v of extra) place(v.kind, v.x, v.y, v.z, v.rot, hash2(v.x, v.z), v.live);
 
     // 1. along the roads: a vendor here and there, more on busy roads
     const cap = desktop ? 220 : 110;
@@ -338,10 +368,10 @@ export class Vendors {
         const nx = dz * sd, nz = -dx * sd;
         const kind = pickKind(hash2(px, pz + 11));
         const rr = info(kind).r;
-        const off = r.w / 2 + (walk ? 1.45 : 1.0) + rr * 0.6;
+        const [off, y] = roadside(r.w, walk, kind, rr);
         const x = px + nx * off, z = pz + nz * off;
         if (!isFree(x, z, rr)) return;
-        place(kind, x, walk ? 0.16 : 0.02, z, Math.atan2(-nx, -nz), hash2(x, z));
+        place(kind, x, y, z, Math.atan2(-nx, -nz), hash2(x, z));
       }, 12 + hash2(r.id, 9) * 20);
     }
 
@@ -355,9 +385,9 @@ export class Vendors {
       for (let k = 0; k < 2; k++) {
         const kind: Kind = k === 0 ? 'chai' : (hash2(poi.p[0], poi.p[1]) < 0.5 ? 'paan' : 'chaat');
         const rr = info(kind).r;
-        const off = near.w / 2 + (near.walk ? 1.45 : 1.0) + rr * 0.6;
+        const [off, y] = roadside(near.w, near.walk, kind, rr);
         const x = near.x + near.nx * off + near.dx * (k ? 4.5 : -1.5), z = near.z + near.nz * off + near.dz * (k ? 4.5 : -1.5);
-        if (isFree(x, z, rr)) place(kind, x, near.walk ? 0.16 : 0.02, z, Math.atan2(-near.nx, -near.nz), hash2(x, z));
+        if (isFree(x, z, rr)) place(kind, x, y, z, Math.atan2(-near.nx, -near.nz), hash2(x, z));
       }
     }
 
@@ -429,6 +459,8 @@ export class Vendors {
       mesh.receiveShadow = true;
       this.group.add(mesh);
     }
+    addFigures(this.group, people);
+    for (const [x, z, r] of figurePosts(people)) this.posts.push([x, z, r]);
     if (!seating.empty) this.group.add(new THREE.Mesh(seating.build(), litMat({ metalness: 0.05, roughness: 0.8 })));
     const signMesh = atlas.mesh();
     if (signMesh) this.group.add(signMesh);

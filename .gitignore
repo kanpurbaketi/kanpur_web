@@ -10,3 +10,8 @@ shots/
 
 # reference photos for modelling (third-party images, not for publishing)
 assets/
+tools/triposr/TripoSR/
+tools/triposr/out/
+tools/triposr/weights/
+tools/triposr/refs/cand/
+.pgdata/

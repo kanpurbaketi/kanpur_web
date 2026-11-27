@@ -61,7 +61,6 @@ export function makeTrees(spots: TreeSpot[]): THREE.Object3D[] {
       im.computeBoundingSphere();
       out.push(im);
     }
-    crown.userData.noAO = true; // leaf cards would occlude as solid quads in the AO normal pass
   });
   return out;
 }

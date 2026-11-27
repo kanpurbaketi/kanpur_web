@@ -1,8 +1,12 @@
+import { FOOTPATHS } from './footpaths';
 import * as THREE from 'three';
 import { walkAlong } from './city';
 import { makeGroundMaterial, SURF } from './ground';
 import { MeshBuilder, offsetLines } from './meshBuilder';
 import { makeTrees } from './trees';
+import { inMela } from './melaSite';
+import { treeClear } from './stage1Site';
+import { lampColor } from './lampPools';
 import { DRIVABLE, hash2, MapData, P2, pointInPoly } from './types';
 import { halos, NIGHT } from './night';
 
@@ -52,8 +56,8 @@ export class StreetDetail {
       if (hasWalk) {
         const [L, R] = offsetLines(r.pts, hw + 1.1);
         kerb.surf = SURF.paving;
-        if (r.sidewalk !== 'right') kerb.slab(L, 2.2, 0, 0.16, C('#a39d92'));
-        if (r.sidewalk !== 'left') kerb.slab(R, 2.2, 0, 0.16, C('#a39d92'));
+        if (r.sidewalk !== 'right') (kerb.slab(L, 2.2, 0, 0.16, C('#a39d92')), FOOTPATHS.add(L, 2.2, 0.16));
+        if (r.sidewalk !== 'left') (kerb.slab(R, 2.2, 0, 0.16, C('#a39d92')), FOOTPATHS.add(R, 2.2, 0.16));
         kerb.surf = SURF.concrete;
       }
       // Dual carriageway: median on the right edge (India drives on the left). offsetLines()[0] is the right
@@ -104,7 +108,10 @@ export class StreetDetail {
     this.addPoles(poles);
     this.addLamps(lamps);
     for (const [x, z] of lamps) this.lamps.push([x, z]);
-    this.addTrees(trees);
+    // none inside the mela, none hiding the statue; and only the trees drawn are solid (a left-out one was an invisible
+    // trunk Ramu stuck on, at the statue's corner)
+    const kept = map.area === 'moti_jheel' ? trees.filter(([x, z]) => !inMela(x, z, 3) && treeClear(x, z)) : trees;
+    this.addTrees(kept);
     const wg = new THREE.BufferGeometry();
     wg.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));
     const wl = new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: '#1b1b1b' }));
@@ -112,7 +119,7 @@ export class StreetDetail {
     this.drawCalls++;
     for (const [x, z] of poles) this.obstacles.push([x, z, 0.2]);
     for (const [x, z] of lamps) this.obstacles.push([x, z, 0.15]);
-    for (const [x, z] of trees) this.obstacles.push([x, z, 0.3]);
+    for (const [x, z] of kept) this.obstacles.push([x, z, 0.3]);
     console.log('street detail', { poles: poles.length, lamps: lamps.length, trees: trees.length, real });
   }
 
@@ -161,8 +168,8 @@ export class StreetDetail {
     this.instanced(hb.build(), new THREE.MeshBasicMaterial({ color: NIGHT ? '#fff1c8' : '#e9e4c8', toneMapped: !NIGHT }), list);
     if (NIGHT && list.length) {
       const hp = halos(list.flatMap(([x, z]) => [-1.7, 1.7].map((dx) => ({
-        x: x + dx, y: 8.55, z, color: new THREE.Color('#ffc880'), size: 3.2,
-      }))), 0.9);
+        x: x + dx, y: 8.5, z, color: new THREE.Color(lampColor(x, z)), size: 2.4,
+      }))), 1.1);
       this.group.add(hp);
     }
   }

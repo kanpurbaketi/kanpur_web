@@ -1,10 +1,11 @@
+import { t } from '../i18n';
 /*
  Key bindings. Every action has two slots (a main key and an alternative); a slot holds a KeyboardEvent.code
  ('KeyW', 'Space', 'ShiftLeft', ...) or a mouse button ('Mouse0' = left click) or '' for none.
  Saved in localStorage, so they apply to this browser only; the menu's Controls panel edits them live.
 */
 
-export type Action = 'forward' | 'back' | 'left' | 'right' | 'run' | 'jump' | 'crouch' | 'punch' | 'map';
+export type Action = 'forward' | 'back' | 'left' | 'right' | 'run' | 'jump' | 'crouch' | 'punch' | 'use' | 'lights' | 'horn' | 'map';
 
 export const ACTIONS: { id: Action; label: string }[] = [
   { id: 'forward', label: 'Move forward' },
@@ -15,6 +16,9 @@ export const ACTIONS: { id: Action; label: string }[] = [
   { id: 'jump', label: 'Jump' },
   { id: 'crouch', label: 'Crouch (hold)' },
   { id: 'punch', label: 'Punch' },
+  { id: 'use', label: 'Get on / off a vehicle' },
+  { id: 'lights', label: 'Headlights on / off' },
+  { id: 'horn', label: 'Horn (hold)' },
   { id: 'map', label: 'Open map' },
 ];
 
@@ -27,6 +31,9 @@ export const DEFAULTS: Record<Action, [string, string]> = {
   jump: ['Space', ''],
   crouch: ['KeyC', 'ControlLeft'],
   punch: ['KeyF', 'Mouse0'],
+  use: ['KeyE', ''],
+  lights: ['KeyL', ''],
+  horn: ['KeyH', ''],
   map: ['KeyM', ''],
 };
 
@@ -100,7 +107,7 @@ export class Controls {
     const k = (a: Action) => label(this.b[a][0] || this.b[a][1]);
     const dirs = [k('forward'), k('left'), k('back'), k('right')];
     const move = dirs.every((d) => d.length === 1) ? dirs.join('') : dirs.join('/');
-    return `Click to look · ${move} move · ${k('run')} run · ${k('jump')} jump · ${k('crouch')} crouch · ${k('punch')} punch · Esc release mouse`;
+    return t('ctl.hint', { move, run: k('run'), jump: k('jump'), crouch: k('crouch'), punch: k('punch'), use: k('use') });
   }
 
   private save(): void {
@@ -119,9 +126,9 @@ export function label(code: string): string {
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
   if (code.startsWith('Numpad')) return 'Num ' + code.slice(6);
-  if (code.startsWith('Mouse')) return ['Left click', 'Middle click', 'Right click'][Number(code.slice(5))] ?? `Mouse ${code.slice(5)}`;
+  if (code.startsWith('Mouse')) return (['key.mouse0', 'key.mouse1', 'key.mouse2'] as const).map((k) => t(k))[Number(code.slice(5))] ?? `Mouse ${code.slice(5)}`;
   const names: Record<string, string> = {
-    Space: 'Space', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
+    Space: t('key.space'), ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
     ShiftLeft: 'Left Shift', ShiftRight: 'Right Shift', ControlLeft: 'Left Ctrl', ControlRight: 'Right Ctrl',
     AltLeft: 'Left Alt', AltRight: 'Right Alt', Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace',
     Comma: ',', Period: '.', Slash: '/', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']',

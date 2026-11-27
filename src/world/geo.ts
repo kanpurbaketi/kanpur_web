@@ -68,7 +68,7 @@ export class Bulbs {
     const out = new THREE.Group();
     if (!this.list.length) return out;
     const parts = this.list.map((b) => {
-      const g = new THREE.OctahedronGeometry(0.055 * b.size, 0).toNonIndexed();
+      const g = new THREE.IcosahedronGeometry(0.05 * b.size, 0).toNonIndexed();
       g.deleteAttribute('normal');
       g.deleteAttribute('uv');
       g.translate(b.x, b.y, b.z);
@@ -80,7 +80,7 @@ export class Bulbs {
     const mesh = new THREE.Mesh(mergeGeometries(parts)!, glowMaterial());
     mesh.frustumCulled = false;
     out.add(mesh);
-    out.add(halos(this.list.map((b) => ({ x: b.x, y: b.y, z: b.z, color: b.c, size: 0.32 * b.size, phase: b.phase })), haloStrength));
+    out.add(halos(this.list.map((b) => ({ x: b.x, y: b.y, z: b.z, color: b.c, size: 0.75 * b.size, phase: b.phase })), haloStrength * 1.5));   // (a soft glow round each bulb: the sprite fades out well inside its size)
     return out;
   }
 }
@@ -103,7 +103,7 @@ vColor *= phase < 0.0 ? 1.0 : 0.3 + 0.7 * step(0.5, fract(time * 1.3 - phase));`
 
 /** Canvas banner: lines of text on a coloured ground with a border. */
 export function banner(w: number, h: number, bg: string, border: string,
-                lines: { text: string; size: number; color: string; y: number }[]): THREE.CanvasTexture {
+                lines: { text: string; size: number; color: string; y: number; x?: number }[]): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
@@ -119,7 +119,7 @@ export function banner(w: number, h: number, bg: string, border: string,
   for (const l of lines) {
     g.font = `bold ${l.size}px ${face}`;
     g.fillStyle = l.color;
-    g.fillText(l.text, w / 2, l.y, w * 0.92);
+    g.fillText(l.text, l.x ?? w / 2, l.y, l.x === undefined ? w * 0.92 : w * 0.45);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;

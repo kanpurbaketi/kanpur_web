@@ -1,12 +1,20 @@
-import { Stats } from '../game/stats';
+import { STAGES, TEST_STARTS } from '../game/stages';
+import { injured, Score, Stats } from '../game/stats';
+import { setStartChoice, startChoice, STARTS } from '../game/start';
 import type { Part } from '../game/parts';
 import { ACTIONS, Action, Controls, DEFAULTS, label } from '../game/controls';
 import { MapData, P2, centroid } from '../world/types';
 import { Hud, PX_PER_M } from './hud';
+import { account, type Run } from '../game/account';
+import { fmtNum, onLang, t, tk } from '../i18n';
+import { goFree, settingsView, stagesView } from './shell';
 
-const PROFILE_KEY = 'kanpur.profile.v1';
-type Item = 'profile' | 'map' | 'places' | 'stats' | 'controls';
-const TITLES: Record<Item, string> = { profile: 'Profile', map: 'Map', places: 'Places', stats: 'Statistics', controls: 'Controls' };
+type Item = 'stages' | 'settings' | 'profile' | 'map' | 'places' | 'stats' | 'controls' | 'testing';
+// Testing (start a stage at any mission) only on the development server
+const ITEMS: Item[] = ['stages', 'settings', 'profile', 'map', 'places', 'stats', 'controls', ...(import.meta.env.DEV ? ['testing' as const] : [])];
+const TITLE: Record<Item, Parameters<typeof t>[0]> = {
+  stages: 'menu.stages', settings: 'menu.settings', profile: 'menu.profile', map: 'menu.map', places: 'menu.places', stats: 'menu.stats', controls: 'menu.controls', testing: 'menu.testing',
+};
 
 export interface MenuDeps {
   map: MapData;
@@ -18,13 +26,17 @@ export interface MenuDeps {
   parts: Part[];
   /** every part of Kanpur, open or not (the city map greys out the unopened ones) */
   allParts: Part[];
+  /** the stage being played (none in development with ?debug) */
+  stage?: number;
   player: () => { x: number; z: number; yaw: number };
+  /** this play of the stage (null roaming free): seconds played, and when it was finished (0: not yet) */
+  play: () => { played: number; done: boolean; finishS: number } | null;
   /** called when a panel opens / closes, so the game can pause */
   onPause: (paused: boolean) => void;
 }
 
 /**
- * Top-left menu button -> dropdown (Profile, Map, Statistics) -> one panel at a time.
+ * Top-left menu button -> dropdown (Stages, Settings, Profile, Map, ...) -> one panel at a time.
  * The game is paused while a panel is open. Esc closes; M toggles the map.
  */
 export class Menu {
@@ -40,21 +52,31 @@ export class Menu {
 
   constructor(private d: MenuDeps) {
     this.btn.innerHTML = '<span></span><span></span><span></span>';
-    this.btn.setAttribute('aria-label', 'Menu');
+    this.btn.setAttribute('aria-label', t('menu.menu'));
     this.btn.setAttribute('aria-expanded', 'false');
     this.btn.addEventListener('click', () => this.toggleDrop());
 
-    for (const it of Object.keys(TITLES) as Item[]) {
-      const b = el('button', 'menu-item');
-      b.innerHTML = `${ICONS[it]}<span>${TITLES[it]}</span>`;
-      b.addEventListener('click', () => this.show(it));
-      this.drop.append(b);
-    }
+    const items = () => {
+      this.drop.replaceChildren();
+      for (const it of ITEMS) {
+        const b = el('button', 'menu-item');
+        b.innerHTML = `${ICONS[it]}<span></span>`;
+        (b.lastElementChild as HTMLElement).textContent = t(TITLE[it]);
+        b.addEventListener('click', () => this.show(it));
+        this.drop.append(b);
+      }
+    };
+    items();
+    onLang(() => {                                    // the new language straight away, in the open panel too
+      items();
+      this.btn.setAttribute('aria-label', t('menu.menu'));
+      if (this.open) { const it = this.open; this.open = null; this.show(it, true); }
+    });
 
     const head = el('div', 'menu-head');
     const close = el('button', 'menu-close');
     close.textContent = '×';
-    close.setAttribute('aria-label', 'Close');
+    close.setAttribute('aria-label', t('nav.close'));
     close.addEventListener('click', () => this.close());
     head.append(this.title, close);
     this.panel.append(head, this.body);
@@ -89,19 +111,32 @@ export class Menu {
     if (on) document.exitPointerLock?.();
   }
 
-  private show(it: Item): void {
+  /** the Stages panel (from ⓘ while roaming free) */
+  openStages(): void { this.show('stages'); }
+
+  /** the street map, framed on Ramu and where his mission leads (a click on the minimap) */
+  openMap(): void {
+    this.cityView = false;
+    if (this.open === 'map') return;
+    this.show('map');
+  }
+
+  private show(it: Item, again = false): void {
     this.toggleDrop(false);
-    const wasOpen = this.open !== null;
+    const wasOpen = this.open !== null || again;
     this.open = it;
-    this.title.textContent = TITLES[it];
+    this.title.textContent = t(TITLE[it]);
     this.body.replaceChildren();
     this.panel.dataset.item = it;
     this.overlay.classList.add('on');
     if (!wasOpen) this.d.onPause(true);
-    if (it === 'profile') this.renderProfile();
-    else if (it === 'map') this.renderMap();
+    if (it === 'stages') this.renderStages();
+    else if (it === 'settings') this.body.append(settingsView({ onLogout: () => goFree() }));
+    else if (it === 'profile') this.renderProfile();
+    else if (it === 'map') { if (this.d.hud.guide) this.cityView = false; this.renderMap(); }
     else if (it === 'controls') this.renderControls();
     else if (it === 'places') this.renderPlaces();
+    else if (it === 'testing') this.renderTesting();
     else this.renderStats();
   }
 
@@ -113,31 +148,57 @@ export class Menu {
     this.d.onPause(false);
   }
 
+  // ---------- Stages ----------
+  private renderStages(): void {
+    const note = text('p', '', 'muted');
+    note.setAttribute('role', 'status');
+    this.body.append(text('p', t('stage.pick'), 'muted'), stagesView({ current: this.d.stage, onMsg: (m) => (note.textContent = m) }), note);
+  }
+
+  // ---------- Testing (development only) ----------
+  private renderTesting(): void {
+    this.body.append(text('p', t('test.pick'), 'muted'));
+    const now = new URLSearchParams(location.search);
+    const here = now.has('debug') ? `${now.get('stage')}:${now.get('from') ?? ''}` : '';
+    for (const st of STAGES) {
+      if (!st.built) continue;
+      this.body.append(text('h3', t('test.stage', { n: st.n, title: tk(`stage.${st.n}.title`) }), 'test-head'));
+      const list = el('div', 'place-list');
+      for (const s of TEST_STARTS[st.n] ?? []) {
+        const b = el('button', 'place-row');
+        b.innerHTML = `<span class="place-name"></span><span class="place-meta"></span>`;
+        (b.querySelector('.place-name') as HTMLElement).textContent = `${s.n}. ${tk(s.key)}${s.sub ? ` (${tk(s.sub)})` : ''}`;
+        (b.querySelector('.place-meta') as HTMLElement).textContent = here === `${st.n}:${s.from}` ? t('places.here') : t('places.go');
+        b.addEventListener('click', () => {
+          const u = new URL(location.href);
+          for (const k of ['part', 'leg', 'beat', 'spawn', 'cam', 'at', 'area', 'msg', 'n']) u.searchParams.delete(k);
+          u.searchParams.set('debug', '');
+          u.searchParams.set('stage', String(st.n));
+          u.searchParams.set('from', String(s.from));
+          location.href = u.toString();
+        });
+        list.append(b);
+      }
+      if (!list.children.length) list.append(text('p', t('test.none'), 'muted'));
+      this.body.append(list);
+    }
+  }
+
   // ---------- Profile ----------
   private renderProfile(): void {
-    const prof = loadProfile();
     const s = this.d.stats.data;
+    const me = account.me;
     const avatar = el('div', 'avatar');
-    const name = el('input', 'name-input') as HTMLInputElement;
-    name.value = prof.name;
-    name.maxLength = 24;
-    name.placeholder = 'Your name';
-    name.setAttribute('aria-label', 'Player name');
-    const setAvatar = () => (avatar.textContent = (name.value.trim()[0] ?? '?').toUpperCase());
-    setAvatar();
-    name.addEventListener('input', () => {
-      setAvatar();
-      saveProfile({ ...prof, name: name.value.trim() || 'Player' });
-    });
+    avatar.textContent = (me?.username[0] ?? '?').toUpperCase();
     const top = el('div', 'profile-top');
-    const label = el('label', 'field');
-    label.append(text('span', 'Name'), name);
-    top.append(avatar, label);
+    const who = el('div');
+    who.append(text('div', me?.username ?? t('user.guest'), 'profile-name'), text('div', me?.email ?? t('profile.guest'), 'muted'));
+    top.append(avatar, who);
     this.body.append(top, rows([
-      ['Character', 'Ramu'],
-      ['Area', this.d.map.title || 'Moti Jheel, Kanpur'],
-      ['Playing since', new Date(s.firstPlayed).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })],
-      ['Sessions', String(s.sessions)],
+      [t('profile.character'), t('profile.ramu')],
+      [t('profile.area'), this.d.area === 'moti_jheel' ? tk('place.moti_jheel') : this.d.map.title || 'Kanpur'],
+      [t('profile.since'), new Date(s.firstPlayed).toLocaleDateString(lang(), { day: 'numeric', month: 'short', year: 'numeric' })],
+      [t('profile.sessions'), fmtNum(s.sessions)],
     ]));
   }
 
@@ -163,6 +224,14 @@ export class Menu {
       canvas.width = canvas.clientWidth * dpr;
       canvas.height = canvas.clientHeight * dpr;
       this.mapView = { cx: me.x, cz: me.z, scale: fit() * 2.5 };
+      const g = this.d.hud.guide;
+      if (g) {
+        // Ramu, the places on the way and the goal all in view
+        const xs = [me.x, g.x, ...g.path.map((p) => p[0])], zs = [me.z, g.z, ...g.path.map((p) => p[1])];
+        const ax = Math.min(...xs), bx = Math.max(...xs), az = Math.min(...zs), bz = Math.max(...zs), m = 60 + (g.radius ?? 0);
+        const k = Math.min(canvas.clientWidth / (bx - ax + 2 * m), (canvas.clientHeight - 70) / (bz - az + 2 * m));
+        this.mapView = { cx: (ax + bx) / 2, cz: (az + bz) / 2 - 30 / Math.max(fit(), Math.min(6, k)), scale: Math.max(fit(), Math.min(6, k)) };
+      }
       draw();
     });
     const zoom = (k: number) => {
@@ -170,19 +239,19 @@ export class Menu {
       this.mapView.scale = Math.max(fit(), Math.min(6, this.mapView.scale * k));
       draw();
     };
-    mk('▦', 'Switch between the whole city and the local map', () => {
+    mk('▦', t('map.toggle'), () => {
       this.cityView = !this.cityView;
       draw();
     });
-    mk('+', 'Zoom in', () => zoom(1.5));
-    mk('−', 'Zoom out', () => zoom(1 / 1.5));
-    mk('◎', 'Centre on me', () => {
+    mk('+', t('map.in'), () => zoom(1.5));
+    mk('−', t('map.out'), () => zoom(1 / 1.5));
+    mk('◎', t('map.me'), () => {
       const p = this.d.player();
       this.mapView.cx = p.x;
       this.mapView.cz = p.z;
       draw();
     });
-    mk('⤢', 'Whole area', () => {
+    mk('⤢', t('map.all'), () => {
       this.mapView = { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, scale: fit() };
       draw();
     });
@@ -303,10 +372,10 @@ export class Menu {
     g.stroke();
     g.fillStyle = '#222';
     g.font = 'bold 13px system-ui';
-    g.fillText('N ↑', W - 22, 16);
+    g.fillText(t('map.north'), W - 22, 16);
     g.textAlign = 'left';
     g.font = '11px system-ui';
-    g.fillText('Kanpur. Greyed parts are not open yet. ▦ switches to the local map.', 12, H - 12);
+    g.fillText(t('map.cityNote'), 12, H - 12);
   }
 
   private drawMap(canvas: HTMLCanvasElement): void {
@@ -342,11 +411,60 @@ export class Menu {
     if (st) {
       g.fillStyle = '#1f3b57';
       g.fillRect(sx(st[0]) - 5, sz(st[1]) - 5, 10, 10);
-      label([st[0], st[1] - 14 / scale], 'Metro', '#1f3b57');
+      label([st[0], st[1] - 14 / scale], t('map.metro'), '#1f3b57');
+    }
+
+    const me = this.d.player();
+    const goal = hud.guide;
+    if (goal) {
+      // the way there, dotted, and the goal: a pin, or a search area
+      g.lineCap = g.lineJoin = 'round';
+      g.beginPath();
+      g.moveTo(sx(me.x), sz(me.z));
+      for (const [px, pz] of goal.path) g.lineTo(sx(px), sz(pz));
+      g.lineTo(sx(goal.x), sz(goal.z));
+      g.setLineDash([2, 7]);
+      g.strokeStyle = 'rgba(255,255,255,.95)';
+      g.lineWidth = 7;
+      g.stroke();
+      g.strokeStyle = '#c2410c';
+      g.lineWidth = 4;
+      g.stroke();
+      g.setLineDash([]);
+      const gx = sx(goal.x), gz = sz(goal.z);
+      if (goal.radius) {
+        g.beginPath();
+        g.arc(gx, gz, goal.radius * scale, 0, Math.PI * 2);
+        g.fillStyle = 'rgba(242,153,42,.25)';
+        g.fill();
+        g.setLineDash([6, 4]);
+        g.strokeStyle = '#c2410c';
+        g.lineWidth = 2;
+        g.stroke();
+        g.setLineDash([]);
+        label([goal.x, goal.z], t('map.search'), '#7a2e0a');
+      } else {
+        g.fillStyle = '#f2992a';
+        g.strokeStyle = '#fff';
+        g.lineWidth = 2.5;
+        g.beginPath();
+        g.moveTo(gx, gz);
+        g.bezierCurveTo(gx - 4, gz - 9, gx - 11, gz - 13, gx - 11, gz - 21);
+        g.arc(gx, gz - 21, 11, Math.PI, 0);
+        g.bezierCurveTo(gx + 11, gz - 13, gx + 4, gz - 9, gx, gz);
+        g.closePath();
+        g.fill();
+        g.stroke();
+        g.beginPath();
+        g.arc(gx, gz - 21, 4, 0, Math.PI * 2);
+        g.fillStyle = '#fff';
+        g.fill();
+        g.font = '700 12px system-ui, sans-serif';
+        label([goal.x, goal.z - 42 / scale], t('map.goal'), '#7a2e0a');
+      }
     }
 
     // player arrow (points where the camera looks)
-    const me = this.d.player();
     g.save();
     g.translate(sx(me.x), sz(me.z));
     g.rotate(-me.yaw);
@@ -366,12 +484,33 @@ export class Menu {
     // north + scale bar
     g.fillStyle = '#222';
     g.font = 'bold 13px system-ui';
-    g.fillText('N ↑', W - 22, 16);
+    g.fillText(t('map.north'), W - 22, 16);
     const bar = niceLength(90 / scale);
     g.fillRect(12, H - 16, bar * scale, 3);
     g.textAlign = 'left';
     g.font = '11px system-ui';
     g.fillText(bar >= 1000 ? `${bar / 1000} km` : `${bar} m`, 12, H - 26);
+
+    // the mission along the top
+    if (goal) {
+      const w = Math.min(W - 80, 460), x = (W - w) / 2, y = 10;
+      g.font = '700 15px system-ui, sans-serif';
+      const lines = [goal.title, goal.hint].filter(Boolean);
+      const h = 16 + lines.length * 20;
+      g.fillStyle = 'rgba(20,16,12,.8)';
+      g.beginPath();
+      g.roundRect(x, y, w, h, 10);
+      g.fill();
+      g.fillStyle = '#f2992a';
+      g.fillRect(x, y + 8, 4, h - 16);
+      g.textAlign = 'left';
+      g.textBaseline = 'top';
+      lines.forEach((l, i) => {
+        g.font = i ? '13px system-ui, sans-serif' : '700 15px system-ui, sans-serif';
+        g.fillStyle = i ? '#e9dccb' : '#fff';
+        g.fillText(l, x + 16, y + 9 + i * 21, w - 26);
+      });
+    }
   }
 
   // ---------- Places ----------
@@ -380,8 +519,8 @@ export class Menu {
     const parts = [...this.d.parts].sort((a, b) => a.title.localeCompare(b.title));
     const search = el('input', 'place-search') as HTMLInputElement;
     search.type = 'search';
-    search.placeholder = 'Search places';
-    search.setAttribute('aria-label', 'Search places');
+    search.placeholder = t('places.search');
+    search.setAttribute('aria-label', t('places.search'));
     const list = el('div', 'place-list');
     const draw = () => {
       const q = search.value.trim().toLowerCase();
@@ -393,7 +532,7 @@ export class Menu {
         b.disabled = here;
         b.innerHTML = `<span class="place-name"></span><span class="place-meta"></span>`;
         (b.querySelector('.place-name') as HTMLElement).textContent = p.title;
-        (b.querySelector('.place-meta') as HTMLElement).textContent = here ? 'You are here' : p.buildings ? `${p.buildings.toLocaleString()} buildings` : 'Go';
+        (b.querySelector('.place-meta') as HTMLElement).textContent = here ? t('places.here') : p.buildings ? t('places.buildings', { n: fmtNum(p.buildings) }) : t('places.go');
         b.addEventListener('click', () => {
           const u = new URL(location.href);
           u.searchParams.set('area', p.id);
@@ -402,12 +541,40 @@ export class Menu {
         });
         list.append(b);
       }
-      if (!list.children.length) list.append(text('p', 'No places match.', 'muted'));
+      if (!list.children.length) list.append(text('p', t('places.none'), 'muted'));
     };
     search.addEventListener('input', draw);
     draw();
-    const note = text('p', parts.length > 1 ? 'Places open to play. Going to one reloads the game there.' : 'Only Moti Jheel is open for now.', 'muted');
+    const note = text('p', parts.length > 1 ? t('places.many') : t('places.one'), 'muted');
+    if (this.d.area === 'moti_jheel') this.body.append(this.startAt());
     this.body.append(search, list, note);
+  }
+
+  /** Moti Jheel: where the game starts (stage 1 from the Shivaji Putla gate, or straight into the mela). Choosing one restarts there. */
+  private startAt(): HTMLElement {
+    const box = el('div', 'start-at');
+    box.append(text('h3', t('places.startAt')));
+    const now = new URLSearchParams(location.search).get('spawn') ?? startChoice();
+    const list = el('div', 'place-list');
+    for (const s of STARTS) {
+      const here = s.id === now;
+      const b = el('button', 'place-row');
+      b.setAttribute('aria-pressed', String(here));
+      b.innerHTML = `<span><span class="place-name"></span><br><span class="place-meta"></span></span><span class="place-meta"></span>`;
+      const [name, note, state] = b.querySelectorAll('span.place-name, span.place-meta') as NodeListOf<HTMLElement>;
+      name.textContent = tk(`start.${s.id}.title`) || s.title;
+      note.textContent = tk(`start.${s.id}.note`) || s.note;
+      state.textContent = here ? t('places.chosen') : t('places.startHere');
+      b.addEventListener('click', () => {
+        setStartChoice(s.id);
+        const u = new URL(location.href);
+        for (const k of ['spawn', 'cam', 'at']) u.searchParams.delete(k);
+        location.href = u.toString();
+      });
+      list.append(b);
+    }
+    box.append(list, text('p', t('places.startNote'), 'muted'));
+    return box;
   }
 
   // ---------- Controls ----------
@@ -415,22 +582,23 @@ export class Menu {
   private renderControls(): void {
     const c = this.d.controls;
     const table = el('table', 'ctl-table');
-    table.innerHTML = '<thead><tr><th>Action</th><th>Key</th><th>Alternative</th><th>Default</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th></th><th></th><th></th><th></th></tr></thead>';
+    table.querySelectorAll('th').forEach((th, i) => (th.textContent = t((['ctl.action', 'ctl.key', 'ctl.alt', 'ctl.default'] as const)[i])));
     const tb = el('tbody');
     table.append(tb);
-    const note = text('p', 'Click a key, then press the new one. Esc cancels, Backspace clears.', 'muted');
+    const note = text('p', t('ctl.note'), 'muted');
     let stop: (() => void) | null = null;
     const draw = () => {
       tb.replaceChildren();
       for (const a of ACTIONS) {
         const tr = el('tr');
-        tr.append(text('td', a.label));
+        tr.append(text('td', actName(a.id)));
         for (const slot of [0, 1] as const) {
           const td = el('td');
           const b = el('button', 'key-btn');
           b.textContent = label(c.get(a.id)[slot]);
           if (!c.isDefault(a.id, slot)) b.classList.add('changed');
-          b.setAttribute('aria-label', `${a.label}, ${slot ? 'alternative' : 'main'} key: ${b.textContent}. Click to change`);
+          b.setAttribute('aria-label', t('ctl.aria', { name: actName(a.id), slot: slot ? t('ctl.altSlot') : t('ctl.main'), key: b.textContent ?? '' }));
           b.addEventListener('click', () => listen(a.id, slot, b));
           td.append(b);
           tr.append(td);
@@ -442,8 +610,8 @@ export class Menu {
     const listen = (a: Action, slot: 0 | 1, b: HTMLButtonElement) => {
       stop?.();
       b.classList.add('listening');
-      b.textContent = 'Press a key…';
-      note.textContent = 'Press the new key (Esc cancels, Backspace clears).';
+      b.textContent = t('ctl.press');
+      note.textContent = t('ctl.pressNote');
       let active = true;
       const done = (msg: string) => {
         active = false;
@@ -455,13 +623,13 @@ export class Menu {
       };
       const assign = (code: string) => {
         const from = c.set(a, slot, code);
-        const name = ACTIONS.find((x) => x.id === a)!.label;
-        done(code ? `${name}: ${label(code)}${from ? ` (taken from "${ACTIONS.find((x) => x.id === from)!.label}")` : ''}` : `${name}: cleared`);
+        const name = actName(a);
+        done(code ? t('ctl.set', { name, key: label(code) }) + (from ? t('ctl.taken', { from: actName(from) }) : '') : t('ctl.cleared', { name }));
       };
       const onKey = (e: KeyboardEvent) => {
         e.preventDefault();
         e.stopImmediatePropagation();       // the game and the menu must not react while a key is being chosen
-        if (e.code === 'Escape') return done('Cancelled.');
+        if (e.code === 'Escape') return done(t('ctl.cancelled'));
         if (e.code === 'Backspace' || e.code === 'Delete') return assign('');
         if (['MetaLeft', 'MetaRight', 'ContextMenu'].includes(e.code)) return;
         assign(e.code);
@@ -477,17 +645,17 @@ export class Menu {
       stop = () => done('');
     };
     const reset = el('button', 'link-btn');
-    reset.textContent = 'Reset to defaults';
+    reset.textContent = t('ctl.reset');
     reset.addEventListener('click', () => {
       stop?.();
       c.reset();
-      note.textContent = 'Controls reset to the defaults.';
+      note.textContent = t('ctl.resetDone');
       draw();
     });
     const mouse = rows([
-      ['Look around', 'Move the mouse (click the game first)'],
-      ['Release the mouse / close a panel', 'Esc'],
-      ['Touch screens', 'Left half: move · right half: look · buttons: run, jump, punch'],
+      [t('ctl.look'), t('ctl.lookHow')],
+      [t('ctl.release'), 'Esc'],
+      [t('ctl.touch'), t('ctl.touchHow')],
     ]);
     draw();
     const foot = el('p', 'muted');
@@ -498,32 +666,115 @@ export class Menu {
   // ---------- Statistics ----------
   private renderStats(): void {
     const s = this.d.stats.data;
+    // this play's scorecard (a stage being played)
+    const play = this.d.play();
+    if (play && this.d.stage) {
+      this.body.append(text('h3', t('score.thisPlay', { n: this.d.stage }), 'score-h'),
+        scorecard(play.done ? play.finishS : play.played, play.done, s.run));
+    }
+    // every play of a stage, from the server
+    this.body.append(text('h3', t('score.plays'), 'score-h'));
+    const plays = el('div');
+    this.body.append(plays);
+    if (!account.me) plays.append(text('p', t('score.signIn'), 'muted'));
+    else {
+      plays.append(text('p', t('score.loading'), 'muted'));
+      void account.runs().then((runs) => {
+        if (this.open === 'stats') plays.replaceChildren(...playsView(runs));
+      });
+    }
+    // all time, in this browser
+    this.body.append(text('h3', t('score.allTime'), 'score-h'));
     const grid = el('div', 'stat-grid');
     const tile = (label: string, value: string) => {
       const t = el('div', 'stat');
       t.append(text('div', value, 'stat-v'), text('div', label, 'stat-l'));
       grid.append(t);
     };
-    tile('Distance walked', km(s.walked));
-    tile('Distance run', km(s.ran));
-    tile('Area explored', `${(s.explored * 100).toFixed(1)}%`);
-    tile('Time played', dur(s.played));
-    tile('This session', dur(s.session));
-    tile('Jumps', s.jumps.toLocaleString());
-    tile('Top speed', `${(s.topSpeed * 3.6).toFixed(1)} km/h`);
-    tile('Sessions', String(s.sessions));
+    tile(t('stats.walked'), km(s.walked));
+    tile(t('stats.ran'), km(s.ran));
+    tile(t('stats.explored'), `${(s.explored * 100).toFixed(1)}%`);
+    tile(t('stats.played'), dur(s.played));
+    tile(t('stats.session'), dur(s.session));
+    tile(t('stats.jumps'), fmtNum(s.jumps));
+    tile(t('stats.top'), `${(s.topSpeed * 3.6).toFixed(1)} km/h`);
+    tile(t('stats.sessions'), fmtNum(s.sessions));
+    tile(t('score.injured'), fmtNum(injured(s.score)));
+    tile(t('score.damage'), rupees(s.score.damageRs));
+    tile(t('score.taken'), fmtNum(s.score.taken));
+    tile(t('score.knockouts'), fmtNum(s.score.knockouts));
     const reset = el('button', 'link-btn');
-    reset.textContent = 'Reset statistics';
+    reset.textContent = t('stats.reset');
     reset.addEventListener('click', () => {
-      if (confirm('Reset all statistics?')) {
+      if (confirm(t('stats.confirm'))) {
         this.d.stats.reset();
         this.show('stats');
       }
     });
-    const note = text('p', 'Saved in this browser only.', 'muted');
+    const note = text('p', t('stats.note'), 'muted');
     note.append(' ', reset);
     this.body.append(grid, note);
   }
+}
+
+/** a play's scorecard: the time, the people hurt and the property broken up top, then how */
+function scorecard(secs: number, done: boolean, sc: Partial<Score>): HTMLElement {
+  const box = el('div', 'scorecard');
+  const big = el('div', 'stat-grid');
+  for (const [label, value] of [
+    [t(done ? 'score.finished' : 'score.time'), clock(secs)],
+    [t('score.injured'), fmtNum(injured(sc))],
+    [t('score.damage'), rupees(sc.damageRs ?? 0)],
+  ] as const) {
+    const tl = el('div', 'stat');
+    tl.append(text('div', value, 'stat-v'), text('div', label, 'stat-l'));
+    big.append(tl);
+  }
+  const n = (k: keyof Score) => fmtNum(sc[k] ?? 0);
+  const how = rows([
+    [t('score.runOver'), n('runOver')], [t('score.beaten'), n('beaten')], [t('score.thrown'), n('thrown')],
+    [t('score.taken'), n('taken')], [t('score.crashes'), n('crashes')], [t('score.lamps'), n('lamps')],
+    [t('score.punches'), n('punches')], [t('score.knockouts'), n('knockouts')],
+  ]);
+  how.classList.add('score-rows');
+  box.append(big, how);
+  return box;
+}
+
+/** the player's plays: the best finish of each stage, then a row per play (a click opens its scorecard) */
+function playsView(runs: Run[]): HTMLElement[] {
+  if (!runs.length) return [text('p', t('score.none'), 'muted')];
+  const out: HTMLElement[] = [];
+  const took = (r: Run) => r.stats.finishS || r.played_s;
+  const best = new Map<number, number>();
+  for (const r of runs) if (r.completed_at) best.set(r.stage, Math.min(best.get(r.stage) ?? Infinity, took(r)));
+  for (const [n, s] of [...best].sort((a, b) => a[0] - b[0])) out.push(text('p', t('score.best', { n, t: clock(s) }), 'score-best'));
+  const table = el('table', 'ctl-table runs-table');
+  const head = el('tr');
+  for (const k of ['score.when', 'score.stage', 'score.timeCol', 'score.done', 'score.injured', 'score.damage'] as const) head.append(text('th', t(k)));
+  table.append(el('thead'), el('tbody'));
+  table.tHead!.append(head);
+  for (const r of runs) {
+    const tr = el('tr');
+    const when = new Date(r.started_at).toLocaleString(lang(), { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    tr.append(text('td', when), text('td', String(r.stage)), text('td', clock(took(r))), text('td', r.completed_at ? '✓' : '—'),
+      text('td', fmtNum(injured(r.stats))), text('td', rupees(r.stats.damageRs ?? 0)));
+    tr.tabIndex = 0;
+    tr.setAttribute('aria-expanded', 'false');
+    // the play's whole scorecard under its row, on a click
+    const more = el('tr', 'run-more');
+    const cell = el('td');
+    cell.colSpan = 6;
+    cell.append(scorecard(took(r), !!r.completed_at, r.stats));
+    more.append(cell);
+    more.hidden = true;
+    const toggle = () => { more.hidden = !more.hidden; tr.setAttribute('aria-expanded', String(!more.hidden)); };
+    tr.addEventListener('click', toggle);
+    tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    table.tBodies[0].append(tr, more);
+  }
+  out.push(table);
+  return out;
 }
 
 // ---------- helpers ----------
@@ -546,29 +797,29 @@ function rows(list: [string, string][]): HTMLElement {
   return dl;
 }
 
-function loadProfile(): { name: string } {
-  try {
-    return { name: 'Player', ...JSON.parse(localStorage.getItem(PROFILE_KEY) ?? '{}') };
-  } catch {
-    return { name: 'Player' };
-  }
-}
-
-function saveProfile(p: { name: string }): void {
-  try {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
-  } catch {
-    /* storage unavailable */
-  }
-}
+const actName = (a: Action) => t(`act.${a}` as Parameters<typeof t>[0]);
+const lang = () => (document.documentElement.lang === 'hi' ? 'hi-IN' : 'en-IN');
 
 function km(m: number): string {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)} km`;
 }
 
+/** m:ss (h:mm:ss past an hour) */
+function clock(s: number): string {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+  const two = (n: number) => String(n).padStart(2, '0');
+  return h ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
+}
+
+/** rupees, grouped the Indian way (₹2,30,000) */
+function rupees(n: number): string {
+  return `₹${Math.round(n).toLocaleString('en-IN')}`;
+}
+
 function dur(s: number): string {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-  return h ? `${h} h ${m} min` : m ? `${m} min` : `${Math.floor(s)} s`;
+  const hi = document.documentElement.lang === 'hi';
+  return h ? (hi ? `${h} घंटे ${m} मिनट` : `${h} h ${m} min`) : m ? (hi ? `${m} मिनट` : `${m} min`) : (hi ? `${Math.floor(s)} सेकंड` : `${Math.floor(s)} s`);
 }
 
 function niceLength(m: number): number {
@@ -579,9 +830,12 @@ function niceLength(m: number): number {
 const svg = (d: string) =>
   `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICONS: Record<Item, string> = {
+  stages: svg('<path d="M4 21V4M4 4h12l-2 4 2 4H4"/>'),
+  settings: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   profile: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>'),
   map: svg('<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/>'),
   stats: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
   places: svg('<path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>'),
+  testing: svg('<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 14h9"/>'),
   controls: svg('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>'),
 };

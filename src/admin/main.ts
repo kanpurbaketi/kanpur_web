@@ -3,75 +3,246 @@ import { skinSwatch } from '../game/skin';
 import { HOME, loadManifest, openIds, saveOpen, type Manifest } from '../game/parts';
 
 /*
- Admin portal: a sign-in gate, then the settings the game reads (crowd, Ramu's skin tone and speeds).
-
- The gate is only a gate. This is a static page with no server, so the check runs in the browser: the password is not
- in the source (only its SHA-256), but anyone who can open the developer tools can get past it or edit the settings
- directly. Do not use it to protect anything that matters.
+ Admin portal: a sign-in checked by the server (ADMIN_USER / ADMIN_PASSWORD, api/admin.ts), then
+   - Players: search by username or email, a player's details and play, the stages unlocked for them;
+   - Ads: the loading page's ad on or off for everyone;
+   - Game settings: the crowd, Ramu's skin tone and speeds, the parts of Kanpur (these stay in this browser).
 */
-
-const SESSION = 'kanpur.admin.session';
-const HASH = 'dda3c6fd33c074a64f87b81d9445f40d97c3b32c56070149ddc4d6f210ab4218'; // sha256("kanpur-admin:<user>:<password>")
-
-async function sha256(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const loginEl = $('login'), appEl = $('app'), logout = $('logout'), err = $('login-err');
 
-function signedIn(): boolean {
-  try {
-    return sessionStorage.getItem(SESSION) === HASH;
-  } catch {
-    return false;
-  }
+async function api<T = Record<string, unknown>>(data?: object): Promise<T> {
+  const r = await fetch('api/admin', data
+    ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) }
+    : { cache: 'no-store' });
+  const j = await r.json().catch(() => ({ error: 'server' }));
+  if (!r.ok || j.error) throw new Error(j.error ?? 'server');
+  return j as T;
 }
 
-function gate(): void {
-  const ok = signedIn();
+function show(ok: boolean): void {
   loginEl.hidden = ok;
   appEl.hidden = !ok;
   logout.hidden = !ok;
-  if (!ok) $('user').focus();
+  if (ok) { void search(''); void loadAds(); } else $('user').focus();
+}
+
+async function gate(): Promise<void> {
+  try { show((await api<{ admin: boolean }>()).admin); }
+  catch { show(false); err.textContent = 'The server can’t be reached (run the game with its API: npm run dev, or on Vercel).'; }
 }
 
 $('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const user = ($('user') as HTMLInputElement).value.trim();
   const pass = ($('pass') as HTMLInputElement).value;
-  let h = '';
   try {
-    h = await sha256(`kanpur-admin:${user}:${pass}`);
-  } catch {
-    err.textContent = 'This browser cannot check passwords here (it needs https or localhost).';
-    return;
-  }
-  if (h === HASH) {
-    try {
-      sessionStorage.setItem(SESSION, HASH);
-    } catch {
-      /* private mode: the gate just stays open for this page load */
-    }
+    await api({ action: 'login', user, password: pass });
     err.textContent = '';
     ($('pass') as HTMLInputElement).value = '';
-    appEl.hidden = false;
-    loginEl.hidden = true;
-    logout.hidden = false;
-  } else {
-    err.textContent = 'Wrong username or password.';
+    show(true);
+  } catch (x) {
+    const code = (x as Error).message;
+    err.textContent = code === 'admin_unset' ? 'ADMIN_USER and ADMIN_PASSWORD are not set on the server.'
+      : code === 'login_wrong' ? 'Wrong username or password.' : 'The server can’t be reached.';
     ($('pass') as HTMLInputElement).select();
   }
 });
 
-logout.addEventListener('click', () => {
+logout.addEventListener('click', async () => {
+  await api({ action: 'logout' }).catch(() => {});
+  show(false);
+});
+
+// ---- tabs ----------------------------------------------------------------------------------------------
+
+for (const tab of Array.from(document.querySelectorAll<HTMLButtonElement>('.tabs button'))) {
+  tab.addEventListener('click', () => {
+    for (const b of Array.from(document.querySelectorAll('.tabs button'))) b.setAttribute('aria-selected', String(b === tab));
+    for (const sec of Array.from(document.querySelectorAll<HTMLElement>('main > [data-tab]'))) sec.hidden = sec.dataset.tab !== tab.dataset.tab;
+  });
+}
+
+// ---- players -------------------------------------------------------------------------------------------
+
+interface Player { username: string; email: string; unlocked: number[]; created_at: string; last_login: string | null; played_s: number; plays: number }
+interface StageRow { stage: number; plays: number; played_s: number; last_played: string; first_completed: string | null; completions: number; best_s: number | null; furthest: number }
+interface Detail {
+  user: { username: string; email: string; lang: string; unlocked: number[]; created_at: string; last_login: string | null };
+  stages: StageRow[];
+  runs: { stage: number; started_at: string; played_s: number; completed_at: string | null; stats: Record<string, number> }[];
+  count: number;
+}
+
+const BUILT = new Set([1]);           // stages that exist in the game (src/game/stages.ts)
+/** what a play's `step` (missions done, src/game/story/stage<n>.ts) means, per stage */
+const STEPS: Record<number, string[]> = {
+  1: ['Not past the start', 'Found the food carts (samosa refused)', 'Stood in the ticket line (pushed out)', 'In through the torn sheet (part 1 done)'],
+};
+const reached = (stage: number, step?: number) => STEPS[stage]?.[step ?? 0] ?? (step ? `Mission ${step}` : '—');
+const when = (d: string | null) => (d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+const dur = (s: number | null) => {
+  if (s === null || s === undefined) return '—';
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = Math.floor(s % 60);
+  return h ? `${h} h ${m} min` : m ? `${m} min ${x} s` : `${x} s`;
+};
+const mk = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text) e.textContent = text;
+  return e;
+};
+
+let current = '';
+
+async function search(q: string): Promise<void> {
+  const list = $('user-list'), count = $('user-count');
   try {
-    sessionStorage.removeItem(SESSION);
-  } catch {
-    /* nothing to clear */
+    const { users } = await api<{ users: Player[] }>({ action: 'search', q });
+    list.replaceChildren();
+    for (const u of users) {
+      const b = mk('button', 'user-row');
+      b.type = 'button';
+      b.setAttribute('role', 'listitem');
+      if (u.username === current) b.setAttribute('aria-current', 'true');
+      const name = mk('b', '', u.username), stages = mk('span', 'meta', `Stages ${u.unlocked.join(', ')}`);
+      const email = mk('span', 'meta', u.email), play = mk('span', 'meta', `${u.plays} play${u.plays === 1 ? "" : "s"} · ${dur(u.played_s)}`);
+      b.append(name, stages, email, play);
+      b.addEventListener('click', () => void open(u.username));
+      list.append(b);
+    }
+    count.textContent = users.length ? (q ? `${users.length} found${users.length === 50 ? ' (the first 50)' : ''}.` : `The newest ${users.length} players.`)
+      : q ? 'No player matches.' : 'No players yet.';
+    if (users.length === 1 && q) void open(users[0].username);
+  } catch (x) { sessionLost(x); }
+}
+
+$('user-search').addEventListener('submit', (e) => { e.preventDefault(); void search(($('user-q') as HTMLInputElement).value.trim()); });
+
+async function open(username: string): Promise<void> {
+  current = username;
+  for (const r of Array.from(document.querySelectorAll('.user-row'))) r.setAttribute('aria-current', String(r.querySelector('b')?.textContent === username));
+  const box = $('user-detail');
+  try {
+    const d = await api<Detail>({ action: 'user', username });
+    box.hidden = false;
+    box.replaceChildren();
+    const u = d.user;
+    const kv = mk('dl', 'kv');
+    for (const [k, v] of [['Email', u.email], ['Joined', when(u.created_at)], ['Last login', when(u.last_login)], ['Language', u.lang === 'hi' ? 'Hindi' : 'English']]) {
+      kv.append(mk('dt', '', k), mk('dd', '', v));
+    }
+    box.append(mk('h3', '', u.username), kv);
+
+    // unlocked stages
+    box.append(mk('h4', '', 'Unlocked stages'));
+    const boxes = mk('div', 'stage-boxes');
+    const checks: HTMLInputElement[] = [];
+    for (let n = 1; n <= d.count; n++) {
+      const l = mk('label', 'stage-box' + (n === 1 ? ' fixed' : ''));
+      const c = mk('input');
+      c.type = 'checkbox';
+      c.checked = u.unlocked.includes(n);
+      c.disabled = n === 1;
+      c.value = String(n);
+      checks.push(c);
+      const txt = mk('span', '', `Stage ${n}`);
+      if (!BUILT.has(n)) txt.append(mk('br'), mk('small', '', 'not built yet'));
+      l.append(c, txt);
+      boxes.append(l);
+    }
+    const btns = mk('div', 'row-btns');
+    const save = mk('button', 'btn', 'Save stages');
+    save.type = 'button';
+    const all = mk('button', 'btn ghost', 'Unlock all');
+    all.type = 'button';
+    const st = mk('span', 'status');
+    st.setAttribute('role', 'status');
+    all.addEventListener('click', () => { for (const c of checks) c.checked = true; });
+    save.addEventListener('click', async () => {
+      try {
+        const r = await api<{ unlocked: number[] }>({ action: 'unlock', username: u.username, stages: checks.filter((c) => c.checked).map((c) => Number(c.value)) });
+        st.textContent = `Saved: stages ${r.unlocked.join(', ')}`;
+        st.classList.remove('err');
+        void search(($('user-q') as HTMLInputElement).value.trim());
+      } catch (x) { st.textContent = 'Could not save.'; st.classList.add('err'); sessionLost(x); }
+    });
+    btns.append(save, all, st);
+    box.append(boxes, btns);
+
+    // how they play
+    box.append(mk('h4', '', 'Performance by stage'));
+    if (!d.stages.length) box.append(mk('p', 'note', 'Has not played a stage yet.'));
+    else {
+      const t = mk('table', 'perf');
+      t.innerHTML = '<thead><tr><th>Stage</th><th>Plays</th><th>Time played</th><th>Furthest</th><th>Completed</th><th>Best time to finish</th><th>Last played</th></tr></thead>';
+      const tb = mk('tbody');
+      for (const s of d.stages) {
+        const tr = mk('tr');
+        const done = mk('td', s.completions ? 'ok' : '', s.completions ? `✓ ${s.completions}× (first ${when(s.first_completed)})` : 'Not yet');
+        tr.append(mk('td', '', String(s.stage)), mk('td', '', String(s.plays)), mk('td', '', dur(s.played_s)), mk('td', '', reached(s.stage, s.furthest)), done, mk('td', '', dur(s.best_s)), mk('td', '', when(s.last_played)));
+        tb.append(tr);
+      }
+      t.append(tb);
+      const w = mk('div', 'table-wrap');
+      w.append(t);
+      box.append(w);
+      box.append(mk('h4', '', 'Recent plays'));
+      const r = mk('table', 'perf');
+      r.innerHTML = '<thead><tr><th>Started</th><th>Stage</th><th>Played</th><th>Reached</th><th>Finished</th><th>Injured</th><th>Damage</th><th>Vehicles taken</th><th>Walked</th><th>Ran</th><th>Top speed</th></tr></thead>';
+      const rb = mk('tbody');
+      for (const x of d.runs) {
+        const tr = mk('tr');
+        const m = (v?: number) => (v ? (v < 1000 ? `${Math.round(v)} m` : `${(v / 1000).toFixed(2)} km`) : '—');
+        // the play's scorecard (src/game/stats.ts): people hurt all ways, and what the damage would cost to mend
+        const hurt = (x.stats.runOver ?? 0) + (x.stats.beaten ?? 0) + (x.stats.thrown ?? 0);
+        tr.append(mk('td', '', when(x.started_at)), mk('td', '', String(x.stage)), mk('td', '', dur(x.stats.finishS || x.played_s)), mk('td', '', reached(x.stage, x.stats.step)),
+          mk('td', x.completed_at ? 'ok' : '', x.completed_at ? '✓' : '—'), mk('td', '', String(hurt)),
+          mk('td', '', `₹${Math.round(x.stats.damageRs ?? 0).toLocaleString('en-IN')}`), mk('td', '', String(x.stats.taken ?? 0)), mk('td', '', m(x.stats.walked)), mk('td', '', m(x.stats.ran)),
+          mk('td', '', x.stats.topSpeed ? `${(x.stats.topSpeed * 3.6).toFixed(1)} km/h` : '—'));
+        rb.append(tr);
+      }
+      r.append(rb);
+      const w2 = mk('div', 'table-wrap');
+      w2.append(r);
+      box.append(w2);
+    }
+  } catch (x) {
+    box.hidden = false;
+    box.textContent = 'Could not load this player.';
+    sessionLost(x);
   }
-  gate();
+}
+
+function sessionLost(x: unknown): void {
+  if ((x as Error).message === 'admin') show(false);
+}
+
+// ---- ads -----------------------------------------------------------------------------------------------
+
+const adsOn = $('ads-on') as HTMLInputElement;
+async function loadAds(): Promise<void> {
+  try {
+    const c = await api<{ ads: { enabled: boolean; adsense: boolean }; mail: string }>({ action: 'config' });
+    adsOn.checked = c.ads.enabled;
+    const warn = $('ads-warn');
+    warn.hidden = c.ads.adsense;
+    warn.textContent = 'AdSense isn’t set up on the server yet (ADSENSE_CLIENT and ADSENSE_SLOT), so no ad shows even when this is on.';
+  } catch (x) { sessionLost(x); }
+}
+adsOn.addEventListener('change', async () => {
+  const st = $('ads-status');
+  try {
+    const r = await api<{ enabled: boolean }>({ action: 'ads', enabled: adsOn.checked });
+    st.textContent = r.enabled ? 'Ads are on for every player.' : 'Ads are off.';
+    st.classList.remove('err');
+  } catch (x) {
+    adsOn.checked = !adsOn.checked;
+    st.textContent = 'Could not save.';
+    st.classList.add('err');
+    sessionLost(x);
+  }
 });
 
 // ---- settings ------------------------------------------------------------------------------------------
@@ -197,7 +368,7 @@ $('reset-all').addEventListener('click', () => {
 
 onSettingsChange(showAll); // another admin tab changed something
 showAll(loadSettings());
-gate();
+void gate();
 
 // ---- parts of Kanpur ----------------------------------------------------------------------------------
 

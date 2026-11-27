@@ -1,12 +1,115 @@
-/** Where the Moti Jheel mela stands: the open ground in Tulsi Upvan, east of the metro. Metres, map coordinates. */
-export const MELA = { x0: -8, x1: 108, z0: 112, z1: 222, cx: 50, gateZ: 218 };
+import { centroid, P2 } from './types';
+/*
+ Where the Moti Jheel mela stands (the open ground in Tulsi Upvan, east of the metro) and how it is laid out.
+ The layout follows assets/mela/mela_map.png: the map's boundary rectangle is the cloth wall, and every box and circle on it
+ is converted here from map pixels to metres (map coordinates: x east, z south). 1 map pixel = K metres.
+*/
+
+const K = 119 / 1558;                                   // the wall is 119 m wide on the map (1558 px)
+/**
+ * Where the ground is: the real numaish ground, south of Japani Garden, on the right of the park road once it turns west at
+ * the Nagar Nigam (plans/05-stage1-route.md). The layout was first drawn for Tulsi Upvan, so it is that layout moved by
+ * (DX, DZ): its gate in the south wall faces the road.
+ */
+export const DX = -203, DZ = 115.5;
+export const mx = (px: number): number => DX - 9.5 + (px - 91) * K;
+export const mz = (py: number): number => DZ + 127 + (py - 62) * K;
+
+export interface Rect { x0: number; x1: number; z0: number; z1: number }
+const rect = (a: number, b: number, c: number, d: number): Rect => ({ x0: mx(a), x1: mx(c), z0: mz(b), z1: mz(d) });
+/** a box in metres from the layout's origin (DX, DZ) */
+const at = (x0: number, z0: number, x1: number, z1: number): Rect => ({ x0: DX + x0, x1: DX + x1, z0: DZ + z0, z1: DZ + z1 });
+const circle = (px: number, py: number, rpx: number) => ({ x: mx(px), z: mz(py), r: rpx * K });
+
+/** the trodden ground inside the cloth wall */
+export const MELA = { x0: DX - 8, x1: DX + 108, z0: DZ + 128.5, z1: DZ + 202, cx: DX + 50, cz: DZ + 165, gateZ: DZ + 203.5 };
 
 export function inMela(x: number, z: number, margin = 0): boolean {
   return x > MELA.x0 - margin && x < MELA.x1 + margin && z > MELA.z0 - margin && z < MELA.z1 + margin;
 }
 
-/** The torn place in the boundary cloth: the only way in. West side of the mela, Ramu arrives from the open park. */
-export const TEAR = { x: -9.5, z: 150 };
+/** a map building that stood on the mela's ground: not drawn, and not solid either (one stood across the well's stair) */
+export function clearedForMela(area: string, pts: P2[]): boolean {
+  if (area !== 'moti_jheel') return false;
+  const [cx, cz] = centroid(pts);
+  return inMela(cx, cz, 6);
+}
 
-/** Outline of the boundary cloth (clockwise from the north-west corner), a little outside the trodden ground. */
-export const WALL_LOOP: [number, number][] = [[-9.5, 111], [109.5, 111], [109.5, 219.5], [2.5, 219.5], [-9.5, 211]];
+/**
+ * The map has a park path running across this ground. Cut every road off just outside the cloth wall: left in, its asphalt
+ * lay in the same plane as the mela's dirt (flickering dark patches across the aisles) and led passers-by through the cloth.
+ */
+export function clipRoadsToMela<T extends { pts: [number, number][] }>(roads: T[]): T[] {
+  const inside = (p: [number, number]) => inMela(p[0], p[1], 3);
+  const out: T[] = [];
+  for (const r of roads) {
+    if (!r.pts.some(inside)) { out.push(r); continue; }
+    let run: [number, number][] = [];
+    const flush = () => { if (run.length > 1) out.push({ ...r, pts: run }); run = []; };
+    for (let i = 0; i < r.pts.length; i++) {
+      const p = r.pts[i];
+      if (i && inside(r.pts[i - 1]) !== inside(p)) {
+        // where this stretch crosses the line: close in on it from both sides, keep the point on the outside
+        let a = r.pts[i - 1], b = p;
+        for (let k = 0; k < 16; k++) {
+          const m: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+          if (inside(m) === inside(a)) a = m; else b = m;
+        }
+        run.push(inside(a) ? b : a);
+        if (inside(p)) flush();
+      }
+      if (!inside(p)) run.push(p);
+    }
+    flush();
+  }
+  return out;
+}
+
+/** The torn place in the boundary cloth, west side, level with the stage entry. */
+export const TEAR = { x: DX - 9.5, z: mz(620) };
+/** The mela gate, in the middle of the south wall (a real opening, `half` metres each side of x). */
+export const GATE = { x: mx(895), z: DZ + 203.5, half: 4.2 };
+
+/** Outline of the boundary cloth (clockwise from the north-west corner). */
+export const WALL_LOOP: [number, number][] = [[DX - 9.5, DZ + 127], [DX + 109.5, DZ + 127], [DX + 109.5, DZ + 203.5], [DX - 9.5, DZ + 203.5]];
+
+// ---- the layout on the map ---------------------------------------------------------------------------
+/** kavi sammelan stage: its front faces east, towards the audience. The map drew it 12 m deep and 17 m wide; it is built
+ * smaller, 8 by 12 m, against the same back (the cloth wall side) and on the same middle */
+const STAGE_MAP = rect(144, 417, 302, 642);
+const STAGE_MID = (STAGE_MAP.z0 + STAGE_MAP.z1) / 2;
+export const STAGE: Rect = { x0: STAGE_MAP.x0, x1: STAGE_MAP.x0 + 8, z0: STAGE_MID - 6, z1: STAGE_MID + 6 };
+/** the stair up its north side, and the back-stage door at its south-west corner, next to the torn place in the wall */
+export const STAGE_STAIRS: Rect = { x0: STAGE.x0 + 2, x1: STAGE.x0 + 6.5, z0: STAGE.z0 - 4, z1: STAGE.z0 };
+export const STAGE_ENTRY: Rect = { x0: STAGE.x0, x1: STAGE.x0 + 2, z0: STAGE.z1 - 5, z1: STAGE.z1 };
+/** people sitting on the dari: from 3 m in front of the stage to where the map has them end */
+export const AUDIENCE: Rect = { ...rect(355, 384, 553, 675), x0: STAGE.x1 + 3 };
+/** the wooden fence round the stage and its audience: from the cloth wall (west) out past the last row, short of the stalls */
+export const SAMMELAN: Rect = { x0: DX - 9.5, x1: mx(553) - 3.3, z0: mz(365) - 1.6, z1: mz(675) + 2.3 };
+/** its two ways in: on the east side facing the stage, and on the north side by the aisle */
+export const SAMMELAN_GATES = { east: { z: (mz(384) + mz(675)) / 2, half: 2.5 }, north: { x: mx(553) - 9.5, half: 1.8 } };
+
+export const WHEEL = circle(926, 329, 122);
+export const INFLATABLE = circle(1232, 272, 59.5);
+/** maut ka kuan: far bigger than the map drew it, so it has the whole south-east corner (the radius takes in the round stair) */
+export const KUAN = { x: DX + 90.5, z: DZ + 184.5, r: 16.5 };
+
+/** each box on the map is a block of stalls (a row, or two rows back to back) */
+export const STALL_BLOCKS: Rect[] = [
+  rect(592, 167, 751, 245), rect(847, 167, 1005, 245),
+  rect(1028, 101, 1186, 181), rect(1213, 128, 1371, 207), rect(1438, 128, 1596, 207),   // along the top, north-east
+  rect(592, 340, 750, 418),                                                             // under the first, by the wheel
+  rect(1318, 404, 1398, 562), rect(1516, 404, 1596, 562),
+  rect(790, 483, 870, 642), rect(988, 483, 1068, 642), rect(1120, 483, 1279, 562),
+  rect(579, 668, 738, 747), rect(777, 668, 870, 747), rect(988, 668, 1147, 747),
+  rect(500, 854, 658, 933), rect(688, 854, 846, 933), rect(962, 853, 1121, 932),       // the row by the gate
+  // more, in the ground the map left empty (metres from the wall's north-west corner: at, DX, DZ)
+  at(-6, 132, 5, 146), at(65.5, 152, 72.5, 159), at(13, 182.5, 24, 186), at(58, 182.5, 70, 186),
+  at(24, 197, 40, 200.5), at(60, 197, 74, 200.5), at(27, 157.5, 40, 163), at(27, 167, 40, 171),
+];
+
+/** the older rides, kept, in the free ground of the map */
+export const CAROUSEL = { x: mx(250), z: mz(820) };
+export const HINDOLA = { x: mx(430), z: mz(930) };
+export const COLUMBUS = { x: mx(400), z: mz(200) };
+export const CHAIR_SWING = { x: mx(1508), z: mz(306) };      // in the open ground below the north-east stalls

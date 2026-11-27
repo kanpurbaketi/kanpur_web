@@ -4,7 +4,8 @@ import { makeGroundMaterial, SURF } from './ground';
 import { MeshBuilder, offsetLines } from './meshBuilder';
 import { waterNormal } from './textures';
 import { makeTrees, TreeSpot } from './trees';
-import { inMela } from './melaSite';
+import { clearedForMela, inMela } from './melaSite';
+import { treeClear } from './stage1Site';
 import { centroid, DRIVABLE, hash2, MapData, MARKED, P2, pointInPoly, signedArea } from './types';
 
 const TILE = 250;
@@ -140,8 +141,8 @@ export class City {
     const tanks: [number, number, number][] = [];
     const tmp = new THREE.Color();
     for (const b of map.buildings) {
+      if (clearedForMela(map.area, b.pts)) continue;
       const [cx, cz] = centroid(b.pts);
-      if (map.area === 'moti_jheel' && inMela(cx, cz, 6)) continue;   // cleared for the mela
       const t = tileOf(cx, cz).bld;
       const style = map.styles[b.style];
       const signs = style?.signs ?? ['#c8261a'];
@@ -159,7 +160,7 @@ export class City {
       const m = this.add(t.bld, this.mats.facade, true, true);
       if (m) this.buildingMeshes.push(m);
     }
-    this.addTrees(trees.filter(([x, z]) => map.area !== 'moti_jheel' || !inMela(x, z, 12)));   // the mela occupies a clearing
+    this.addTrees(trees.filter(([x, z]) => map.area !== 'moti_jheel' || (!inMela(x, z, 12) && treeClear(x, z))));   // the mela occupies a clearing; the statue stands clear
     this.addTanks(tanks);
   }
 

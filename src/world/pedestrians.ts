@@ -1,7 +1,7 @@
 import { FOOTPATHS } from './footpaths';
 import * as THREE from 'three';
 import { MapData } from './types';
-import { Actor, CLIP_SECS, KICK_LANDS, makeActors, PUNCH_LANDS, RigName } from './actors';
+import { Actor, CLIP_SECS, KICK_LANDS, makeActors, PUNCH_LANDS, RigName, rigHeight } from './actors';
 
 /*
  Random pedestrians.
@@ -31,7 +31,8 @@ export const STREET_MIX: Mix = { aunty: 0.14, girl: 0.18, boy: 0.16, burqa: 0.08
 export const MELA_MIX: Mix = { ...STREET_MIX, security: 0.12 };
 const FLINCH = 0.95;          // seconds spent taking a punch
 const TOUGH = 3;              // punches it takes to lay an ordinary person out
-const OUT_SECS = 40, OUT_AWAY = 45;   // a laid-out person is put back on the streets after this long, once the player is this far off
+const OUT_SECS = 40, OUT_AWAY = 45;
+const SHOT_R = 0.24;     // a body's radius to a bullet, m   // a laid-out person is put back on the streets after this long, once the player is this far off
 // an attack: [the moment the blow lands, how long the whole thing takes], seconds. The rigged punch clip is played at
 // ACTOR_PUNCH times its speed.
 const ACTOR_PUNCH = 1.8, ACTOR_KICK = 1.5;
@@ -62,6 +63,8 @@ interface Ped {
   flinch: number;     // seconds left of reeling from a punch
   angry: number;      // seconds left of wanting to hit back
   out: boolean;       // laid out for good (until put back, far from the player)
+  dead?: boolean;     // shot dead (Explore world): laid out, and not put back while the player is near
+  shotN?: number;     // bullets taken
   atkN: number;       // attacks thrown so far (names each punch for the rigged clip)
   block: number; blockN: number;    // seconds left of holding a block, and blocks so far
   fwd: boolean;       // laid out face down (hit from behind)
@@ -238,7 +241,7 @@ export class Pedestrians {
     }
     if (!cands.length) return false;
     // a fresh start: whatever happened to them where they were is forgotten
-    p.hits = 0; p.flinch = 0; p.angry = 0; p.grudge = 0; p.out = false; p.down = 0; p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; p.stun = 0; p.panic = 0;
+    p.hits = 0; p.shotN = 0; p.dead = false; p.flinch = 0; p.angry = 0; p.grudge = 0; p.out = false; p.down = 0; p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; p.stun = 0; p.panic = 0;
     p.ox = 0; p.oz = 0; p.hold = 0; p.block = 0; p.fwd = false;
     p.a = cands[Math.floor(Math.random() * cands.length)];
     const links = this.nodes[p.a].links;
@@ -570,6 +573,84 @@ export class Pedestrians {
    * then hit back; the last punch they can take lays them out. Returns what came of it: blocked, a hit, laid out (`out`),
    * or null (nobody in reach).
    */
+  /**
+   * A bullet from `o` along `d` (a unit vector), as far as `max` m: the first person standing in its way (a body as an
+   * upright cylinder, the head its top fifth), or null. Lying people are not hit (the shot goes over them).
+   */
+  shoot(o: THREE.Vector3, d: THREE.Vector3, max: number): { i: number; t: number; head: boolean } | null {
+    let best: { i: number; t: number; head: boolean } | null = null;
+    const h2 = d.x * d.x + d.z * d.z;
+    if (h2 < 1e-6) return null;
+    for (let i = 0; i < this.active; i++) {
+      const p = this.peds[i];
+      if (p.fresh || p.out || p.down > 0) continue;
+      const cx = p.x - o.x, cz = p.z - o.z;
+      const tc = (cx * d.x + cz * d.z) / h2;               // nearest approach in the ground plane
+      if (tc < 0 || tc > max + 1) continue;
+      const mx = cx - d.x * tc, mz = cz - d.z * tc, m2 = mx * mx + mz * mz, r = SHOT_R;
+      if (m2 > r * r) continue;
+      const t = tc - Math.sqrt((r * r - m2) / h2);        // where it enters the body
+      if (t < 0 || t > max || (best && t >= best.t)) continue;
+      const base = p.y < 0.3 ? Math.max(p.y, FOOTPATHS.at(p.x, p.z)) : p.y;
+      const tall = rigHeight(p.rig) * (p.actor.root.children[0]?.scale.y ?? 1);
+      const y = o.y + d.y * t - base;
+      if (y < 0 || y > tall) continue;
+      best = { i, t, head: y > tall * 0.8 };
+    }
+    return best;
+  }
+
+  /**
+   * Person `i` shot (by a bullet travelling along `d`): an ordinary person is killed outright, a guard by a shot to the
+   * head or a second one to the body; one still standing turns on the shooter. Returns what came of it, and where they
+   * stood and faced (the blood goes there).
+   */
+  shot(i: number, d: THREE.Vector3, head: boolean): 'dead' | 'hurt' {
+    const p = this.peds[i];
+    const fx = Math.sin(p.heading), fz = Math.cos(p.heading);
+    const fromBehind = fx * d.x + fz * d.z > 0.2;          // the bullet goes the way they face: it came from behind
+    p.shotN = (p.shotN ?? 0) + 1;
+    p.atkKind = 0; p.atkE = 0; p.wait = 0; p.hold = 0; p.ox = 0; p.oz = 0; p.block = 0;
+    if (head || p.tough <= TOUGH || p.shotN >= 2) {
+      p.out = true;
+      p.dead = true;
+      p.fwd = fromBehind;                                  // shot in the back: down on their face
+      if (!fromBehind) p.heading = Math.atan2(-d.x, -d.z);  // facing the shot, thrown back from it
+      p.downT = 0;
+      p.flinch = 0; p.angry = 0; p.grudge = 0; p.mode = 0; p.guard = 0; p.panic = 0;
+      p.kvx = d.x * 0.6; p.kvz = d.z * 0.6;
+      return 'dead';
+    }
+    p.hits++;
+    p.heading = Math.atan2(-d.x, -d.z);
+    p.flinch = FLINCH;
+    p.kvx = d.x * 1.5; p.kvz = d.z * 1.5;
+    p.angry = ANGRY * 2;
+    p.mode = 1;
+    p.cool = 0.4;
+    return 'hurt';
+  }
+
+  /** where person `i` stands (or lies) and faces, and whether they went down face first */
+  /** where person i's chest is now (a body: where it lies) */
+  chestOf(i: number, out: THREE.Vector3): THREE.Vector3 {
+    return this.peds[i].actor.chest(out);
+  }
+
+  /** a gunshot at (x, z): everybody within `r` m who is not after the player runs (the guards come for him) */
+  scare(x: number, z: number, r: number): void {
+    for (let i = 0; i < this.active; i++) {
+      const p = this.peds[i];
+      if (p.fresh || p.out || p.down > 0) continue;
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (d > r) continue;
+      if (p.hostile) { p.angry = Math.max(p.angry, ANGRY); continue; }
+      if (p.mode) continue;
+      p.panic = Math.max(p.panic, 8 + Math.random() * 6);
+      p.wait = 0; p.hold = 0;
+    }
+  }
+
   hit(x: number, z: number, fx: number, fz: number): 'block' | 'hit' | 'out' | null {
     const t = this.inReach(x, z, fx, fz);
     this.lastHit = null;

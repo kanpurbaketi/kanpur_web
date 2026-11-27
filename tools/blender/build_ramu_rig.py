@@ -23,6 +23,7 @@ ONLY = set(argv[argv.index('--only') + 1].split(',')) if '--only' in argv else N
 # character -> (rigged FBX, output file, height in metres, texture size)
 CHARS = {
     'ramu': ('ramu_teen/ramu_rigged.fbx', 'ramu_rig.glb', 1.52, 2048),
+    'ramu_adult': ('ramu_adult/ramu_adult_rigged.fbx', 'ramu_adult_rig.glb', 1.75, 2048),   # grown-up Ramu: the player in Explore world
     'uncle': ('uncle/uncle_rigged.fbx', 'uncle_rig.glb', 1.66, 1024),
     'security': ('security/security_fat_rigged.fbx', 'security_rig.glb', 1.72, 1024),
     'security_thin': ('common_assets/security_thin.fbx', 'security_thin_rig.glb', 1.75, 1024),   # the thin guard (actors.ts: half the guards)
@@ -35,6 +36,7 @@ CHARS = {
     'anaya': ('anaya/anaya_rigged.fbx', 'anaya_rig.glb', 1.60, 1024),         # the girl with the candy floss on the well's gallery
 }
 CHAR = argv[argv.index('--char') + 1] if '--char' in argv else 'ramu'
+PLAYER = CHAR in ('ramu', 'ramu_adult')     # the player: Ramu's own clips, no light copy
 SRC, OUT_NAME, HEIGHT, TEX = CHARS[CHAR]
 SRC = os.path.join(ROOT, 'assets', SRC)
 FPS = 30
@@ -248,6 +250,7 @@ mat.blend_method = 'OPAQUE'        # the FBX comes in as alpha-hashed; the textu
 # (src/world/face.ts) from the same landmarks, exported on the mesh.
 FACE = {
     'ramu': dict(eyes=[(228, 362), (370, 362)], ew=52, mouth=(293, 490), mw=110),
+    'ramu_adult': dict(eyes=[(228, 306), (366, 306)], ew=50, mouth=(298, 458), mw=105),
     'uncle': dict(eyes=[(228, 292), (360, 292)], ew=52, mouth=(300, 421), mw=125, lid=0.6),       # his brows sit low
     'security': dict(eyes=[(222, 325), (365, 325)], ew=52, mouth=(298, 470), mw=100, lid=0.7),
     'security_thin': dict(eyes=[(224, 340), (366, 340)], ew=50, mouth=(306, 472), mw=110, lid=0.7),
@@ -784,7 +787,7 @@ def import_mixamo_clips():
     sc = bpy.context.scene
     for f in files:
         name = clip_name(os.path.splitext(os.path.basename(f))[0])
-        if name in RAMU_ONLY and CHAR != 'ramu':
+        if name in RAMU_ONLY and not PLAYER:
             continue
         if name in GUARD_ONLY and not CHAR.startswith('security'):
             continue
@@ -1080,7 +1083,7 @@ def offer_hand(t):
     finger_curl(0.85)                                # round the stick
 
 
-if CHAR in ('ramu', 'anaya'):
+if PLAYER or CHAR == 'anaya':
     reach_clip('offer', 40, offer_base, offer_target, (SH.x - 0.5, 0.3, SH.z - 0.45), offer_hand)
 
 
@@ -1201,7 +1204,7 @@ print('RIG exported', round(os.path.getsize(path) / 1e6, 2), 'MB')
 # For the people who are seldom seen up close and many at once (the kavi sammelan's audience: actors.ts `lite`): the game
 # plays the full file's clips on it (same bones, same names) and dresses it in the full file's material.
 LITE_TRIS = 11000
-if CHAR != 'ramu':
+if not PLAYER:
     bpy.ops.object.select_all(action='DESELECT')
     lite = mesh.copy()
     lite.data = mesh.data.copy()

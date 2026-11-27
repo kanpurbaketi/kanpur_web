@@ -17,3 +17,8 @@ is required, but the sources are listed anyway. Each was trimmed, faded and loud
 | `sfx/punch1.mp3`, `sfx/punch2.mp3` | [Punch Sounds](https://freesound.org/s/208791/) | uEffects |
 | `sfx/punch3.mp3` | [Hitting in a Face](https://freesound.org/s/460509/) | florianreichelt |
 | `sfx/punch4.mp3` | [Punch in the face](https://freesound.org/s/390462/) | Huminaatio |
+| `sfx/shot1.mp3` | [357 Magnum Revolver Gunshot with Tail](https://freesound.org/s/683175/) | Shark_Anthony |
+| `sfx/shot2.mp3` | [9mm pistol shot](https://freesound.org/s/427592/) | michorvath |
+| `sfx/flesh1.mp3` … `flesh3.mp3` | [VisceralBulletImpacts](https://freesound.org/s/423301/) | u1769092 |
+| `sfx/ricochet.mp3` | [Ricochet 2](https://freesound.org/s/392975/) | morganpurkis |
+| `sfx/cock.mp3` | [revolvercock1](https://freesound.org/s/111676/) | Dredile |

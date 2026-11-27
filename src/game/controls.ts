@@ -5,7 +5,7 @@ import { t } from '../i18n';
  Saved in localStorage, so they apply to this browser only; the menu's Controls panel edits them live.
 */
 
-export type Action = 'forward' | 'back' | 'left' | 'right' | 'run' | 'jump' | 'crouch' | 'punch' | 'use' | 'lights' | 'horn' | 'map';
+export type Action = 'forward' | 'back' | 'left' | 'right' | 'run' | 'jump' | 'crouch' | 'punch' | 'aim' | 'weapon' | 'use' | 'lights' | 'horn' | 'map';
 
 export const ACTIONS: { id: Action; label: string }[] = [
   { id: 'forward', label: 'Move forward' },
@@ -15,7 +15,9 @@ export const ACTIONS: { id: Action; label: string }[] = [
   { id: 'run', label: 'Run (hold)' },
   { id: 'jump', label: 'Jump' },
   { id: 'crouch', label: 'Crouch (hold)' },
-  { id: 'punch', label: 'Punch' },
+  { id: 'punch', label: 'Punch / shoot' },
+  { id: 'aim', label: 'Aim (hold)' },
+  { id: 'weapon', label: 'Change weapon' },
   { id: 'use', label: 'Get on / off a vehicle' },
   { id: 'lights', label: 'Headlights on / off' },
   { id: 'horn', label: 'Horn (hold)' },
@@ -31,6 +33,8 @@ export const DEFAULTS: Record<Action, [string, string]> = {
   jump: ['Space', ''],
   crouch: ['KeyC', 'ControlLeft'],
   punch: ['KeyF', 'Mouse0'],
+  aim: ['Mouse2', 'KeyV'],
+  weapon: ['KeyQ', ''],
   use: ['KeyE', ''],
   lights: ['KeyL', ''],
   horn: ['KeyH', ''],

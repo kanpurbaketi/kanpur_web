@@ -1,11 +1,13 @@
 """
 Stage props from downloaded models (assets/common_assets) into the game's form:
 
-  /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_props.py -- [--preview DIR] [--only sofas|mic|carousel|handmic|grass|mug]
+  /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_props.py -- [--preview DIR] [--only sofas|mic|carousel|handmic|grass|mug|revolver]
 
 public/models/sofas.glb   from sofa_set.glb (a SketchUp living-room set, in inches): the three-seater, the two-seater and
                           one armchair, each its own object ('sofa3', 'sofa2', 'chair'), facing forward, standing on the
                           ground, centred, in metres. The side tables, lamps and the glass table are left out.
+public/models/revolver.glb from revolver.zip (WEAPONS 13.glb): 30 cm long, its origin in the fist on the handle, the barrel
+                          toward +z, up +y (build_revolver).
 public/models/mug.glb     from soviet_enamel_mug.zip: one object 'mug', 9.5 cm tall, the handle toward +x (build_mug).
 public/models/mic.glb     from boom-mic.zip (an FBX mic on a boom stand, 2K PBR maps): one object 'mic', 1.6 m tall,
                           its base at the origin, the boom reaching forward; the textures cut to 512.
@@ -453,6 +455,53 @@ def build_mug():
     preview([o], 'mug')
 
 
+REVOLVER_LEN = 0.30          # m, muzzle to the back of the handle (a long-barrelled six-shooter)
+
+
+def build_revolver():
+    """revolver.zip (the user's: source/WEAPONS 13.glb, a cartoon six-shooter, 6.4k faces, 2K maps): one object 'revolver',
+    REVOLVER_LEN long, its origin where the fist closes on the handle (just behind the trigger guard, under the hammer),
+    the barrel along +z and up +y (the game's: the gun is turned so +z is where it aims). Prints the muzzle's position:
+    where the shots come from (src/player/gun.ts MUZZLE)."""
+    reset()
+    tmp = tempfile.mkdtemp()
+    zipfile.ZipFile(os.path.join(ASSETS, 'revolver.zip')).extractall(tmp)
+    bpy.ops.import_scene.gltf(filepath=os.path.join(tmp, 'source', 'WEAPONS 13.glb'))
+    bake_transforms()
+    for o in meshes()[1:]: bpy.data.objects.remove(o)
+    o = meshes()[0]
+    o.name = o.data.name = 'revolver'
+    lo, hi = box(o)
+    c = (lo + hi) / 2
+    L = hi.x - lo.x
+    # as imported the muzzle is at -x, the handle down toward +x; read off a side view (fractions of its length from
+    # the box's middle): the fist round the top of the handle, and the muzzle (the bore's middle)
+    grip = Vector((c.x + 0.30 * L, c.y, c.z - 0.05 * L))
+    muzzle = Vector((lo.x, c.y, c.z + 0.18 * L))
+    k = REVOLVER_LEN / L
+    # Blender -y is the glTF's +z: the barrel (-x) turned to -y
+    M = Matrix.Scale(k, 4) @ Matrix.Rotation(math.pi / 2, 4, 'Z') @ Matrix.Translation(-grip)
+    o.data.transform(M)
+    m = M @ muzzle
+    for mat in o.data.materials:
+        if not mat or not mat.use_nodes: continue
+        for n in mat.node_tree.nodes:
+            if n.type == 'TEX_IMAGE' and n.image:
+                im = n.image; im.pixels[0]
+                if im.size[0] <= 512: continue
+                im.scale(512, 512)
+                path = os.path.join(tmp, 'small_' + bpy.path.clean_name(im.name) + '.png')
+                im.filepath_raw = path; im.file_format = 'PNG'; im.save()
+                small = bpy.data.images.load(path)
+                small.colorspace_settings.name = im.colorspace_settings.name
+                n.image = small
+    lo, hi = box(o)
+    print('revolver tris', tris(o), 'size', [round(v, 3) for v in hi - lo],
+          'muzzle (game x, y, z)', round(m.x, 4), round(m.z, 4), round(-m.y, 4))
+    export([o], 'revolver.glb', images='JPEG')
+    preview([o], 'revolver')
+
+
 # ---- grass ---------------------------------------------------------------------------------------------------------------
 GRASS_KEEP = {'tuft': 0.32, 'sprig': 0.45}       # the share of its blades each keeps
 
@@ -533,3 +582,4 @@ if want('carousel'): build_carousel()
 if want('handmic'): build_handmic()
 if want('mug'): build_mug()
 if want('grass'): build_grass()
+if want('revolver'): build_revolver()

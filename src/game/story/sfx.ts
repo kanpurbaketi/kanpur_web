@@ -7,20 +7,23 @@
    boo       a crowd booing              (stand-in: a dozen low voices on an "ooo", sliding down)
    thud      something soft hitting somebody (stand-in: a short low knock)
    punch     a fist landing, one of four at random (stand-in: the thud)
+   shot      the revolver firing; flesh: a bullet into somebody; ricochet: one off a wall; cock: the hammer drawn back
+             (Explore world: src/player/gun.ts; stand-in: the thud)
 */
 
 let ctx: AudioContext | null = null;
 const audio = () => (ctx ??= new AudioContext());
 
-export type Sfx = 'stomach' | 'applause' | 'boo' | 'thud' | 'punch';
+export type Sfx = 'stomach' | 'applause' | 'boo' | 'thud' | 'punch' | 'shot' | 'flesh' | 'ricochet' | 'cock';
 
 /** the recordings of each (a random one plays) */
 const FILES: Record<Sfx, string[]> = {
   stomach: ['stomach'], applause: ['applause'], boo: ['boo'], thud: ['thud'],
   punch: ['punch1', 'punch2', 'punch3', 'punch4'],
+  shot: ['shot1', 'shot2'], flesh: ['flesh1', 'flesh2', 'flesh3'], ricochet: ['ricochet'], cock: ['cock'],
 };
 /** how loud each recording plays at volume 1 (they are loudness-matched; the crowds sit a little under the hits) */
-const GAIN: Record<Sfx, number> = { stomach: 0.9, applause: 0.8, boo: 0.8, thud: 0.8, punch: 0.7 };
+const GAIN: Record<Sfx, number> = { stomach: 0.9, applause: 0.8, boo: 0.8, thud: 0.8, punch: 0.7, shot: 0.9, flesh: 0.8, ricochet: 0.5, cock: 0.6 };
 
 const buffers = new Map<string, Promise<AudioBuffer | null>>();
 function load(name: string): Promise<AudioBuffer | null> {
@@ -64,7 +67,7 @@ export async function playSfx(name: Sfx, volume = 1, secs = 3.5): Promise<void> 
   if (c.state === 'suspended') void c.resume();
   const list = FILES[name];
   const buf = await Promise.race([load(list[Math.floor(Math.random() * list.length)]), new Promise<null>((r) => setTimeout(() => r(null), 120))]);
-  if (buf) return recording(buf, volume * GAIN[name], name === 'stomach' || name === 'thud' || name === 'punch' ? buf.duration : secs);
+  if (buf) return recording(buf, volume * GAIN[name], name === 'applause' || name === 'boo' ? secs : buf.duration);
   if (name === 'stomach') growl(volume);
   else if (name === 'applause') applause(volume, secs);
   else if (name === 'boo') boo(volume, secs);

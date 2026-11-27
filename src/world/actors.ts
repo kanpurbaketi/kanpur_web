@@ -33,6 +33,8 @@ const RIGS: Record<RigName, { file: string; height: number; step?: number }> = {
   buddha: { file: 'models/buddha_rig.glb', height: 1.63 },      // the old poet with the white beard
   anaya: { file: 'models/anaya_rig.glb', height: 1.60 },        // the girl with the candy floss on the well's gallery
 };
+/** how tall a kind of person is, m (as built; Actor.shape may scale them a little) */
+export const rigHeight = (name: RigName): number => RIGS[name].height;
 /** the looks of each kind: '' is the model as built, the rest are textures in models/looks/<name>.jpg (.webp when built) */
 const LOOKS: Record<RigName, string[]> = {
   uncle: ['', 'uncle_b', 'uncle_c', 'uncle_d', 'uncle_e', 'uncle_f', 'uncle_g', 'uncle_h'],
@@ -239,6 +241,17 @@ export class Actor {
       parent.add(m);
       this.lite.push(m);
     }
+  }
+
+  private chestBone: THREE.Object3D | null | undefined;
+  /** where the chest is in the world now (the upper spine; the root if the rig has none): a pool of blood under a body */
+  chest(out: THREE.Vector3): THREE.Vector3 {
+    if (this.chestBone === undefined) {
+      this.chestBone = null;
+      this.root.traverse((o) => { if (!this.chestBone && (o as THREE.Bone).isBone && /Spine1$/.test(o.name)) this.chestBone = o; });
+    }
+    this.root.updateMatrixWorld(true);
+    return (this.chestBone ?? this.root).getWorldPosition(out);
   }
 
   /** a build of their own: `tall` scales the height, `wide` the breadth (0.85: thin); the stride follows the legs */

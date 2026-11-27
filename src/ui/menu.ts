@@ -7,13 +7,16 @@ import { MapData, P2, centroid } from '../world/types';
 import { Hud, PX_PER_M } from './hud';
 import { account, type Run } from '../game/account';
 import { fmtNum, onLang, t, tk } from '../i18n';
-import { goFree, settingsView, stagesView } from './shell';
+import { goExplore, goFree, settingsView, stagesView } from './shell';
 
-type Item = 'stages' | 'settings' | 'profile' | 'map' | 'places' | 'stats' | 'controls' | 'testing';
+/** in Explore world (?explore): grown-up Ramu, weapons (src/player/gun.ts) */
+const EXPLORING = new URLSearchParams(location.search).has('explore');
+
+type Item = 'explore' | 'stages' | 'settings' | 'profile' | 'map' | 'places' | 'stats' | 'controls' | 'testing';
 // Testing (start a stage at any mission) only on the development server
-const ITEMS: Item[] = ['stages', 'settings', 'profile', 'map', 'places', 'stats', 'controls', ...(import.meta.env.DEV ? ['testing' as const] : [])];
+const ITEMS: Item[] = ['explore', 'stages', 'settings', 'profile', 'map', 'places', 'stats', 'controls', ...(import.meta.env.DEV ? ['testing' as const] : [])];
 const TITLE: Record<Item, Parameters<typeof t>[0]> = {
-  stages: 'menu.stages', settings: 'menu.settings', profile: 'menu.profile', map: 'menu.map', places: 'menu.places', stats: 'menu.stats', controls: 'menu.controls', testing: 'menu.testing',
+  explore: 'menu.explore', stages: 'menu.stages', settings: 'menu.settings', profile: 'menu.profile', map: 'menu.map', places: 'menu.places', stats: 'menu.stats', controls: 'menu.controls', testing: 'menu.testing',
 };
 
 export interface MenuDeps {
@@ -61,8 +64,9 @@ export class Menu {
       for (const it of ITEMS) {
         const b = el('button', 'menu-item');
         b.innerHTML = `${ICONS[it]}<span></span>`;
-        (b.lastElementChild as HTMLElement).textContent = t(TITLE[it]);
-        b.addEventListener('click', () => this.show(it));
+        // Explore world is a place to go, not a panel: in it, the same item leads back out
+        (b.lastElementChild as HTMLElement).textContent = t(it === 'explore' && EXPLORING ? 'explore.leave' : TITLE[it]);
+        b.addEventListener('click', () => (it === 'explore' ? (EXPLORING ? goFree() : goExplore()) : this.show(it)));
         this.drop.append(b);
       }
     };
@@ -830,6 +834,7 @@ function niceLength(m: number): number {
 const svg = (d: string) =>
   `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICONS: Record<Item, string> = {
+  explore: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>'),
   stages: svg('<path d="M4 21V4M4 4h12l-2 4 2 4H4"/>'),
   settings: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   profile: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>'),

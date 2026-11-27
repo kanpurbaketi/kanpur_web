@@ -8,7 +8,9 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { CollisionWorld } from './player/collide';
-import { Ramu } from './player/ramu';
+import { ADULT, Ramu, TEEN } from './player/ramu';
+import { Gun } from './player/gun';
+import { Blood } from './world/blood';
 import { CROWD_MAX, loadSettings, onSettingsChange } from './game/settings';
 import { Stats, repairRs } from './game/stats';
 import { Hud } from './ui/hud';
@@ -66,6 +68,8 @@ import { onLang, t, tk } from './i18n';
 interface Play { stage: Stage; run: number | null }
 const params = new URLSearchParams(location.search);
 /** a test start (menu → Testing, development only): the mission to begin the stage at */
+/** Explore world (menu → Explore world): free roam as grown-up Ramu, with weapons (src/player/gun.ts) */
+const EXPLORE = params.has('explore');
 const TEST_FROM = import.meta.env.DEV && params.has('debug') ? Number(params.get('from')) || 0 : 0;
 
 async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> {
@@ -175,7 +179,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   hintEl.textContent = controls.hint();
   controls.onChange(() => (hintEl.textContent = controls.hint()));
   onLang(() => (hintEl.textContent = controls.hint()));
-  const ramu = new Ramu(camera, world, renderer.domElement, controls);
+  const ramu = new Ramu(camera, world, renderer.domElement, controls, EXPLORE && !play ? ADULT : TEEN);
   scene.add(ramu.root);
   if (params.has('debug')) (window as unknown as { __ramu: Ramu }).__ramu = ramu;   // for test scripts
   // Crowd size comes from the admin portal (admin.html); ?peds=N overrides it for testing.
@@ -275,6 +279,16 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   if (params.has('debug')) (window as unknown as { __peds: Pedestrians }).__peds = peds;
   if (params.has('debug')) (window as unknown as { __footpaths: typeof FOOTPATHS }).__footpaths = FOOTPATHS;
   if (params.has('debug') && mela) (window as unknown as { __melaCrowd: Pedestrians }).__melaCrowd = mela.crowd;
+  // Explore world: the revolver, and blood where it hits
+  let gun: Gun | null = null, blood: Blood | null = null;
+  if (EXPLORE && !play) {
+    document.body.classList.add('explore');
+    // street level: the road and the paving are drawn a little over the floor's 0 (up to 5 cm, the plazas): marks on the top
+    blood = new Blood((x, z, y) => { const f = world.floorAt(x, z, y); return f > -0.01 && f < 0.05 ? 0.05 : f; });
+    scene.add(blood.group);
+    gun = new Gun(scene, ramu, controls, world, mela ? [peds, mela.crowd] : [peds], blood);
+    if (params.has('debug')) (window as unknown as { __gun: Gun }).__gun = gun;
+  }
   let punchesSeen = 0;
   let punchLand = -1;      // seconds until the punch now in the air lands (-1: none)
   /** whoever a punch of Ramu's would land on now, in the street crowd or the mela's: the nearer of the two */
@@ -482,6 +496,7 @@ void main() {
         if (text !== tipShown) { tipShown = text; tipEl.textContent = text; tipEl.style.display = text ? 'block' : 'none'; }
       }
       ramu.update(dt);
+      if (gun && !paused) gun.update(dt);                 // (after his clip: the arm up at the aim, the gun in his fist)
       if (director && !paused) director.update(dt);
       if (keepers && !paused) keepers.update(dt, ramu.position.x, ramu.position.z);
       if (queue && !paused) queue.update(dt, ramu.position.x, ramu.position.z);     // the story: after Ramu, so a cutscene's camera has the last word
@@ -494,6 +509,7 @@ void main() {
         [p.x, p.z] = world.resolve(p.x, p.z, 0.33, p.y);   // ... nor be pushed by them into a wall
       }
     }
+    if (blood && !paused) blood.update(dt);
     if (!fixed && !paused) { stats.update(dt, ramu.position.x, ramu.position.z, ramu.speed, ramu.jumps); trackRun(dt); }
     const focus = fixed ? camera.position : ramu.position;
     sun.target.position.set(focus.x, 0, focus.z);
@@ -647,7 +663,7 @@ async function boot(): Promise<void> {
   guardBack();
   const msg = params.get('msg');
   if (msg) history.replaceState(null, '', location.pathname);
-  toast(msg?.startsWith('stage.') ? tk(msg, { n: params.get('n') ?? '' }) : t('free.welcome'), 7);
+  toast(msg?.startsWith('stage.') ? tk(msg, { n: params.get('n') ?? '' }) : t(EXPLORE ? 'explore.welcome' : 'free.welcome'), EXPLORE ? 10 : 7);
 }
 
 boot().catch((e) => {

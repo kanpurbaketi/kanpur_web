@@ -119,7 +119,7 @@ export function addFigures(parent: THREE.Object3D, spots: Spot[]): void {
           q.setFromAxisAngle(UP, s.ry);
           im.setMatrixAt(i, m.compose(v.set(s.x, s.y, s.z), q, sc.setScalar(s.s ?? 1)));
         });
-        return splitInstances(im, 30);
+        return splitInstances(im, 60);
       };
       const near = make(geometry);
       cullFar(near, farGeometry ? FIG_NEAR : FIG_FAR);

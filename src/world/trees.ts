@@ -60,7 +60,7 @@ export function makeTrees(spots: TreeSpot[]): THREE.Object3D[] {
       im.castShadow = true;
       im.receiveShadow = true;
       // in squares, each drawn only when in view, none past TREE_FAR (lost in the haze by then)
-      const g = splitInstances(im, 50);
+      const g = splitInstances(im, 100);
       cullFar(g, TREE_FAR);
       out.push(g);
     }

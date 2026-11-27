@@ -65,7 +65,7 @@ export function addGrass(parent: THREE.Object3D, spots: GrassSpot[]): void {
         list.forEach((s, i) => im.setMatrixAt(i, m.compose(v.set(s.x, s.y, s.z), q.setFromAxisAngle(up, s.ry), sc.setScalar(s.s))));
         im.receiveShadow = true;
         // in squares, each drawn only when in view and near (a tuft is lost on the ground past GRASS_FAR)
-        const g = splitInstances(im, 20);
+        const g = splitInstances(im, 40);
         cullFar(g, GRASS_FAR);
         parent.add(g);
       }

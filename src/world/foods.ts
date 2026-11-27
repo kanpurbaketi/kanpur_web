@@ -61,7 +61,7 @@ export function addFoods(parent: THREE.Object3D, spots: FoodSpot[], shadows = fa
       im.castShadow = shadows;
       im.receiveShadow = true;
       // in squares, each drawn only when in view and within 70 m (fruit on a stall)
-      const sq = splitInstances(im, 15);
+      const sq = splitInstances(im, 30);
       cullFar(sq, 70);
       parent.add(sq);
     }

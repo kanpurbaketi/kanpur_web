@@ -1,5 +1,6 @@
 import { Actor } from './world/actors';
 import { updateCull } from './world/chunks';
+import { AdaptiveRes } from './game/adaptiveRes';
 import { FOOTPATHS } from './world/footpaths';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -506,6 +507,14 @@ void main() {
     composer.addPass(new OutputPass());
   }
 
+  // fewer pixels when the frame rate falls (not with ?pr=, which asks for a ratio, nor in the still shots)
+  const adaptive = params.has('pr') || fixed ? null : new AdaptiveRes(renderer.getPixelRatio(), (pr) => {
+    renderer.setPixelRatio(pr);
+    renderer.setSize(innerWidth, innerHeight);
+    composer?.setPixelRatio(pr);
+  });
+  if (params.has('debug')) Object.assign(window, { __adaptive: adaptive });
+
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -617,7 +626,11 @@ void main() {
     sky.position.copy(camera.position);
     Actor.eye.copy(camera.position);                 // (people near it wear their full bodies)
     Actor.zoom = Math.tan((camera.fov * Math.PI) / 360) / Math.tan((70 * Math.PI) / 360);
-    updateCull(camera.position, Actor.zoom);         // (the far trees, grass, figures and street things left out)
+    updateCull(camera.position, Actor.zoom);
+    adaptive?.update();
+    // the far plane where the haze has hidden everything (1.1 km; from up high, the overview shots, further)
+    const far = camera.position.y > 50 ? 2500 : 1100;
+    if (camera.far !== far) { camera.far = far; camera.updateProjectionMatrix(); }         // (the far trees, grass, figures and street things left out)
     updateGlow(dt, camera, innerHeight * renderer.getPixelRatio());
     if (NIGHT) lightPool.update(focus.x, focus.z);
     lampPools?.update(camera.position.x, camera.position.z);

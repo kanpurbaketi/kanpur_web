@@ -215,7 +215,7 @@ export function groundDecals(spots: Partial<Record<Decal, [number, number, numbe
     im.receiveShadow = true;
     im.renderOrder = 1;
     // in squares, each drawn only when in view and within 160 m (a mark on the road is lost further off)
-    const sq = splitInstances(im, 50);
+    const sq = splitInstances(im, 100);
     cullFar(sq, 160);
     group.add(sq);
   });

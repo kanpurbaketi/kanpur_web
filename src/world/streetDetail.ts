@@ -143,7 +143,7 @@ export class StreetDetail {
     });
     im.castShadow = true;
     // in squares, each drawn only when in view and within 260 m
-    const sq = splitInstances(im, 60);
+    const sq = splitInstances(im, 120);
     cullFar(sq, 260);
     this.group.add(sq);
     this.drawCalls++;

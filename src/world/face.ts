@@ -125,8 +125,9 @@ varying float vDown;
 varying float vDrop;
 // (vFaceDark is 1 on the line where the lips meet, falling off over the lips: the wider open, the more of it is gap)
 // how far out the teeth go from the mouth's middle, of its half width: the upper strip, the lower line
-const float UPPER_W = 0.8;
-const float LOWER_W = 0.36;
+float faceFacing = 1.0;      // how square on the mouth is seen (set in main: vNormal is declared after this)
+const float UPPER_W = 0.62;
+const float LOWER_W = 0.3;
 float mouthEdge() { return smoothstep( mix( 0.6, 0.35, vOpen ), mix( 0.85, 0.65, vOpen ), vFaceDark ); }
 float mouthDark() { return mouthEdge() * smoothstep( 0.03, 0.2, vOpen ); }
 vec3 mouthColour() {
@@ -142,9 +143,13 @@ vec3 mouthColour() {
   // never meet round the opening's ends (no ring)
   float side = abs( vRest.x - ${f(m.mouth[0])} ) / ${f(m.mhw)};
   float top = ( 1.0 - smoothstep( -0.4, -0.12, t ) ) * ( 1.0 - smoothstep( UPPER_W - 0.2, UPPER_W, side ) );
-  float bottom = smoothstep( 0.8, 0.95, t ) * 0.7 * ( 1.0 - smoothstep( LOWER_W - 0.14, LOWER_W, side ) );
-  float teeth = max( top, bottom ) * smoothstep( 0.12, 0.3, vOpen );
-  return mix( c, vec3( 0.72, 0.68, 0.61 ), teeth );
+  float bottom = smoothstep( 0.8, 0.95, t ) * 0.6 * ( 1.0 - smoothstep( LOWER_W - 0.14, LOWER_W, side ) );
+  // set back inside the mouth, not on the lips: a dark rim left between the lip's edge and the teeth (they start past
+  // where the dark comes in), in the mouth's shade (greyed, not white), and hidden by the cheek and lips seen from the
+  // side (the opening is painted on the lips' own surface: side-on the teeth would sit out in front of the face)
+  float inset = smoothstep( 0.02, 0.08, vFaceDark - mix( 0.85, 0.65, vOpen ) );
+  float teeth = max( top, bottom ) * inset * faceFacing * smoothstep( 0.18, 0.4, vOpen );
+  return mix( c, vec3( 0.56, 0.51, 0.44 ), teeth );
 }
 ${eyeMask}`)
       .replace('#include <map_pars_fragment>', `#include <map_pars_fragment>${sharp ? `
@@ -183,13 +188,16 @@ vec3 faceDetail( vec3 base ) {
     diffuseColor.rgb = mix( diffuseColor.rgb, pow( c, vec3( 2.2 ) ), faceE );
   }
   float faceD = mouthDark();
+#ifndef FLAT_SHADED
+  faceFacing = smoothstep( 0.25, 0.65, dot( normalize( vNormal ), normalize( vViewPosition ) ) );
+#endif
   diffuseColor.rgb = mix( diffuseColor.rgb, mouthColour(), faceD );`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix( roughnessFactor, 0.22, faceE );\n  roughnessFactor = mix( roughnessFactor, 1.0, faceD );')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance *= 1.0 - faceD;');
   };
   const key = mat.customProgramCacheKey.bind(mat);
   const marks = m.eyes.flat().map(f).join(',');
-  mat.customProgramCacheKey = () => key() + '|face5' + marks + f(m.mouth[0]) + f(m.mhw) + (m.tex ?? '');
+  mat.customProgramCacheKey = () => key() + '|face6' + marks + f(m.mouth[0]) + f(m.mhw) + (m.tex ?? '');
   mat.needsUpdate = true;
 }
 

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addFigures, figure, figurePosts, melaPeople, ONLOOKER, population, Spot } from './figures';
+import { figure, figurePosts, melaPeople, ONLOOKER, population, Spot } from './figures';
 import { banner, Bulbs, Geo, litMat, rnd } from './geo';
 import { beamMaterial, NIGHT } from './night';
 import { cloneCar, loadPBR } from './vehicleModels';
@@ -208,6 +208,20 @@ function bikeModel(rider: number, tank: string): THREE.Group {
 
 /** the show-offs dancing on the cars' roofs (rigged: updated with the well) */
 const dancers: Actor[] = [];
+
+/** the well's onlookers: what each is doing, and for how much longer */
+interface Watcher { a: Actor; t: number; seed: number }
+const watchers: Watcher[] = [];
+const WATCH_KINDS: RigName[] = ['uncle', 'aunty', 'boy', 'girl', 'uncle', 'boy'];
+/** looking round the drum after the riders most of the time; talking, or waving their arms at a stunt, now and then */
+const WATCH = ['look_around', 'look_around', 'look_around', 'talk', 'talk', 'argue', 'idle'];
+let watchN = 0;
+function watch(w: Watcher, fade = 0.5): void {
+  const u = rnd(w.seed * 3.1 + ++watchN * 0.618);
+  const clip = WATCH[Math.floor(u * WATCH.length)];
+  w.a.play(clip, 0.85 + rnd(w.seed + watchN) * 0.3, fade);
+  w.t = 5 + rnd(w.seed * 1.3 + watchN * 0.27) * 9;
+}
 
 function carModel(file: string, dancer: RigName, n: number): THREE.Group {
   const root = new THREE.Group();
@@ -460,7 +474,28 @@ export function buildMautKuan() {
     const r = DK0 + 0.38 + rnd(i * 5.3) * 0.12, p = wallPoint(a, r, DY), like = rail[(i * 7) % rail.length];
     deck.push({ ...like, x: p.x, y: DY, z: p.z, ry: Math.atan2(Math.cos(a), Math.sin(a)) + (rnd(i * 6.3) - 0.5) * 0.6 });
   }
-  addFigures(group, [...spots, ...deck]);
+  // they are rigged people (the light bodies), watching the show: looking about, talking to each other, waving their
+  // hands at it, now one, now another (each their own, from time to time)
+  if (population.on) {
+    const all = [...spots, ...deck];
+    const kindOf = all.map((sp, i) => (sp.kind ?? WATCH_KINDS[Math.floor(rnd((sp.n ?? i) * 0.71 + 2) * WATCH_KINDS.length)]) as RigName);
+    const kinds = [...new Set(kindOf)];
+    melaPeople.ready.then(() => Promise.all(kinds.map((k) => makeActors(k, kindOf.filter((x) => x === k).length, true)))).then((made) => {
+      const left = new Map(kinds.map((k, i) => [k, made[i]]));
+      all.forEach((sp, i) => {
+        const a = left.get(kindOf[i])!.shift()!;
+        a.root.position.set(sp.x, sp.y, sp.z);
+        a.root.rotation.y = sp.ry;
+        a.root.scale.setScalar(sp.s ?? 1);
+        a.face.blinking = true;
+        const w: Watcher = { a, t: 0, seed: (sp.n ?? i) + i * 0.13 };
+        watch(w, 0);
+        a.update(rnd(w.seed * 1.7) * 9);
+        group.add(a.root);
+        watchers.push(w);
+      });
+    }).catch((e) => console.error('the well\'s onlookers failed to load', e));
+  }
 
   // moving vehicles: bikes ride near-horizontal bands high on the wall, cars lower and tilted
   interface Veh { obj: THREE.Group; a0: number; w: number; y0: number; amp: number; sp: number; phi: number; ph: number; off: number }
@@ -553,7 +588,11 @@ export function buildMautKuan() {
 
   return {
     group,
-    update: (t: number, dt: number) => { place(t); for (const d of dancers) d.update(dt); },
+    update: (t: number, dt: number) => {
+      place(t);
+      for (const d of dancers) d.update(dt);
+      for (const w of watchers) { if ((w.t -= dt) <= 0) watch(w); w.a.update(dt); }
+    },
     post: posts,
     rails,
     floor,

@@ -50,13 +50,52 @@ export function setupMobile(): void {
     show();
   });
 
-  // fullscreen, sideways: asked on the first tap (browsers only allow it from one)
+  // full screen, sideways. Browsers allow it only from a tap, so it is asked on every tap until it holds (and again
+  // after it is left), and a button asks for it too. An iPhone's Safari has no full screen for pages at all: there the
+  // game added to the Home Screen opens without the address bar (public/manifest.webmanifest), and a card says how, once
+  const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+  const canFull = !!(el.requestFullscreen || el.webkitRequestFullscreen) && (document.fullscreenEnabled ?? true);
+  const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches
+    || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  const isFull = () => !!(document.fullscreenElement || (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement);
   const goFull = () => {
-    const el = document.documentElement;
-    if (document.fullscreenElement || !el.requestFullscreen) return;
-    el.requestFullscreen({ navigationUI: 'hide' })
-      .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape'))
-      .catch(() => { /* not allowed here: the card asks instead */ });
+    if (standalone || !canFull || isFull()) return;
+    try {
+      const p = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : (el.webkitRequestFullscreen?.(), Promise.resolve());
+      void p.then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape'))
+        .catch(() => { /* not allowed now: the next tap asks again */ });
+    } catch { /* not allowed */ }
   };
-  addEventListener('touchend', goFull, { once: true, capture: true });
+  if (canFull && !standalone) {
+    addEventListener('touchend', goFull, { capture: true });
+    const fs = document.createElement('button');
+    fs.type = 'button';
+    fs.className = 'fs-btn';
+    fs.setAttribute('aria-label', 'Full screen');
+    fs.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+    fs.addEventListener('click', goFull);
+    document.body.append(fs);
+    const mark = () => document.body.classList.toggle('full', isFull());
+    document.addEventListener('fullscreenchange', mark);
+    document.addEventListener('webkitfullscreenchange', mark);
+    mark();
+  } else if (!standalone && /iPhone|iPod/.test(navigator.userAgent)) homeScreenCard();
+}
+
+/** an iPhone in Safari: once, how to get the game without the address bar (Share, Add to Home Screen) */
+function homeScreenCard(): void {
+  const KEY2 = 'ramu.homeTip';
+  try { if (localStorage.getItem(KEY2)) return; } catch { /* private window: shown each visit */ }
+  const c = document.createElement('div');
+  c.className = 'home-tip';
+  const draw = () => {
+    c.innerHTML = `<b>${t('home.title')}</b><span>${t('home.sub')}</span><button type="button">${t('home.ok')}</button>`;
+    c.querySelector('button')!.addEventListener('click', () => {
+      c.remove();
+      try { localStorage.setItem(KEY2, '1'); } catch { /* private window */ }
+    });
+  };
+  draw();
+  onLang(draw);
+  document.body.append(c);
 }

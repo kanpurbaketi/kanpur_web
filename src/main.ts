@@ -539,7 +539,12 @@ void main() {
       if (driving && !paused) driving.update(dt);
       if (storyTip && tipEl) {                            // no vehicles (?traffic=0): the story's tip on its own
         const text = storyTip() ?? '';
-        if (text !== tipShown) { tipShown = text; tipEl.textContent = text; tipEl.style.display = text ? 'block' : 'none'; }
+        if (text !== tipShown) {
+          tipShown = text; tipEl.textContent = text; tipEl.style.display = text ? 'block' : 'none';
+          document.body.classList.toggle('can-use', !!text);
+          const b = document.getElementById('btn-use');
+          if (b) b.textContent = t('touch.use');
+        }
       }
       ramu.update(dt);
       if (gun && !paused) gun.update(dt);                 // (after his clip: the arm up at the aim, the gun in his fist)

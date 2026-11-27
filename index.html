@@ -6,6 +6,10 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Ramu" />
+  <meta name="theme-color" content="#1d140f" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Ramu — Moti Jheel</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #d6d3c4; font-family: system-ui, sans-serif; }
@@ -28,33 +32,48 @@
       color: #fff; background: rgba(0,0,0,.4); pointer-events: none; }
     #debug { position: fixed; left: 16px; bottom: 26px; padding: 4px 8px; font: 12px ui-monospace, monospace;
       color: #0f0; background: rgba(0,0,0,.6); }
-    #stick { position: fixed; display: none; width: 120px; height: 120px; border-radius: 50%;
-      background: rgba(255,255,255,.18); border: 2px solid rgba(255,255,255,.5); pointer-events: none; }
-    #knob { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%;
-      background: rgba(255,255,255,.6); }
-    .tbtn { position: fixed; display: none; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.7);
-      background: rgba(0,0,0,.3); color: #fff; font-weight: 600; font-size: 13px; }
-    .tbtn.on { background: rgba(232,89,12,.7); }
-    /* the touch buttons on a grid from the bottom right corner: column c (leftward), row r (upward); kept clear of a
-       phone's notch and home bar (the safe-area insets) */
+    /* ---- touch controls (body.touch): a mobile shooter's layout ---- */
     :root { --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --st: env(safe-area-inset-top, 0px);
-      --sb: env(safe-area-inset-bottom, 0px); --b: 64px; --g: 12px; --r0: calc(24px + var(--sr)); --b0: calc(28px + var(--sb)); }
-    .tbtn { width: var(--b); height: var(--b); right: calc(var(--r0) + var(--c, 0) * (var(--b) + var(--g)));
-      bottom: calc(var(--b0) + var(--r, 0) * (var(--b) + var(--g))); -webkit-tap-highlight-color: transparent; touch-action: none;
-      -webkit-user-select: none; user-select: none; padding: 0; letter-spacing: -.2px; }
-    #btn-jump { --c: 0; --r: 0; }
-    #btn-run { --c: 1; --r: 0; }
-    #btn-crouch { --c: 2; --r: 0; font-size: 11px; }
-    #btn-punch { --c: 0; --r: 1; }
-    #btn-use { --c: 1; --r: 1; font-size: 11px; }
-    #btn-aim { --c: 0; --r: 2; }
-    #btn-horn { --c: 2; --r: 0; }
-    #btn-lights { --c: 2; --r: 1; font-size: 11px; }
+      --sb: env(safe-area-inset-bottom, 0px); --u: 1px; }
+    /* the stick: resting low on the left, it comes to the thumb wherever the left part of the screen is touched */
+    #stick { position: fixed; display: none; width: calc(130 * var(--u)); height: calc(130 * var(--u)); border-radius: 50%;
+      left: calc(60px + var(--sl)); bottom: calc(40px + var(--sb)); background: rgba(0,0,0,.14); border: 2px solid rgba(255,255,255,.35);
+      pointer-events: none; transition: opacity .2s; opacity: .7; }
+    #stick.on { opacity: 1; transition: none; }
+    #knob { position: absolute; left: 50%; top: 50%; width: 42%; height: 42%; margin: -21% 0 0 -21%; border-radius: 50%;
+      background: rgba(255,255,255,.55); box-shadow: 0 1px 6px rgba(0,0,0,.35); }
+    /* pushed up past the ring onto this: the sprint locks on (he runs on by himself until the stick is touched again) */
+    #sprint { position: absolute; left: 50%; bottom: calc(100% + 18 * var(--u)); width: calc(40 * var(--u)); height: calc(40 * var(--u));
+      margin-left: calc(-20 * var(--u)); border-radius: 50%; display: none; place-items: center; color: #fff;
+      background: rgba(0,0,0,.35); border: 2px solid rgba(255,255,255,.5); }
+    #stick.on #sprint, #stick.lock #sprint { display: grid; }
+    #sprint.hot, #stick.lock #sprint { background: rgba(242,153,42,.85); border-color: #ffd9a0; }
+    #sprint svg { width: 60%; height: 60%; }
+    .tbtn { position: fixed; display: none; width: calc(var(--s, 58) * var(--u)); height: calc(var(--s, 58) * var(--u)); border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.55); background: rgba(0,0,0,.28); color: #fff; padding: 0; place-items: center;
+      font: 700 12px system-ui, sans-serif; -webkit-tap-highlight-color: transparent; touch-action: none; -webkit-user-select: none; user-select: none; }
+    .tbtn svg { width: 52%; height: 52%; pointer-events: none; }
+    .tbtn.on { background: rgba(232,89,12,.7); border-color: #ffd9a0; }
+    .tbtn:active, .tbtn.held { background: rgba(255,255,255,.3); }
+    /* the right thumb's corner: FIRE big, SCOPE above it, JUMP and CROUCH at the edge */
+    .tbtn.big { --s: 84; right: calc((26 + 58 + 18) * var(--u) + var(--sr)); bottom: calc((40 + 30) * var(--u) + var(--sb)); }
     #btn-punch .shoot, body.gun-out #btn-punch .fist { display: none; }
-    body.gun-out #btn-punch .shoot { display: inline; }
-    body.gun-out #btn-punch { background: rgba(160,30,20,.55); }
+    body.gun-out #btn-punch .shoot { display: contents; }
+    body.gun-out #btn-punch { background: rgba(170,30,20,.5); border-color: rgba(255,200,190,.7); }
+    #btn-aim { right: calc((26 + 58 + 18 + 13) * var(--u) + var(--sr)); bottom: calc((40 + 30 + 84 + 16) * var(--u) + var(--sb)); }
+    #btn-jump { right: calc(22 * var(--u) + var(--sr)); bottom: calc((40 + 58 + 22) * var(--u) + var(--sb)); }
+    #btn-crouch { --s: 52; right: calc(26 * var(--u) + var(--sr)); bottom: calc(30 * var(--u) + var(--sb)); }
+    /* a second FIRE above the stick (the left thumb shoots while the right one aims) */
+    #btn-fire-l { --s: 56; left: calc(66 * var(--u) + var(--sl)); bottom: calc((40 + 130 + 70) * var(--u) + var(--sb)); background: rgba(170,30,20,.45); }
+    /* use / get in: only when there is something to use, by the right thumb */
+    .tbtn.use { --s: 0; width: auto; height: calc(44 * var(--u)); padding: 0 16px; border-radius: 22px; right: calc((26 + 58 + 18 + 100) * var(--u) + var(--sr));
+      bottom: calc((40 + 30 + 84 + 40) * var(--u) + var(--sb)); background: rgba(242,153,42,.85); border-color: #ffd9a0; font-size: 14px; letter-spacing: .2px; }
+    /* driving: the horn and the lights where JUMP and SCOPE were */
+    #btn-horn { right: calc(22 * var(--u) + var(--sr)); bottom: calc((40 + 58 + 22) * var(--u) + var(--sb)); }
+    #btn-lights { --s: 52; right: calc(26 * var(--u) + var(--sr)); bottom: calc(30 * var(--u) + var(--sb)); }
     body:not(.driving) .tbtn.car { display: none !important; }
-    body.driving .tbtn.foot, body:not(.gun-out) .tbtn.gun { display: none !important; }
+    body.driving .tbtn.foot, body.driving #btn-jump, body.driving .tbtn.big, body.driving #btn-fire-l,
+    body:not(.gun-out) .tbtn.gun, body:not(.gun-out) #btn-fire-l, body:not(.can-use) .tbtn.use { display: none !important; }
     #use-tip { position: fixed; left: 50%; bottom: 22%; transform: translateX(-50%); z-index: 6; display: none;
       padding: 6px 12px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; font: 600 14px system-ui, sans-serif; white-space: pre-line; text-align: center;
       pointer-events: none; }
@@ -162,7 +181,8 @@
     .link-btn { border: 0; background: none; padding: 0; color: #b5480a; font: inherit; text-decoration: underline; cursor: pointer; }
     @media (prefers-reduced-motion: reduce) { .menu-drop { transition: none; } }
     @media (pointer: coarse) {
-      .tbtn { display: block; }
+      .tbtn { display: grid; }
+      #stick { display: block; }
       #minimap { width: 120px; height: 120px; }
       #hint { display: none; }
     }
@@ -172,7 +192,7 @@
     body.touch { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
       -webkit-tap-highlight-color: transparent; }
     /* the weapon (tap to change), beside AIM */
-    body.touch #weapon { right: calc(var(--r0) + var(--b) + var(--g)); bottom: calc(var(--b0) + 2 * (var(--b) + var(--g)) + var(--b) / 2 - 18px); }
+    body.touch #weapon { right: auto; left: 50%; transform: translateX(-50%); bottom: calc(12px + var(--sb)); padding: 6px 12px; }
     body.touch .sh-toast { font-size: 15px; }
     body.touch #life { left: calc(16px + var(--sl)); }
     /* held upright anyway: the mission box under the map, off Ramu and the buttons */
@@ -183,9 +203,7 @@
     /* a phone held sideways: the screen is short, so everything smaller and pushed into the corners, the middle left
        for the street */
     @media (orientation: landscape) and (max-height: 540px) {
-      body.touch { --b: 52px; --g: 10px; --r0: calc(14px + var(--sr)); --b0: calc(12px + var(--sb)); }
-      body.touch .tbtn { font-size: 12px; }
-      body.touch #btn-use, body.touch #btn-crouch, body.touch #btn-lights { font-size: 10px; }
+      body.touch { --u: min(1px, calc(100vh / 400)); }
       body.touch .menu-btn { left: calc(10px + var(--sl)); top: calc(10px + var(--st)); width: 40px; height: 40px; }
       body.touch .menu-drop { left: calc(10px + var(--sl)); top: calc(56px + var(--st)); max-height: calc(100vh - 66px); overflow: auto; }
       body.touch .sh-chip { left: calc(58px + var(--sl)); top: calc(10px + var(--st)); height: 40px; }
@@ -201,7 +219,7 @@
       body.touch #credits { left: calc(8px + var(--sl)); right: auto; bottom: var(--sb); padding: 1px 6px; font-size: 9px; text-align: left;
         border-radius: 4px 4px 0 0; background: rgba(0,0,0,.25); }
       body.touch #debug { left: calc(10px + var(--sl)); bottom: calc(16px + var(--sb)); font-size: 10px; }
-      body.touch:not(.cinema) .subs { bottom: calc(10px + var(--sb)); max-width: calc(100vw - 2 * (var(--r0) + 3 * (var(--b) + var(--g)))); padding: 6px 12px 7px; }
+      body.touch:not(.cinema) .subs { bottom: calc(10px + var(--sb)); max-width: calc(100vw - 2 * (var(--sr) + 220px)); padding: 6px 12px 7px; }
       body.touch .subs-line { font-size: 15px; }
       body.touch .cine-skip { right: calc(14px + var(--sr)); top: calc(10px + var(--st)); bottom: auto; }
       body.touch .rq { bottom: calc(8px + var(--sb)); max-height: calc(100vh - 70px); overflow: auto; padding: 10px 12px;
@@ -218,6 +236,19 @@
       body.touch .menu-panel { max-height: calc(100vh - 16px); }
       body.touch .menu-body { padding: 12px 16px 14px; }
       body.touch .map-canvas { height: calc(100vh - 140px); }
+    }
+    /* full screen: a button by the map until it is (src/ui/mobile.ts); an iPhone's card about the Home Screen */
+    .fs-btn { position: fixed; z-index: 7; right: calc(146px + var(--sr)); top: calc(16px + var(--st)); width: 38px; height: 38px;
+      display: grid; place-items: center; border-radius: 10px; border: 1px solid rgba(255,255,255,.5); background: rgba(0,0,0,.4);
+      color: #fff; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body.full .fs-btn { display: none; }
+    .home-tip { position: fixed; z-index: 60; left: 50%; top: calc(10px + var(--st)); transform: translateX(-50%); display: flex;
+      align-items: center; gap: 10px; max-width: calc(100vw - 24px); padding: 8px 8px 8px 14px; border-radius: 12px;
+      background: rgba(29,20,15,.92); color: #f3eee6; font: 13px/1.35 system-ui, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+    .home-tip b { color: #f2a54a; white-space: nowrap; }
+    .home-tip button { flex: none; padding: 7px 12px; border-radius: 8px; border: 0; background: #f2992a; color: #1d140f; font: 700 13px system-ui, sans-serif; }
+    @media (orientation: landscape) and (max-height: 540px) {
+      .fs-btn { right: calc(110px + var(--sr)); top: calc(10px + var(--st)); width: 34px; height: 34px; }
     }
     /* held upright: a card asks for the phone to be turned */
     .rotate { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; padding: 24px;
@@ -239,15 +270,16 @@
   <canvas id="minimap"></canvas>
   <div id="hint">Click to look · WASD move · Left Shift run · Space jump · C crouch · F punch · Esc release mouse</div>
   <div id="debug"></div>
-  <div id="stick"><div id="knob"></div></div>
-  <button class="tbtn" id="btn-run">RUN</button>
-  <button class="tbtn" id="btn-jump">JUMP</button>
-  <button class="tbtn" id="btn-punch"><span class="fist">PUNCH</span><span class="shoot">SHOOT</span></button>
-  <button class="tbtn gun" id="btn-aim">AIM</button>
-  <button class="tbtn foot" id="btn-crouch">CROUCH</button>
-  <button class="tbtn" id="btn-use">GET IN</button>
-  <button class="tbtn car" id="btn-horn">HORN</button>
-  <button class="tbtn car" id="btn-lights">LIGHTS</button>
+  <!-- touch screens (src/player/ramu.ts bindTouch): laid out like a mobile shooter's: the stick left, FIRE and the rest right -->
+  <div id="stick"><div id="knob"></div><div id="sprint"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="14" cy="4.5" r="2" fill="currentColor"/><path d="M8 21l3-6 3 2 1 4M11 15l1.5-6.5L9 10l-2 3M12.5 8.5l3 3 3.5-.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+  <button class="tbtn" id="btn-fire-l" aria-label="Fire"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v5M12 16.5v5M2.5 12h5M16.5 12h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg></button>
+  <button class="tbtn big" id="btn-punch" aria-label="Fire"><span class="shoot"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v5M12 16.5v5M2.5 12h5M16.5 12h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg></span><span class="fist"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11V7a1.5 1.5 0 0 1 3 0v3M10 10V6a1.5 1.5 0 0 1 3 0v4M13 10V6.5a1.5 1.5 0 0 1 3 0V11M16 11V8.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L5 14.5a1.6 1.6 0 0 1 2.4-2L9 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>
+  <button class="tbtn gun" id="btn-aim" aria-label="Scope"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+  <button class="tbtn" id="btn-jump" aria-label="Jump"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V6M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 21h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+  <button class="tbtn foot" id="btn-crouch" aria-label="Crouch"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="5" r="2.2" fill="currentColor"/><path d="M10 8.5l-2 5h5l2 6M8 13.5l-2.5 5.5M10.5 9.5l4 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <button class="tbtn use" id="btn-use">GET IN</button>
+  <button class="tbtn car" id="btn-horn" aria-label="Horn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4zM16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <button class="tbtn car" id="btn-lights" aria-label="Lights"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 6c-4 0-6 2.7-6 6s2 6 6 6c1.5 0 2-.8 2-6s-.5-6-2-6zM16 8h5M16 12h5M16 16h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <div id="use-tip"></div>
   <div id="credits"></div>
   <script type="module" src="/src/main.ts"></script>

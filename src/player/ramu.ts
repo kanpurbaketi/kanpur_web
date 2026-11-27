@@ -652,25 +652,49 @@ export class Ramu {
     this.pitch = Math.max(-1.2, Math.min(0.5, this.pitch - dy * k));
   }
 
-  /** Left half: virtual joystick. Right half: drag to look. Buttons: run toggle, jump. */
+  /**
+   * Touch screens, laid out like a mobile shooter's (index.html's touch styles):
+   * - the left part of the screen: the stick comes to the thumb wherever it lands; pushed all the way he runs, and pushed
+   *   on up past the ring onto the sprint mark and let go there, the sprint locks on (he runs on ahead by himself, turned
+   *   by the look, until the stick is touched again);
+   * - the rest: drag to look (finer with the scope up);
+   * - FIRE (big, right; a second one over the stick): a shot, again as fast as the gun allows while it is held, and
+   *   dragged it looks as well; with no gun out it punches. SCOPE and CROUCH are toggles, JUMP; USE only when there is
+   *   something to use; driving, HORN and LIGHTS.
+   */
   private bindTouch(dom: HTMLElement): void {
     const stick = document.getElementById('stick')!;
     const knob = document.getElementById('knob')!;
+    const sprint = document.getElementById('sprint')!;
     let moveId = -1, lookId = -1;
-    let sx = 0, sy = 0, lx = 0, ly = 0;
+    let sx = 0, sy = 0, lx = 0, ly = 0, hot = false;
+    const lookBy = (dx: number, dy: number) => this.look(dx, dy, this.aimHeld ? 0.0024 : 0.0052);
+    const rest = () => {
+      stick.classList.remove('on');
+      stick.style.left = stick.style.top = stick.style.bottom = '';
+      knob.style.transform = '';
+      sprint.classList.remove('hot');
+    };
+    const unlock = () => {
+      if (!stick.classList.contains('lock')) return;
+      stick.classList.remove('lock');
+      this.touchRun = false;
+      this.touchMove.set(0, 0);
+    };
     dom.addEventListener('touchstart', (e) => {
       for (const t of Array.from(e.changedTouches)) {
-        if (t.clientX < innerWidth / 2 && moveId < 0) {
+        if (t.clientX < innerWidth * 0.42 && moveId < 0) {
           moveId = t.identifier;
-          sx = t.clientX;
-          sy = t.clientY;
-          stick.style.display = 'block';
-          stick.style.left = `${sx - 60}px`;
-          stick.style.top = `${sy - 60}px`;
+          unlock();
+          sx = t.clientX; sy = t.clientY; hot = false;
+          const r = stick.offsetWidth / 2;
+          stick.classList.add('on');
+          stick.style.left = `${sx - r}px`;
+          stick.style.top = `${sy - r}px`;
+          stick.style.bottom = 'auto';
         } else if (lookId < 0) {
           lookId = t.identifier;
-          lx = t.clientX;
-          ly = t.clientY;
+          lx = t.clientX; ly = t.clientY;
         }
       }
       e.preventDefault();
@@ -678,15 +702,17 @@ export class Ramu {
     dom.addEventListener('touchmove', (e) => {
       for (const t of Array.from(e.changedTouches)) {
         if (t.identifier === moveId) {
-          const dx = t.clientX - sx, dy = t.clientY - sy;
-          const len = Math.min(50, Math.hypot(dx, dy));
-          const a = Math.atan2(dy, dx);
+          const R = stick.offsetWidth / 2, dx = t.clientX - sx, dy = t.clientY - sy;
+          const len = Math.min(R, Math.hypot(dx, dy)), a = Math.atan2(dy, dx);
           knob.style.transform = `translate(${Math.cos(a) * len}px, ${Math.sin(a) * len}px)`;
-          this.touchMove.set((Math.cos(a) * len) / 50, (Math.sin(a) * len) / 50);
+          this.touchMove.set((Math.cos(a) * len) / R, (Math.sin(a) * len) / R);
+          this.touchRun = len > R * 0.92;
+          // up past the ring, onto the sprint mark
+          hot = dy < -R * 1.55 && Math.abs(dx) < R * 0.9;
+          sprint.classList.toggle('hot', hot);
         } else if (t.identifier === lookId) {
-          this.look(t.clientX - lx, t.clientY - ly, 0.005);
-          lx = t.clientX;
-          ly = t.clientY;
+          lookBy(t.clientX - lx, t.clientY - ly);
+          lx = t.clientX; ly = t.clientY;
         }
       }
       e.preventDefault();
@@ -695,51 +721,65 @@ export class Ramu {
       for (const t of Array.from(e.changedTouches)) {
         if (t.identifier === moveId) {
           moveId = -1;
-          this.touchMove.set(0, 0);
-          stick.style.display = 'none';
-          knob.style.transform = '';
+          rest();
+          if (hot) { stick.classList.add('lock'); this.touchMove.set(0, -1); this.touchRun = true; }
+          else { this.touchMove.set(0, 0); this.touchRun = false; }
         } else if (t.identifier === lookId) lookId = -1;
       }
     };
     dom.addEventListener('touchend', end);
     dom.addEventListener('touchcancel', end);
-    const runBtn = document.getElementById('btn-run')!;
-    runBtn.addEventListener('touchstart', (e) => {
-      this.touchRun = !this.touchRun;
-      runBtn.classList.toggle('on', this.touchRun);
-      e.preventDefault();
-    });
-    document.getElementById('btn-punch')?.addEventListener('touchstart', (e) => {
-      if (this.armed) { this.shots++; this.aimHold = 2.5; } else this.punchQueued = true;   // armed: it shoots
-      e.preventDefault();
-    });
-    document.getElementById('btn-use')?.addEventListener('touchstart', (e) => {
-      if (this.enabled) this.onUse?.();
-      e.preventDefault();
-    });
-    document.getElementById('btn-lights')?.addEventListener('touchstart', (e) => {
-      if (this.enabled) this.onKey?.('lights', true);
-      e.preventDefault();
-    });
+
+    // FIRE: tap, hold (again as fast as the gun allows), drag (look)
+    const fireBtn = (b: HTMLElement | null) => {
+      if (!b) return;
+      let id = -1, fx = 0, fy = 0, timer = 0;
+      const shoot = () => { if (this.enabled) { this.shots++; this.aimHold = 2.5; } };
+      b.addEventListener('touchstart', (e) => {
+        const t = e.changedTouches[0];
+        if (id >= 0 || !t) return;
+        id = t.identifier; fx = t.clientX; fy = t.clientY;
+        b.classList.add('held');
+        if (this.armed) { shoot(); timer = window.setInterval(() => { if (this.armed) shoot(); }, 340); }
+        else this.punchQueued = true;
+        e.preventDefault();
+      }, { passive: false });
+      b.addEventListener('touchmove', (e) => {
+        for (const t of Array.from(e.changedTouches)) {
+          if (t.identifier !== id) continue;
+          lookBy(t.clientX - fx, t.clientY - fy);
+          fx = t.clientX; fy = t.clientY;
+        }
+        e.preventDefault();
+      }, { passive: false });
+      const up = (e: TouchEvent) => {
+        if (!Array.from(e.changedTouches).some((t) => t.identifier === id)) return;
+        id = -1;
+        clearInterval(timer);
+        b.classList.remove('held');
+        e.preventDefault();
+      };
+      b.addEventListener('touchend', up);
+      b.addEventListener('touchcancel', up);
+    };
+    fireBtn(document.getElementById('btn-punch'));
+    fireBtn(document.getElementById('btn-fire-l'));
+
+    const tap = (id: string, f: () => void) => {
+      document.getElementById(id)?.addEventListener('touchstart', (e) => { f(); e.preventDefault(); }, { passive: false });
+    };
+    tap('btn-use', () => { if (this.enabled) this.onUse?.(); });
+    tap('btn-lights', () => { if (this.enabled) this.onKey?.('lights', true); });
+    tap('btn-jump', () => { unlock(); this.jumpQueued = true; });
     const horn = document.getElementById('btn-horn');
-    horn?.addEventListener('touchstart', (e) => {
-      if (this.enabled) this.onKey?.('horn', true);
-      e.preventDefault();
-    });
-    horn?.addEventListener('touchend', (e) => {
-      this.onKey?.('horn', false);
-      e.preventDefault();
-    });
-    document.getElementById('btn-jump')!.addEventListener('touchstart', (e) => {
-      this.jumpQueued = true;
-      e.preventDefault();
-    });
+    horn?.addEventListener('touchstart', (e) => { if (this.enabled) this.onKey?.('horn', true); e.preventDefault(); }, { passive: false });
+    horn?.addEventListener('touchend', (e) => { this.onKey?.('horn', false); e.preventDefault(); });
     const toggle = (id: string, flip: () => boolean) => {
       const b = document.getElementById(id);
-      b?.addEventListener('touchstart', (e) => { b.classList.toggle('on', flip()); e.preventDefault(); });
+      b?.addEventListener('touchstart', (e) => { b.classList.toggle('on', flip()); e.preventDefault(); }, { passive: false });
     };
     toggle('btn-aim', () => (this.touchAim = !this.touchAim));
-    toggle('btn-crouch', () => (this.touchCrouch = !this.touchCrouch));
+    toggle('btn-crouch', () => { unlock(); return (this.touchCrouch = !this.touchCrouch); });
   }
 
   /**

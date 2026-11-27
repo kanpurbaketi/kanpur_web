@@ -251,7 +251,7 @@ export class Driving {
 
   /** "E — get on" near a vehicle, "E — get off" on one */
   private showTip(): void {
-    let text = '';
+    let text = '', story = false;
     if (this.car) {
       const dead = this.car.damage >= 100 ? t('drive.dead') : '';
       text = this.w < 1 || this.leaving ? '' : Math.abs(this.car.v) < 0.5 ? t('drive.getOff', { key: this.key() }) + dead
@@ -261,13 +261,15 @@ export class Driving {
       const k = this.pick, f = k.t / k.need, bar = 20;
       text = t('drive.picking', { bar: '█'.repeat(Math.round(f * bar)) + '░'.repeat(bar - Math.round(f * bar)), s: Math.ceil(k.need - k.t), key: this.key() });
     }
-    else if (this.storyTip?.()) text = this.storyTip()!;
+    else if (this.storyTip?.()) { text = this.storyTip()!; story = true; }
     else {
       const p = this.ramu.position;
       const c = !this.ramu.knockedOut && p.y < 0.6 ? this.traffic.nearest(p.x, p.z, REACH) : null;
       const need = c?.locked ? this.pickTime(c) : 0;
       if (c) text = need ? t('drive.pick', { key: this.key(), s: need }) : t(this.traffic.seatOf(c).pose === 'ride' ? 'drive.getOn' : 'drive.getIn', { key: this.key() });
     }
+    // (the touch screen's USE button shows only when there is something to do: not for a shout on its own)
+    document.body.classList.toggle('can-use', !!text);
     if (this.shoutT > 0) text = text ? `${this.shout}\n${text}` : this.shout;
     if (text === this.tipText) return;
     this.tipText = text;
@@ -275,6 +277,6 @@ export class Driving {
       this.tip.textContent = text;
       this.tip.style.display = text ? 'block' : 'none';
     }
-    if (this.btn) this.btn.textContent = t(this.car ? 'drive.btnOff' : this.pick ? 'drive.btnStop' : 'drive.btnIn');
+    if (this.btn) this.btn.textContent = t(this.car ? 'drive.btnOff' : this.pick ? 'drive.btnStop' : story ? 'touch.use' : 'drive.btnIn');
   }
 }

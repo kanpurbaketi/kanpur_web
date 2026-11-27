@@ -362,6 +362,33 @@ export class Actor {
   }
 }
 
+const tinted = new Map<string, Promise<THREE.MeshStandardMaterial>>();
+/**
+ * One of a kind in clothes of another colour: its texture repainted by `paint` (given the model's own texture, its
+ * width and height; it returns the new one), once per `key`. Explore world's waves of daaku leaders, each in his colours.
+ */
+export async function makeTinted(name: RigName, key: string, paint: (im: CanvasImageSource, w: number, h: number) => HTMLCanvasElement): Promise<Actor> {
+  const src = await load(name);
+  let p = tinted.get(`${name}/${key}`);
+  if (!p) {
+    p = Promise.resolve().then(() => {
+      const base = src.material, im = base.map?.image as (CanvasImageSource & { width: number; height: number }) | undefined;
+      if (!im) return base;
+      const tex = new THREE.CanvasTexture(paint(im, im.width, im.height));
+      tex.flipY = false;                          // (the pixels as the model's own: drawn from them as they are)
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      const m = base.clone();
+      m.map = tex;
+      m.emissiveMap = tex;
+      return m;
+    });
+    tinted.set(`${name}/${key}`, p);
+  }
+  const [mat, far] = await Promise.all([p, loadLite(name).catch(() => undefined)]);
+  return new Actor(name, src, mat, far);
+}
+
 /** How many looks a kind has (the model as built counts as one). */
 export const lookCount = (name: RigName): number => LOOKS[name].length;
 

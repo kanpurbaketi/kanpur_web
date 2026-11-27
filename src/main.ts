@@ -50,7 +50,7 @@ import { CartKeepers } from './world/cartKeepers';
 import { GateQueue } from './world/gateQueue';
 import { CityAmbience } from './game/ambience';
 import { playSfx, preloadSfx } from './game/story/sfx';
-import { onLang, t, tk } from './i18n';
+import { onLang, t, tk, type Key } from './i18n';
 
 /*
  Debug URL params:
@@ -320,11 +320,9 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
           const at = new THREE.Vector3(ramu.position.x, ramu.position.y + 1.3, ramu.position.z);
           blood!.spray(at, new THREE.Vector3(-Math.sin(ramu.facing), 0, -Math.cos(ramu.facing)).negate(), false);
         };
-        g.onLeaderDown = () => {
-          box.clear();
-          exploreBox = null;
-          void passedCard(t('explore.passed'), t('explore.passed.sub'), 6);
-        };
+        // an endless game: each leader down, the next wave comes (daakus.ts spawnWave), a new leader in his own colours
+        g.onLeaderDown = () => { void passedCard(t('explore.passed'), t('explore.passed.sub'), 4); };
+        g.onWave = (n, colour) => toast(t('explore.wave', { n, colour: t(`colour.${colour}` as Key) }), 7);
         // the ambush at the top of the well; then every shot of his that will hit the leader is followed in slow motion
         if (director) {
           const cam = bulletCam = new BulletCam(scene, director);
@@ -601,12 +599,16 @@ void main() {
       exploreBox.update(dt, ramu.position.x, ramu.position.z);
       // to the well (where he is said to hide; near it, the way up), and once the ambush is sprung, to him on the stage
       // mission 1: up the well to its side facing the stage; 2 (after the ambush): the leader
+      // 3 on (the endless waves): the newest leader, by his colours; between waves, the gate they come in at
       const [lx, lz] = ambushed && daakus ? daakus.leaderAt : wellSpot();
-      const title = ambushed ? 'explore.m2' : 'explore.m1';
-      const hint = ambushed ? 'explore.m2.h1' : Math.hypot(ramu.position.x - KUAN.x, ramu.position.z - KUAN.z) < 30 ? 'explore.m1.h2' : 'explore.m1.h1';
-      if (hint !== exploreBox.hintNow) exploreBox.set(ambushed ? 2 : 1, title, hint, [lx, lz]);
+      const w = daakus?.wave ?? 1, wave = ambushed && daakus && (w > 1 || daakus.coming);
+      const colour = daakus?.colour ? t(`colour.${daakus.colour}` as Key) : '';
+      const title = wave ? t('explore.m3', { n: daakus!.coming ? w + 1 : w }) : ambushed ? 'explore.m2' : 'explore.m1';
+      const hint = wave ? (daakus!.coming ? t('explore.m3.wait') : t('explore.m3.h1', { colour }))
+        : ambushed ? 'explore.m2.h1' : Math.hypot(ramu.position.x - KUAN.x, ramu.position.z - KUAN.z) < 30 ? 'explore.m1.h2' : 'explore.m1.h1';
+      if (hint !== exploreBox.hintNow || title !== exploreBox.textNow) exploreBox.set(wave ? 1 + (daakus!.coming ? w + 1 : w) : ambushed ? 2 : 1, title, hint, [lx, lz]);
       else exploreBox.target = [lx, lz];
-      hud.guide = { x: lx, z: lz, title: t(title), hint: t(hint), path: [] };
+      hud.guide = { x: lx, z: lz, title: tk(title), hint: tk(hint), path: [] };
     }
     if (!fixed) hud.update(ramu.position.x, ramu.position.z, ramu.yaw);
     renderer.info.reset();

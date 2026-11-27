@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import { makeActors, rigHeight, type Actor, type RigName } from '../world/actors';
+import { makeActors, makeTinted, rigHeight, type Actor, type RigName } from '../world/actors';
 import { Rider } from '../player/rider';
 import type { Ramu } from '../player/ramu';
 import type { CollisionWorld } from '../player/collide';
 import { gltfLoader } from '../world/gltf';
 import { findBone } from '../world/handProp';
 import { gunInFist, type Targets } from '../player/gun';
-import { KUAN, STAGE } from '../world/melaSite';
+import { GATE, inMela, KUAN, STAGE } from '../world/melaSite';
 
 /*
  The daakus (Explore world's mission): a gang with revolvers about Moti Jheel, on the way to the mela and in its aisles,
@@ -15,7 +15,9 @@ import { KUAN, STAGE } from '../world/melaSite';
  where he can see him, stops and shoots: a TOZ-34 shotgun at the shoulder (models/toz.glb; "Firing Rifle", rifle_fire,
  its kick played with each shot; the chest turned so the barrels point at him). A shot hits more often near, less when Ramu runs. The three on the stage stay there, and see nobody until
  the ambush (reveal() and openFire(): out of sight until Ramu is up on the well's gallery, then one of the men's shots at him); then they see and shoot as far as the well. Ramu's bullets find them as they find anybody (Targets): a head shot kills, else two to the body (the leader
- three). The leader down: the mission is done (onLeaderDown).
+ three). The leader down, the next wave (spawnWave): an endless game. A new leader in colours of his own (his
+ gamchha and waistcoat repainted: PALETTE) and more men each time come up the road outside the mela and in at its gate,
+ knowing where Ramu is: up on the well, they spread round it and shoot up at him; anywhere else, they come for him.
  They wear their own models (faces covered; tools/blender/build_ramu_rig.py --char daaku_member / daaku_leader): the
  men in black, the leader in a red checked gamchha.
 */
@@ -36,6 +38,24 @@ const TOZ_MUZZLE = new THREE.Vector3(0, 0.044, 0.837);
 const CARRY_DIP = 0.6;
 /** aimed, the chest tilts up or down at most this far (rad) */
 const MAX_TILT = 0.5;
+/** the waves after the first: s before the next comes, how many men with him (the first: 3 more, 2 each time, at most 7),
+ *  how far they see and shoot (they come for him: further than a daaku on guard), how far round the well they stand */
+const WAVE_DELAY = 6;
+const HUNT_SIGHT = 95, HUNT_RANGE = 70;
+const HUNT_RING = KUAN.r + 16;
+/**
+ * The new leaders' colours: the checked gamchha's red turned to `hue` (its blue check turned as far; -1: a white one),
+ * and the olive waistcoat repainted [hue, saturation, how much of its brightness it keeps]. The first leader wears his own.
+ */
+export const PALETTE: { name: string; hue: number; vest: [number, number, number] }[] = [
+  { name: 'green', hue: 125, vest: [0, 0, 0.45] },
+  { name: 'blue', hue: 212, vest: [352, 0.6, 0.9] },
+  { name: 'saffron', hue: 28, vest: [222, 0.55, 0.85] },
+  { name: 'purple', hue: 282, vest: [0, 0, 0.85] },
+  { name: 'yellow', hue: 52, vest: [22, 0.65, 0.6] },
+  { name: 'teal', hue: 176, vest: [28, 0.55, 0.7] },
+  { name: 'white', hue: -1, vest: [0, 0.75, 0.8] },
+];
 const _q = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
 
@@ -63,6 +83,14 @@ interface Daaku {
   /** the bones changed after the clip posed them (the chest's tilt, the fingers): as the clip left them, and as changed.
    *  A bone the clip leaves still has no track in the file, so the clip never sets it back: undone before each pose */
   edits: { bone: THREE.Object3D; base: THREE.Quaternion; now: THREE.Quaternion }[];
+  /** which wave he came with (1: those there from the start); a hunter (a wave after the first) knows where Ramu is */
+  wave: number; hunter: boolean;
+  /** where round the well he makes for while Ramu is up on it (rad), and how long he has been held up getting anywhere */
+  ringA: number; stuckT: number;
+  /** held up: a step aside first (where, for how long), each time the other way */
+  detour: [number, number]; detourT: number; side: number;
+  /** a body cleared away (two waves on): out of the scene, its place in `men` taken by the next one to come */
+  gone: boolean;
 }
 
 export class Daakus implements Targets {
@@ -74,8 +102,19 @@ export class Daakus implements Targets {
   onShot: (muzzle: THREE.Vector3, end: THREE.Vector3, loud: number, flesh: boolean, streak: boolean) => void = () => {};
   /** a shot about to fly: true takes it (it lands, `land`, when the taker says: the bullet cam); the shot that opens the ambush */
   onFiring: ((muzzle: THREE.Vector3, end: THREE.Vector3, land: () => void) => boolean) | null = null;
-  /** the leader is dead */
+  /** a leader is dead (the next wave comes WAVE_DELAY s later) */
   onLeaderDown: () => void = () => {};
+  /** a wave on its way: its number (2 on), its leader's colours (a PALETTE name) */
+  onWave: (n: number, colour: string) => void = () => {};
+  /** the wave now (1: the gang there from the start) */
+  wave = 1;
+  private nextWaveT = -1;
+  /** the next wave is on its way (the last leader down) */
+  get coming(): boolean { return this.nextWaveT > 0; }
+  /** the newest leader's colours (a PALETTE name; '' the first, in his own) */
+  get colour(): string { return this.wave > 1 ? PALETTE[(this.wave - 2) % PALETTE.length].name : ''; }
+  private street: [number, number][] = [];
+  private gunScene: THREE.Object3D | null = null;
 
   private constructor(private world: CollisionWorld, private ramu: Ramu) {}
 
@@ -100,37 +139,92 @@ export class Daakus implements Targets {
     const [men, boss, gunScene] = await Promise.all([makeActors(DAAKU_RIG, n - 1), makeActors(LEADER_RIG, 1),
       gltfLoader().loadAsync('models/toz.glb').then((x) => x.scene)]);
     const actors = [...men.slice(0, places.length), boss[0], ...men.slice(places.length)];   // the leader first in the well
+    g.street = street;
+    g.gunScene = gunScene;
     actors.forEach((a, i) => {
       const onStage = i >= places.length, leader = i === places.length;
       const [x, z] = onStage ? well[i - places.length] : places[i];
       const heading = onStage ? Math.atan2(KUAN.x - x, KUAN.z - z) : Math.random() * Math.PI * 2;   // (on the stage: toward the well, as aiming turns them)
-      const body = a.root.children[0];
-      const rig = new Rider(body);
-      const gun = gunScene.clone();
-      gun.traverse((o) => { o.castShadow = true; });
-      g.group.add(a.root, gun);
-      const y = world.floorAt(x, z, onStage ? 3 : 0.6);
-      const d: Daaku = {
-        a, rig, gun,
-        hand: findBone(body, 'RightHand'), index: findBone(body, 'RightHandIndex1'), arm: findBone(body, 'RightArm'),
-        spine: findBone(body, 'Spine1') ?? findBone(body, 'Spine'), head: findBone(body, 'Head'), top: findBone(body, 'HeadTop_End'),
-        left: findBone(body, 'LeftHand'), leftTip: findBone(body, 'LeftHandMiddle1'),
-        x, y, z, heading, post: [x, z], postHeading: heading, leader, onStage,
-        alert: 0, seen: [x, z], sees: false, lookT: Math.random() * 0.3, fireT: 1 + Math.random() * 2, aimW: 0, flinch: 0,
-        hits: 0, out: false, fwd: false, sweep: false, kvx: 0, kvz: 0, key: 0, shots: 0, aimFace: null, edits: [],
-      };
-      a.play('idle', 0.9 + Math.random() * 0.2, 0);
-      a.update(Math.random() * 3);
-      g.men.push(d);
+      g.men.push(g.man(a, x, z, heading, leader, onStage, 1));
     });
     return g;
+  }
+
+  /** a daaku in `a`'s body at (x, z), with his gun */
+  private man(a: Actor, x: number, z: number, heading: number, leader: boolean, onStage: boolean, wave: number): Daaku {
+    const body = a.root.children[0];
+    const rig = new Rider(body);
+    const gun = this.gunScene!.clone();
+    gun.traverse((o) => { o.castShadow = true; });
+    this.group.add(a.root, gun);
+    const y = this.world.floorAt(x, z, onStage ? 3 : 0.6);
+    a.play('idle', 0.9 + Math.random() * 0.2, 0);
+    a.update(Math.random() * 3);
+    return {
+      a, rig, gun,
+      hand: findBone(body, 'RightHand'), index: findBone(body, 'RightHandIndex1'), arm: findBone(body, 'RightArm'),
+      spine: findBone(body, 'Spine1') ?? findBone(body, 'Spine'), head: findBone(body, 'Head'), top: findBone(body, 'HeadTop_End'),
+      left: findBone(body, 'LeftHand'), leftTip: findBone(body, 'LeftHandMiddle1'),
+      x, y, z, heading, post: [x, z], postHeading: heading, leader, onStage,
+      alert: 0, seen: [x, z], sees: false, lookT: Math.random() * 0.3, fireT: 1 + Math.random() * 2, aimW: 0, flinch: 0,
+      hits: 0, out: false, fwd: false, sweep: false, kvx: 0, kvz: 0, key: 0, shots: 0, aimFace: null, edits: [],
+      wave, hunter: wave > 1, ringA: 0, stuckT: 0, gone: false, detour: [x, z], detourT: 0, side: 1,
+    };
+  }
+
+  /**
+   * The next wave: a leader in the next colours and 2 more men each time (at most 7), up the road outside the mela's
+   * gate (40-110 m from it, out of Ramu's way); the bodies of two waves back cleared away, their places reused.
+   */
+  private async spawnWave(): Promise<void> {
+    const w = ++this.wave;
+    const pal = PALETTE[(w - 2) % PALETTE.length];
+    for (const d of this.men) {
+      if (d.out && !d.gone && d.wave <= w - 2) { d.gone = true; this.group.remove(d.a.root, d.gun); }
+    }
+    const n = Math.min(1 + 2 * w - 2, 7);                 // (wave 2: 3 men; 3: 5; then 7)
+    const R = this.ramu.position;
+    const out = this.street.filter(([x, z]) => !inMela(x, z, 4) && Math.hypot(x - GATE.x, z - GATE.z) > 40 &&
+      Math.hypot(x - GATE.x, z - GATE.z) < 110 && Math.hypot(x - R.x, z - R.z) > 35);
+    let spots = spread(out, n + 1, 6);
+    if (spots.length < n + 1) spots = Array.from({ length: n + 1 }, (_, i) => [GATE.x + (i - n / 2) * 2.5, GATE.z + 40 + (i % 2) * 4] as [number, number]);
+    const [men, boss] = await Promise.all([makeActors(DAAKU_RIG, n), makeTinted(LEADER_RIG, pal.name, (im, iw, ih) => tint(im, iw, ih, pal))]);
+    [boss, ...men].forEach((a, i) => {
+      const [x, z] = spots[i % spots.length];
+      const d = this.man(a, x, z, Math.atan2(GATE.x - x, GATE.z - z), i === 0, false, w);
+      d.alert = ALERT;
+      d.ringA = Math.atan2(GATE.x - KUAN.x, GATE.z - KUAN.z) + (i - n / 2) * 0.45;   // fanned out round the gate's side of the well
+      d.fireT = 1.5 + Math.random() * 2;
+      const free = this.men.findIndex((m) => m.gone);
+      if (free >= 0) this.men[free] = d; else this.men.push(d);
+    });
+    this.onWave(w, pal.name);
+  }
+
+  /**
+   * Where a hunter makes for: through the mela's gate when he and Ramu are on its two sides; up on the well, his place
+   * on the ring round it (where he can see up onto the gallery); else Ramu himself
+   */
+  private goal(d: Daaku): [number, number] {
+    const R = this.ramu.position, rIn = inMela(R.x, R.z), dIn = inMela(d.x, d.z);
+    if (rIn !== dIn) {
+      const inPt: [number, number] = [GATE.x, GATE.z - 6], outPt: [number, number] = [GATE.x, GATE.z + 5];
+      const atGate = Math.abs(d.x - GATE.x) < GATE.half + 1.5 && Math.abs(d.z - GATE.z) < 6.5;
+      return dIn ? (atGate ? [GATE.x, GATE.z + 8] : inPt) : (atGate ? [GATE.x, GATE.z - 9] : outPt);
+    }
+    if (rIn && R.y > 4 && Math.hypot(R.x - KUAN.x, R.z - KUAN.z) < KUAN.r + 6) {
+      return [KUAN.x + Math.sin(d.ringA) * HUNT_RING, KUAN.z + Math.cos(d.ringA) * HUNT_RING];
+    }
+    return [R.x, R.z];
   }
 
   /** how many are still standing */
   get left(): number { return this.men.filter((d) => !d.out).length; }
   /** where the leader is (or lies) */
   get leaderAt(): [number, number] {
-    const l = this.men.find((d) => d.leader);
+    // the newest wave's leader (between waves, where the last one lies; the next comes in at the gate)
+    if (this.nextWaveT > 0) return [GATE.x, GATE.z];
+    const l = this.men.filter((d) => d.leader && !d.gone).sort((a, b) => b.wave - a.wave)[0];
     return l ? [l.x, l.z] : [KUAN.x, KUAN.z];
   }
 
@@ -180,7 +274,9 @@ export class Daakus implements Targets {
 
   update(dt: number): void {
     const R = this.ramu.position, chestY = R.y + 1.3;
+    if (this.nextWaveT > 0 && (this.nextWaveT -= dt) <= 0) void this.spawnWave();
     for (const d of this.men) {
+      if (d.gone) continue;
       // the stage's three are not there at all before the ambush
       d.a.root.visible = !(d.onStage && !this.awake);
       if (!d.a.root.visible) { d.gun.visible = false; continue; }
@@ -189,15 +285,20 @@ export class Daakus implements Targets {
       // can he see Ramu? (every so often: a ray from his eyes to Ramu's chest)
       if ((d.lookT -= dt) <= 0) {
         d.lookT = 0.25 + Math.random() * 0.1;
-        const sight = d.onStage ? (this.awake ? STAGE_RANGE : 0) : SIGHT;   // (the stage's three see nobody before the ambush)
+        const sight = d.onStage ? (this.awake ? STAGE_RANGE : 0) : d.hunter ? HUNT_SIGHT : SIGHT;   // (the stage's three see nobody before the ambush)
         d.sees = d3 < sight && this.clear(d.x, d.y + 1.55, d.z, R.x, chestY, R.z) && !this.ramu.knockedOut;
         if (d.sees) { d.alert = ALERT; d.seen = [R.x, R.z]; }
       }
       if (d.alert > 0) d.alert -= dt;
+      if (d.hunter) {                                                   // (a wave: they know where he is)
+        d.alert = ALERT;
+        if (d.detourT > 0) { d.detourT -= dt; d.seen = d.detour; }
+        else if (!d.sees) d.seen = this.goal(d);
+      }
       d.flinch = Math.max(0, d.flinch - dt);
 
       let speed = 0, aiming = false, face = d.heading;
-      if (d.alert > 0 && d.sees && d3 < (d.onStage ? STAGE_RANGE : SHOOT_RANGE)) {
+      if (d.alert > 0 && d.sees && d3 < (d.onStage ? STAGE_RANGE : d.hunter ? HUNT_RANGE : SHOOT_RANGE)) {
         // he can see him, near enough: stand, face him, shoot
         aiming = true;
         face = d.aimW > 0.5 && d.aimFace !== null ? d.aimFace : Math.atan2(-dx, -dz) + Math.PI;   // (a heading h faces -sin h, -cos h)
@@ -214,9 +315,21 @@ export class Daakus implements Targets {
           const s = Math.min(speed * dt, l);
           let nx = d.x + (tx / l) * s, nz = d.z + (tz / l) * s;
           [nx, nz] = this.world.resolve(nx, nz, 0.3, d.y);
+          // a hunter held up (a stall, a ride's fence in the way): round the well a little, another way there
+          if (d.hunter && s > 0.01) {
+            d.stuckT = Math.hypot(nx - d.x, nz - d.z) < s * 0.3 ? d.stuckT + dt : Math.max(0, d.stuckT - dt);
+            if (d.stuckT > 0.8) {
+              // a few metres aside (square to the way he was going, back a little), then on again; round the ring too
+              d.stuckT = 0; d.ringA += 0.7; d.side = -d.side;
+              const k = 4 + Math.random() * 3;
+              d.detour = [d.x + (-tz / l) * k * d.side - (tx / l) * 1.5, d.z + (tx / l) * k * d.side - (tz / l) * 1.5];
+              d.detourT = 1.6;
+            }
+          }
           d.x = nx; d.z = nz;
           d.y = this.world.floorAt(d.x, d.z, d.y + 0.6);
-        } else d.alert = Math.min(d.alert, 3);           // nobody there: a look round, then back to waiting
+        } else if (d.hunter) d.ringA += 0.5 * dt;          // there and no sight of him: round the ring until there is
+        else d.alert = Math.min(d.alert, 3);           // nobody there: a look round, then back to waiting
       } else if (d.alert > 0) {
         face = Math.atan2(-dx, -dz) + Math.PI;            // (on the stage: turned toward him, waiting for a sight of him)
       } else if (!d.onStage && Math.hypot(d.post[0] - d.x, d.post[1] - d.z) > 1.5) {
@@ -259,7 +372,7 @@ export class Daakus implements Targets {
     if (h2 < 1e-6) {
       // straight down (from the well's gallery): whoever is right under it
       this.men.forEach((d, i) => {
-        if (d.out || (d.onStage && !this.awake) || Math.hypot(d.x - o.x, d.z - o.z) > 0.25) return;
+        if (d.out || d.gone || (d.onStage && !this.awake) || Math.hypot(d.x - o.x, d.z - o.z) > 0.25) return;
         const t = (o.y - (d.y + this.tall(d))) / -dir.y;
         if (t > 0 && t < max && (!best || t < best.t)) best = { i, t, head: true };
       });
@@ -267,7 +380,7 @@ export class Daakus implements Targets {
     }
     const R = 0.26;
     this.men.forEach((d, i) => {
-      if (d.out || (d.onStage && !this.awake)) return;
+      if (d.out || d.gone || (d.onStage && !this.awake)) return;
       const cx = d.x - o.x, cz = d.z - o.z;
       const tc = (cx * dir.x + cz * dir.z) / h2;
       if (tc < 0) return;
@@ -304,7 +417,7 @@ export class Daakus implements Targets {
       if (!fromBehind) d.heading = Math.atan2(dir.x, dir.z);
       d.kvx = dir.x * 0.6; d.kvz = dir.z * 0.6;
       d.aimW = 0;
-      if (d.leader) this.onLeaderDown();
+      if (d.leader) { this.onLeaderDown(); if (this.nextWaveT <= 0) this.nextWaveT = WAVE_DELAY; }
       return 'dead';
     }
     d.flinch = 0.55;
@@ -317,7 +430,7 @@ export class Daakus implements Targets {
 
   scare(x: number, z: number, r: number): void {
     for (const d of this.men) {
-      if (d.out || Math.hypot(d.x - x, d.z - z) > r || (d.onStage && !this.awake)) continue;   // (the stage's three wait for him at the well)
+      if (d.out || d.gone || Math.hypot(d.x - x, d.z - z) > r || (d.onStage && !this.awake)) continue;   // (the stage's three wait for him at the well)
       d.alert = ALERT;
       if (!d.sees) d.seen = [x, z];
     }
@@ -473,4 +586,37 @@ function spread(places: [number, number][], n: number, gap: number): [number, nu
     if (out.every((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) >= gap)) out.push(p);
   }
   return out;
+}
+
+/** the leader's texture in a wave's colours (PALETTE): the checked gamchha's red and blue turned, the olive waistcoat repainted */
+function tint(im: CanvasImageSource, w: number, h: number, pal: (typeof PALETTE)[number]): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  g.drawImage(im, 0, 0, w, h);
+  const img = g.getImageData(0, 0, w, h), px = img.data;
+  const turn = pal.hue < 0 ? 0 : pal.hue - 355;           // how far the red goes round (the blue check goes as far)
+  const [vh, vs, vk] = pal.vest;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i] / 255, gg = px[i + 1] / 255, b = px[i + 2] / 255;
+    const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), d = mx - mn;
+    if (mx < 0.08 || d < 0.04) continue;
+    const s = d / mx, v = mx;
+    let hue = mx === r ? ((gg - b) / d) % 6 : mx === gg ? (b - r) / d + 2 : (r - gg) / d + 4;
+    hue = (hue * 60 + 360) % 360;
+    let nh = hue, ns = s, nv = v;
+    if ((hue >= 336 || hue <= 11) && s > 0.32 && v > 0.18) {            // the gamchha's red (the skin is yellower: 14-20)
+      if (pal.hue < 0) { ns = s * 0.08; nv = Math.min(1, v * 1.5 + 0.15); } else { nh = (pal.hue + (hue > 180 ? hue - 355 : hue + 5) + 360) % 360; ns = Math.min(1, s * 1.25); nv = Math.min(1, v * 1.1); }
+    } else if (hue >= 200 && hue <= 255 && s > 0.35) {                   // its blue check
+      if (pal.hue < 0) { ns = s * 0.6; nv = v * 0.5; } else nh = (hue + turn + 720) % 360;
+    } else if (hue >= 31 && hue <= 70 && s > 0.4 && v < 0.46) {           // the olive-brown waistcoat (the belts are redder: 25)
+      nh = vh; ns = vs ? Math.min(1, vs * (0.7 + s * 0.6)) : 0; nv = v * vk;
+    } else continue;
+    // back to rgb
+    const k = (n: number) => (n + nh / 60) % 6;
+    const f = (n: number) => nv - nv * ns * Math.max(0, Math.min(k(n), 4 - k(n), 1));
+    px[i] = f(5) * 255; px[i + 1] = f(3) * 255; px[i + 2] = f(1) * 255;
+  }
+  g.putImageData(img, 0, 0);
+  return c;
 }

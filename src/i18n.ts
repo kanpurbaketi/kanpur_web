@@ -362,7 +362,13 @@ const EN = {
   'explore.m2': 'Kill the daaku leader',
   'explore.m2.h1': "It was a trap: he is on the kavi sammelan's stage with two of his men, shooting at you. The red checked gamchha: that's him",
   'explore.passed': 'Daaku leader killed',
-  'explore.passed.sub': 'Moti Jheel is free of him. The rest of the town is yours',
+  'explore.passed.sub': 'But the gang does not give up: more are coming up the road',
+  'explore.wave': 'Wave {n}: a new leader in a {colour} gamchha is coming in at the mela gate with his men',
+  'explore.m3': 'Wave {n}: kill the new leader',
+  'explore.m3.h1': "The {colour} gamchha: that's him. His men know where you are, and they come from the road outside",
+  'explore.m3.wait': "More daakus are on their way up the road to the mela's gate. Get ready",
+  'colour.green': 'green', 'colour.blue': 'blue', 'colour.saffron': 'saffron', 'colour.purple': 'purple',
+  'colour.yellow': 'yellow', 'colour.teal': 'teal', 'colour.white': 'white',
   'weapon.fists': 'Fists',
   'weapon.revolver': 'Revolver',
   'weapon.ammo': '∞',
@@ -426,7 +432,7 @@ const EN = {
   'life.ko': 'Ramu is knocked out',
 };
 
-type Key = keyof typeof EN;
+export type Key = keyof typeof EN;
 
 const HI: Record<Key, string> = {
   'app.title': 'रामू',
@@ -779,7 +785,13 @@ const HI: Record<Key, string> = {
   'explore.m2': 'डाकुओं के सरदार को मारो',
   'explore.m2.h1': 'यह जाल था: वो अपने दो आदमियों के साथ कवि सम्मेलन के मंच पर है और तुम पर गोली चला रहा है। लाल चेक गमछे वाला सरदार है',
   'explore.passed': 'डाकुओं का सरदार मारा गया',
-  'explore.passed.sub': 'मोती झील उससे आज़ाद हुई। बाकी शहर तुम्हारा है',
+  'explore.passed.sub': 'पर गिरोह हार नहीं मानता: सड़क से और डाकू आ रहे हैं',
+  'explore.wave': 'लहर {n}: {colour} गमछे वाला नया सरदार अपने आदमियों के साथ मेले के गेट से आ रहा है',
+  'explore.m3': 'लहर {n}: नए सरदार को मारो',
+  'explore.m3.h1': '{colour} गमछे वाला सरदार है। उसके आदमी जानते हैं तुम कहाँ हो, और बाहर सड़क से आते हैं',
+  'explore.m3.wait': 'और डाकू सड़क से मेले के गेट की ओर आ रहे हैं। तैयार रहो',
+  'colour.green': 'हरे', 'colour.blue': 'नीले', 'colour.saffron': 'केसरिया', 'colour.purple': 'बैंगनी',
+  'colour.yellow': 'पीले', 'colour.teal': 'फ़िरोज़ी', 'colour.white': 'सफ़ेद',
   'weapon.fists': 'मुक्के',
   'weapon.revolver': 'रिवॉल्वर',
   'weapon.ammo': '∞',

@@ -269,6 +269,7 @@ export class MissionBox {
   private textKey = '';
   private hintKey = '';
   get hintNow(): string { return this.hintKey; }
+  get textNow(): string { return this.textKey; }
   /** where the mission leads now (the maps show it), or null */
   target: [number, number] | null = null;
   private last = '';

@@ -58,6 +58,8 @@ RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'f
 # daakus' who shoot back (src/game/daakus.ts: daaku_leader, daaku_member)
 GUN_CLIPS = {'gun_point', 'gun_aim'}
 ARMED = PLAYER or CHAR in ('uncle',) or CHAR.startswith('daaku')
+# the daakus' TOZ shotgun (src/game/daakus.ts: "Firing Rifle", aimed from the shoulder, a shot's kick): theirs only
+RIFLE_CLIPS = {'rifle_fire'}
 
 # clips only the guards play (shouting at Ramu while they talk: person.ts talkClip): not baked into the others
 GUARD_ONLY = {'yell'}
@@ -705,6 +707,7 @@ CLIP_RULES = (
     (('hanging', 'idle'), 'hang_idle'), (('stand', 'freehang'), 'hang_start'), (('braced', 'free'), 'hang_braced'), (('braced', 'drop'), 'hang_drop'),
     (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
     (('sweep', 'fall'), 'fall_sweep'),             # shot in the chest (Explore world): legs gone from under them, down on the back
+    (('firing', 'rifle'), 'rifle_fire'),          # the daakus' TOZ at the shoulder, a shot's kick (RIFLE_CLIPS)
     (('gunplay',), 'gun_point'),                   # the revolver from the hip, one-handed (Explore world; upper body only)
     (('shooting',), 'gun_aim'),                     # the revolver aimed two-handed, a shot's recoil (Explore world; upper body only)
     (('yelling',), 'yell'),                         # a guard shouting at Ramu (security only: GUARD_ONLY)
@@ -800,6 +803,8 @@ def import_mixamo_clips():
         if name in RAMU_ONLY and not PLAYER:
             continue
         if name in GUN_CLIPS and not ARMED:
+            continue
+        if name in RIFLE_CLIPS and not CHAR.startswith('daaku'):
             continue
         if name in GUARD_ONLY and not CHAR.startswith('security'):
             continue

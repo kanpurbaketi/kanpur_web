@@ -1,13 +1,15 @@
 """
 Stage props from downloaded models (assets/common_assets) into the game's form:
 
-  /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_props.py -- [--preview DIR] [--only sofas|mic|carousel|handmic|grass|mug|revolver]
+  /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_props.py -- [--preview DIR] [--only sofas|mic|carousel|handmic|grass|mug|revolver|toz]
 
 public/models/sofas.glb   from sofa_set.glb (a SketchUp living-room set, in inches): the three-seater, the two-seater and
                           one armchair, each its own object ('sofa3', 'sofa2', 'chair'), facing forward, standing on the
                           ground, centred, in metres. The side tables, lamps and the glass table are left out.
 public/models/revolver.glb from revolver.zip (WEAPONS 13.glb): 30 cm long, its origin in the fist on the handle, the barrel
                           toward +z, up +y (build_revolver).
+public/models/toz.glb     from toz-34-34-double-barrel-hunting-shotgun.zip (a TOZ-34, over and under): 1.15 m long, its
+                          origin where the right hand grips the stock's wrist, the barrels toward +z, up +y (build_toz).
 public/models/mug.glb     from soviet_enamel_mug.zip: one object 'mug', 9.5 cm tall, the handle toward +x (build_mug).
 public/models/mic.glb     from boom-mic.zip (an FBX mic on a boom stand, 2K PBR maps): one object 'mic', 1.6 m tall,
                           its base at the origin, the boom reaching forward; the textures cut to 512.
@@ -502,6 +504,65 @@ def build_revolver():
     preview([o], 'revolver')
 
 
+TOZ_LEN = 1.15               # m, butt to muzzle (a TOZ-34 with 71 cm barrels)
+TOZ_TEX = 1024
+
+
+def build_toz():
+    """toz-34-34-double-barrel-hunting-shotgun.zip (source/ружжо1sketch.fbx, one mesh of 1.3k faces, its maps 4K PBR
+    beside it, not linked): one object 'toz', TOZ_LEN long, its origin where the right hand closes on the stock's wrist
+    (behind the trigger guard), the barrels along +z and up +y. Prints where the left hand holds the fore-end and the
+    muzzle (between the two barrels): src/game/daakus.ts TOZ_FORE, TOZ_MUZZLE."""
+    reset()
+    tmp = tempfile.mkdtemp()
+    zipfile.ZipFile(os.path.join(ASSETS, 'toz-34-34-double-barrel-hunting-shotgun.zip')).extractall(tmp)
+    src = os.path.join(tmp, 'source')
+    bpy.ops.import_scene.fbx(filepath=os.path.join(src, next(f for f in os.listdir(src) if f.lower().endswith('.fbx'))))
+    bake_transforms()
+    for o in meshes()[1:]: bpy.data.objects.remove(o)
+    o = meshes()[0]
+    o.name = o.data.name = 'toz'
+    lo, hi = box(o)
+    L = hi.y - lo.y
+    # as imported the barrels point +y, the butt at -y, up +z; read off a side view, in its own units: the right hand
+    # round the stock's wrist, the left under the fore-end, the muzzle between the two barrels
+    def at(y, z): return Vector((0, lo.y + (y + 1.223) / 3.855 * L, lo.z + (z + 0.551) / 3.855 * L))
+    grip, fore, muzzle = at(-0.177, -0.107), at(0.94, -0.17), at(2.629, 0.040)
+    k = TOZ_LEN / L
+    # Blender -y is the glTF's +z: the barrels (+y) turned half round to -y
+    M = Matrix.Scale(k, 4) @ Matrix.Rotation(math.pi, 4, 'Z') @ Matrix.Translation(-grip)
+    o.data.transform(M)
+    f, m = M @ fore, M @ muzzle
+    # one material from the maps beside the model (the FBX names none), cut to TOZ_TEX
+    tex = os.path.join(tmp, 'textures')
+    def img(word, colour):
+        name = next(x for x in os.listdir(tex) if word in x.lower())
+        im = bpy.data.images.load(os.path.join(tex, name))
+        im.scale(TOZ_TEX, TOZ_TEX)
+        path = os.path.join(tmp, word + '.png')
+        im.filepath_raw = path; im.file_format = 'PNG'; im.save()
+        small = bpy.data.images.load(path)
+        small.colorspace_settings.name = 'sRGB' if colour else 'Non-Color'
+        return small
+    mat = bpy.data.materials.new('toz'); mat.use_nodes = True
+    nt = mat.node_tree; bsdf = nt.nodes['Principled BSDF']
+    def node(im):
+        n = nt.nodes.new('ShaderNodeTexImage'); n.image = im; return n
+    nt.links.new(node(img('basecolor', True)).outputs['Color'], bsdf.inputs['Base Color'])
+    nt.links.new(node(img('metallic', False)).outputs['Color'], bsdf.inputs['Metallic'])
+    nt.links.new(node(img('roughness', False)).outputs['Color'], bsdf.inputs['Roughness'])
+    nm = nt.nodes.new('ShaderNodeNormalMap')
+    nt.links.new(node(img('normal', False)).outputs['Color'], nm.inputs['Color'])
+    nt.links.new(nm.outputs['Normal'], bsdf.inputs['Normal'])
+    o.data.materials.clear(); o.data.materials.append(mat)
+    lo, hi = box(o)
+    print('toz tris', tris(o), 'size', [round(v, 3) for v in hi - lo],
+          'fore (game x, y, z)', round(f.x, 4), round(f.z, 4), round(-f.y, 4),
+          'muzzle (game x, y, z)', round(m.x, 4), round(m.z, 4), round(-m.y, 4))
+    export([o], 'toz.glb', images='JPEG')
+    preview([o], 'toz')
+
+
 # ---- grass ---------------------------------------------------------------------------------------------------------------
 GRASS_KEEP = {'tuft': 0.32, 'sprig': 0.45}       # the share of its blades each keeps
 
@@ -583,3 +644,4 @@ if want('handmic'): build_handmic()
 if want('mug'): build_mug()
 if want('grass'): build_grass()
 if want('revolver'): build_revolver()
+if want('toz'): build_toz()

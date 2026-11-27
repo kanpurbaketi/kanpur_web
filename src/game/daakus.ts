@@ -5,15 +5,15 @@ import type { Ramu } from '../player/ramu';
 import type { CollisionWorld } from '../player/collide';
 import { gltfLoader } from '../world/gltf';
 import { findBone } from '../world/handProp';
-import { gunInFist, MUZZLE, type Targets } from '../player/gun';
+import { gunInFist, type Targets } from '../player/gun';
 import { KUAN } from '../world/melaSite';
 
 /*
  The daakus (Explore world's mission): a gang with revolvers about Moti Jheel, on the way to the mela and in its aisles,
  and their leader hiding down in the maut ka kuan with two of his men. Each stands guard at his place until he sees Ramu
  (in range, nothing in between) or hears a shot near him; then he comes for him: runs to where Ramu was last seen, and
- where he can see him, stops and shoots (the two-handed "Shooting" clip, gun_aim; the chest turned so the arm points at
- him). A shot hits more often near, less when Ramu runs. The men in the well stay down there and shoot up at the
+ where he can see him, stops and shoots: a TOZ-34 shotgun at the shoulder (models/toz.glb; "Firing Rifle", rifle_fire,
+ its kick played with each shot; the chest turned so the barrels point at him). A shot hits more often near, less when Ramu runs. The men in the well stay down there and shoot up at the
  gallery. Ramu's bullets find them as they find anybody (Targets): a head shot kills, else two to the body (the leader
  three). The leader down: the mission is done (onLeaderDown).
  They wear their own models (faces covered; tools/blender/build_ramu_rig.py --char daaku_member / daaku_leader): the
@@ -29,6 +29,10 @@ const SHOOT_RANGE = 34;        // ... and shoots from
 const RUN = 4.3;               // m/s, coming for him
 const ALERT = 14;              // s a daaku keeps after him once he has seen or heard him
 const UP = new THREE.Vector3(0, 1, 0);
+/** models/toz.glb (tools/blender/build_props.py build_toz): its origin in the right fist, barrels along +z; the muzzle */
+const TOZ_MUZZLE = new THREE.Vector3(0, 0.044, 0.837);
+/** carried, not aimed: the barrels this far below level, ahead of him (rad) */
+const CARRY_DIP = 0.6;
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
 
@@ -37,6 +41,7 @@ interface Daaku {
   rig: Rider;
   gun: THREE.Object3D;
   hand: THREE.Object3D | null; index: THREE.Object3D | null; arm: THREE.Object3D | null; spine: THREE.Object3D | null;
+  left: THREE.Object3D | null; leftTip: THREE.Object3D | null;   // the left hand, under the fore-end
   head: THREE.Object3D | null; top: THREE.Object3D | null;
   x: number; y: number; z: number; heading: number;
   post: [number, number]; postHeading: number;
@@ -50,6 +55,7 @@ interface Daaku {
   hits: number;
   out: boolean; fwd: boolean; sweep: boolean; kvx: number; kvz: number;
   key: number;                    // a count for the one-shot clips' keys
+  shots: number;                  // his shots so far (each one plays the kick: the clip's key)
 }
 
 export class Daakus implements Targets {
@@ -82,7 +88,7 @@ export class Daakus implements Targets {
     const well: [number, number][] = [[KUAN.x + 1.5, KUAN.z - 1], [KUAN.x - 3.5, KUAN.z + 3], [KUAN.x + 4, KUAN.z + 3.5]];
     const n = places.length + well.length;
     const [men, boss, gunScene] = await Promise.all([makeActors(DAAKU_RIG, n - 1), makeActors(LEADER_RIG, 1),
-      gltfLoader().loadAsync('models/revolver.glb').then((x) => x.scene)]);
+      gltfLoader().loadAsync('models/toz.glb').then((x) => x.scene)]);
     const actors = [...men.slice(0, places.length), boss[0], ...men.slice(places.length)];   // the leader first in the well
     actors.forEach((a, i) => {
       const inWell = i >= places.length, leader = i === places.length;
@@ -98,9 +104,10 @@ export class Daakus implements Targets {
         a, rig, gun,
         hand: findBone(body, 'RightHand'), index: findBone(body, 'RightHandIndex1'), arm: findBone(body, 'RightArm'),
         spine: findBone(body, 'Spine1') ?? findBone(body, 'Spine'), head: findBone(body, 'Head'), top: findBone(body, 'HeadTop_End'),
+        left: findBone(body, 'LeftHand'), leftTip: findBone(body, 'LeftHandMiddle1'),
         x, y, z, heading, post: [x, z], postHeading: heading, leader, inWell,
         alert: 0, seen: [x, z], sees: false, lookT: Math.random() * 0.3, fireT: 1 + Math.random() * 2, aimW: 0, flinch: 0,
-        hits: 0, out: false, fwd: false, sweep: false, kvx: 0, kvz: 0, key: 0,
+        hits: 0, out: false, fwd: false, sweep: false, kvx: 0, kvz: 0, key: 0, shots: 0,
       };
       a.play('idle', 0.9 + Math.random() * 0.2, 0);
       a.update(Math.random() * 3);
@@ -173,11 +180,14 @@ export class Daakus implements Targets {
 
       // the body
       if (d.flinch > 0) d.a.once('hit2', 'hit' + d.key, 1.4);
-      else if (aiming) d.a.play('gun_aim', 1, 0.15);
+      else if (aiming) d.a.once('rifle_fire', 'rifle' + d.shots, 1, 0.15);   // up to the shoulder, then held; a shot: the kick again
       else d.a.move(speed);
       this.place(d);
       const posed = d.a.update(dt);
       if (posed && d.aimW > 0.05) this.aimChest(d, R.x, chestY, R.z);
+      // the fingers closed on the gun: the right round the stock's wrist, the left (aimed) cradling the fore-end. Only on
+      // a frame the clip set them (it keys every finger), else the turn would build up frame on frame
+      if (posed) { d.rig.grip('Right', 1); if (d.aimW > 0.05) d.rig.grip('Left', 0.75 * d.aimW); }
       this.hold(d, R.x, chestY, R.z);
     }
   }
@@ -282,13 +292,13 @@ export class Daakus implements Targets {
     this.hold(d, 0, 0, 0);
   }
 
-  /** the chest turned so his shooting arm (shoulder to hand) points at Ramu's chest */
+  /** the chest turned so the barrels (his right fist to his left hand, under the fore-end) point at Ramu's chest */
   private aimChest(d: Daaku, tx: number, ty: number, tz: number): void {
-    if (!d.arm || !d.hand || !d.spine) return;
+    if (!d.hand || !d.left || !d.spine) return;
     d.a.root.updateMatrixWorld(true);
-    const sh = d.arm.getWorldPosition(_v), hand = d.hand.getWorldPosition(_w);
-    const want = new THREE.Vector3(tx, ty, tz).sub(sh).normalize();
-    _q.setFromUnitVectors(hand.sub(sh).normalize(), want);
+    const fist = d.hand.getWorldPosition(_v), fore = this.leftGrip(d, _w);
+    const want = new THREE.Vector3(tx, ty, tz).sub(fist).normalize();
+    _q.setFromUnitVectors(fore.sub(fist).normalize(), want);
     _q2.identity().slerp(_q, d.aimW);
     const parent = d.spine.parent!.getWorldQuaternion(new THREE.Quaternion());
     const world = d.spine.getWorldQuaternion(new THREE.Quaternion()).premultiply(_q2);
@@ -296,21 +306,32 @@ export class Daakus implements Targets {
     d.spine.updateMatrixWorld(true);
   }
 
-  /** the revolver in his fist (aimed: along the shot at Ramu) */
+  /** where the left hand closes under the fore-end: the palm's middle */
+  private leftGrip(d: Daaku, out: THREE.Vector3): THREE.Vector3 {
+    d.left!.getWorldPosition(out);
+    if (d.leftTip) out.lerp(d.leftTip.getWorldPosition(new THREE.Vector3()), 0.5);
+    return out;
+  }
+
+  /**
+   * The TOZ in his right fist. Aimed: along the line to his left hand (the clip holds it at the shoulder, the left hand
+   * under the fore-end), turned the rest of the way onto Ramu. Carried (standing, walking, running): pointed low ahead of
+   * him, from the right fist.
+   */
   private hold(d: Daaku, tx: number, ty: number, tz: number): void {
     d.a.root.updateMatrixWorld(true);
     d.gun.visible = d.a.root.visible && !d.out;
     if (!d.gun.visible || !d.hand) return;
     const f = gunInFist(d.rig, d.hand, d.index);
     if (!f) return;
-    let fwd = f.fwd, up = f.up;
-    if (d.aimW > 0.01) {
+    const ahead = new THREE.Vector3(-Math.sin(d.heading), 0, -Math.cos(d.heading));
+    let fwd = ahead.clone().multiplyScalar(Math.cos(CARRY_DIP)).addScaledVector(UP, -Math.sin(CARRY_DIP));
+    if (d.aimW > 0.01 && d.left) {
+      const hands = this.leftGrip(d, new THREE.Vector3()).sub(f.fist).normalize();
       const aim = new THREE.Vector3(tx, ty, tz).sub(f.fist).normalize();
-      const aimUp = UP.clone().addScaledVector(aim, -UP.dot(aim)).normalize();
-      fwd = fwd.clone().lerp(aim, d.aimW).normalize();
-      up = up.clone().lerp(aimUp, d.aimW);
+      fwd.lerp(hands.lerp(aim, 0.5), d.aimW).normalize();
     }
-    up.addScaledVector(fwd, -up.dot(fwd)).normalize();
+    const up = UP.clone().addScaledVector(fwd, -UP.dot(fwd)).normalize();
     _m.makeBasis(new THREE.Vector3().crossVectors(up, fwd), up, fwd);
     d.gun.position.copy(f.fist);
     d.gun.quaternion.setFromRotationMatrix(_m);
@@ -319,7 +340,8 @@ export class Daakus implements Targets {
   /** a shot at Ramu: a hit more often near (and from the leader), less when he runs; a miss goes past him */
   private fire(d: Daaku, dist: number): void {
     d.gun.updateMatrixWorld(true);
-    const muzzle = d.gun.localToWorld(MUZZLE.clone());
+    const muzzle = d.gun.localToWorld(TOZ_MUZZLE.clone());
+    d.shots++;
     const R = this.ramu.position, chest = new THREE.Vector3(R.x, R.y + 1.3, R.z);
     let p = Math.max(0.1, Math.min(0.7, 0.78 - dist * 0.017));
     if (this.ramu.speed > 3) p *= 0.55;

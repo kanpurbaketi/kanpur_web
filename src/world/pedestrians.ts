@@ -766,7 +766,7 @@ export class Pedestrians {
       a.root.quaternion.copy(Q);
       if (p.out) {
         if (p.fwd) a.once('fall2', 'out', 1.1);                                         // face down (shot in the back)
-        else if (p.sweep && a.has('fall_sweep')) a.once('fall_sweep', 'out', 1.15);    // shot in the chest: swept off their feet
+        else if (p.sweep && a.has('fall_sweep')) a.once('fall_sweep', 'out', 1.3, 0.06);    // shot in the chest: swept off their feet
         else a.once('fall', 'out', 1.25);
       }
       else if (p.down > V_GETUP) a.once('fall', 'thrown' + p.falls, V_FALL_SPEED);       // thrown by a vehicle: down ...

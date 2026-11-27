@@ -79,9 +79,10 @@ export function prepareClips(clips: THREE.AnimationClip[]): THREE.AnimationClip[
   return clips.map((clip) => {
     const name = clip.name.replace(/^.*\|/, '');
     // "Shove Reaction" stands still at both ends; the stumble is in the middle
-    // "Sweep Fall" (shot in the chest) sways a moment before the legs go: from just before they do
+    // "Sweep Fall" (shot in the chest) crouches for its first 20 frames before the blow lands: from the moment it does
+    // (frame 21, the head snapping back; the feet are off the ground by frame 28)
     const cut = name === 'hit' ? [0.1, 2.0] : name === 'fall' ? [1.0, clip.duration] : name === 'shove' ? [0.15, 1.9]
-      : name === 'fall_sweep' ? [0.35, clip.duration] : null;
+      : name === 'fall_sweep' ? [0.68, clip.duration] : null;
     const out = cut ? THREE.AnimationUtils.subclip(clip, name, Math.round(cut[0] * 30), Math.round(cut[1] * 30), 30) : clip;
     out.name = name;
     return out;

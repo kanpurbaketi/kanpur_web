@@ -44,6 +44,7 @@ import { goFree, guardBack, introCard, loadingFailed, loadingScreen, passedCard,
 import { Director } from './game/story/director';
 import { stage1, STAGE1_STEPS } from './game/story/stage1';
 import { stage1Part2 } from './game/story/stage1b';
+import { BulletCam, exploreAmbush } from './game/story/explore';
 import { type Part3From, stage1Part3 } from './game/story/stage1c';
 import { CartKeepers } from './world/cartKeepers';
 import { GateQueue } from './world/gateQueue';
@@ -246,7 +247,8 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   const chip = new UserChip(() => menu.openStages());
   document.body.append(chip.root);
   // the stage's story (src/game/story/): its cutscenes, lines and missions
-  const director = play?.stage.n === 1 ? new Director(camera, ramu, 1) : null;
+  // (Explore world has one too: its mission's ambush and the bullet cam, src/game/story/explore.ts)
+  const director = play?.stage.n === 1 ? new Director(camera, ramu, 1) : EXPLORE && !play ? new Director(camera, ramu, 0) : null;
   director?.cam.attach(scene);                           // its key light for faces at night (dark until a shot)
   hud.onOpen = () => menu.openMap();                     // a click on the minimap: the big map, with the mission's way marked
   if (director && params.has('debug')) (window as unknown as { __director: Director }).__director = director;
@@ -289,6 +291,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   if (params.has('debug') && mela) (window as unknown as { __melaCrowd: Pedestrians }).__melaCrowd = mela.crowd;
   // Explore world: the revolver, and blood where it hits
   let gun: Gun | null = null, blood: Blood | null = null, exploreBox: MissionBox | null = null;
+  let bulletCam: BulletCam | null = null, ambushed = false;
   if (EXPLORE && !play) {
     document.body.classList.add('explore');
     // street level: the road and the paving are drawn a little over the floor's 0 (up to 5 cm, the plazas): marks on the top
@@ -320,6 +323,13 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
           exploreBox = null;
           void passedCard(t('explore.passed'), t('explore.passed.sub'), 6);
         };
+        // the ambush at the top of the well; then every shot of his that will hit the leader is followed in slow motion
+        if (director) {
+          const cam = bulletCam = new BulletCam(scene, director);
+          gun!.onHitting = (crowd, i, muzzle, end, land) => crowd === g && g.isLeader(i) && cam.start(muzzle, end, land);
+          void exploreAmbush(director, ramu, g).then(() => { ambushed = true; });
+          if (params.has('debug')) (window as unknown as { __bulletCam: BulletCam }).__bulletCam = cam;
+        }
         if (params.has('debug')) (window as unknown as { __daakus: Daakus }).__daakus = g;
       }).catch((e) => console.error('the daakus failed to load', e));
     }
@@ -505,7 +515,8 @@ void main() {
   const clock = new THREE.Clock();
   let frames = 0, acc = 0;
   renderer.setAnimationLoop(() => {
-    const dt = Math.min(0.05, clock.getDelta()) * (director?.timeScale ?? 1);   // (a scene's slow motion)
+    const real = Math.min(0.05, clock.getDelta());
+    const dt = real * (director?.timeScale ?? 1);   // (a scene's slow motion)
     if (!fixed && ramu.punches !== punchesSeen) {
       punchesSeen = ramu.punches;
       const t = punchTarget();
@@ -533,6 +544,7 @@ void main() {
       ramu.update(dt);
       if (gun && !paused) gun.update(dt);                 // (after his clip: the arm up at the aim, the gun in his fist)
       if (daakus && !paused) daakus.update(dt);
+      if (bulletCam && !paused) bulletCam.update(dt, real);   // (before the director: its camera shot this frame)
       if (director && !paused) director.update(dt);
       if (keepers && !paused) keepers.update(dt, ramu.position.x, ramu.position.z);
       if (queue && !paused) queue.update(dt, ramu.position.x, ramu.position.z);     // the story: after Ramu, so a cutscene's camera has the last word
@@ -575,10 +587,11 @@ void main() {
     hud.guide = director?.guide() ?? null;
     if (exploreBox) {
       exploreBox.update(dt, ramu.position.x, ramu.position.z);
-      const [lx, lz] = daakus?.leaderAt ?? [KUAN.x, KUAN.z];
-      // near the well, the hint says how to get at him
-      const hint = Math.hypot(ramu.position.x - KUAN.x, ramu.position.z - KUAN.z) < 30 ? 'explore.m1.h2' : 'explore.m1.h1';
-      if (hint !== exploreBox.hintNow) exploreBox.set(1, 'explore.m1', hint, [KUAN.x, KUAN.z]);
+      // to the well (where he is said to hide; near it, the way up), and once the ambush is sprung, to him on the stage
+      const [lx, lz] = ambushed && daakus ? daakus.leaderAt : [KUAN.x, KUAN.z];
+      const hint = ambushed ? 'explore.m1.h3' : Math.hypot(ramu.position.x - KUAN.x, ramu.position.z - KUAN.z) < 30 ? 'explore.m1.h2' : 'explore.m1.h1';
+      if (hint !== exploreBox.hintNow) exploreBox.set(1, 'explore.m1', hint, [lx, lz]);
+      else exploreBox.target = [lx, lz];
       hud.guide = { x: lx, z: lz, title: t('explore.m1'), hint: t(hint), path: [] };
     }
     if (!fixed) hud.update(ramu.position.x, ramu.position.z, ramu.yaw);

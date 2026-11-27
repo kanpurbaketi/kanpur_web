@@ -1037,7 +1037,7 @@ export class Mela {
         const [mx, mz] = P(0.9, 0.15);
         g.cyl(mx, 1.0, mz, 0.4, 0.3, '#d8d8de', 12);
       }
-      this.posts.push([x, z, 1.35]);
+      this.posts.push([x, z, 1.35, 3.2]);   // (its real height, the canopy's top: looks and shots from up high pass over it)
       // the stall keeper behind the counter, and now and then somebody buying
       const [kx, kz] = P((rnd(seed + 5) - 0.5) * 1.2, -0.58);
       keepers.push({ x: kx, y: 0.05, z: kz, ry: ry + Math.PI, pose: rnd(seed + 6) < 0.5 ? 'stand' : 'talk', n: seed * 3 + 1 });

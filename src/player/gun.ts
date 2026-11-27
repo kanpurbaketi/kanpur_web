@@ -29,7 +29,7 @@ export const MUZZLE = new THREE.Vector3(0, 0.069, 0.24);
 const GRIP_TILT = 0.45;
 /** the handle this far down the knuckle line (index toward little finger) from the index knuckle: the middle of the fist */
 const FIST_DOWN = 0.035;
-const BULLET_SPEED = 260;     // m/s the streak flies at (slower than a real bullet, so the eye catches it)
+export const BULLET_SPEED = 260;     // m/s the streak flies at (slower than a real bullet, so the eye catches it)
 const STREAK = 2.4;            // m long, the streak
 const TRAIL_LIFE = 0.9;        // s the trail hangs in the air
 /** the clips' moments: gun_point held with the arm out (frame 25), gun_aim's shot from its frame 7 to its end */
@@ -142,7 +142,7 @@ export class Gun {
   private light: THREE.PointLight;
   private flashT = 0;
   /** the bullets in flight: a bright streak running from the muzzle to where it hit, and a faint trail left behind */
-  private bullets: { streak: THREE.Mesh; trail: THREE.Mesh; from: THREE.Vector3; dir: THREE.Vector3; len: number; t: number }[] = [];
+  private bullets: { streak: THREE.Mesh; trail: THREE.Mesh; from: THREE.Vector3; dir: THREE.Vector3; len: number; t: number; bare: boolean }[] = [];
   private puffs: { s: THREE.Sprite; t: number }[] = [];
   /** others' muzzle flashes (shotFx) */
   private flashes: { s: THREE.Sprite; t: number }[] = [];
@@ -197,7 +197,7 @@ export class Gun {
       const trail = new THREE.Mesh(tube, new THREE.MeshBasicMaterial({ color: '#e8e2d6', transparent: true, opacity: 0,
         depthWrite: false }));
       for (const m of [streak, trail]) { m.frustumCulled = false; m.visible = false; scene.add(m); }
-      this.bullets.push({ streak, trail, from: new THREE.Vector3(), dir: new THREE.Vector3(), len: 0, t: TRAIL_LIFE });
+      this.bullets.push({ streak, trail, from: new THREE.Vector3(), dir: new THREE.Vector3(), len: 0, t: TRAIL_LIFE, bare: false });
     }
 
     this.hud.id = 'weapon';
@@ -223,6 +223,12 @@ export class Gun {
 
   /** more people who can be shot (the daakus, once they are in) */
   addTargets(t: Targets): void { this.crowds.push(t); }
+
+  /**
+   * A shot that will hit someone, offered before it lands (Explore world: the bullet cam, for the daakus' leader): true
+   * takes it, and `land` is then called when the bullet gets there (the hit, the blood, the fall); false: it lands now.
+   */
+  onHitting: ((crowd: Targets, i: number, muzzle: THREE.Vector3, end: THREE.Vector3, land: () => void) => boolean) | null = null;
 
   choose(w: Weapon): void {
     if (w === this.weapon) return;
@@ -398,20 +404,25 @@ export class Gun {
     this.flashT = 0.05;
     const hit = this.trace(o, dir);
     const end = o.clone().addScaledVector(dir, hit.t);
-    this.launch(muzzle, end);
+    const shot = this.launch(muzzle, end);
     for (const c of this.crowds) c.scare(this.ramu.position.x, this.ramu.position.z, SCARE);
     if (hit.crowd) {
-      this.tally.hits++;
-      this.hitT = 0.25;
-      const what = hit.crowd.shot(hit.i, dir, hit.head);
-      this.blood.spray(end, dir, hit.head);
-      void playSfx('flesh', 0.9);
-      if (what === 'dead') {
-        this.tally.kills++;
-        // a pool under the body once it is down, spreading from the chest
-        const crowd = hit.crowd, i = hit.i;
-        this.blood.pool(() => crowd.chestOf(i, new THREE.Vector3()).addScaledVector(UP, -0.4), 1.1 + Math.random() * 0.5, 1.6);
-      }
+      const crowd = hit.crowd, i = hit.i, head = hit.head;
+      const land = () => {
+        this.tally.hits++;
+        this.hitT = 0.25;
+        const what = crowd.shot(i, dir, head);
+        this.blood.spray(end, dir, head);
+        void playSfx('flesh', 0.9);
+        if (what === 'dead') {
+          this.tally.kills++;
+          // a pool under the body once it is down, spreading from the chest
+          this.blood.pool(() => crowd.chestOf(i, new THREE.Vector3()).addScaledVector(UP, -0.4), 1.1 + Math.random() * 0.5, 1.6);
+        }
+      };
+      // (taken by the bullet cam: it flies its own round, the streak would only blaze past the camera beside it)
+      if (this.onHitting?.(crowd, i, muzzle, end, land)) shot.bare = true;
+      else land();
     } else if (hit.wall && hit.t < RANGE) {
       this.puff(end);
       if (Math.random() < 0.35) void playSfx('ricochet', 0.5);
@@ -420,18 +431,20 @@ export class Gun {
 
   /** dust where a bullet strikes */
   /** a bullet's streak and trail, from the muzzle to `end` (the oldest one reused) */
-  private launch(muzzle: THREE.Vector3, end: THREE.Vector3): void {
+  private launch(muzzle: THREE.Vector3, end: THREE.Vector3): Gun['bullets'][number] {
     const b = this.bullets.reduce((a, c) => (c.t > a.t ? c : a));
     b.from.copy(muzzle);
     b.len = Math.max(0.01, muzzle.distanceTo(end));
     b.dir.copy(end).sub(muzzle).divideScalar(b.len);
     b.t = 0;
+    b.bare = false;
     for (const m of [b.streak, b.trail]) {
       m.position.copy(muzzle);
       m.lookAt(end);
       m.scale.set(0.001, 0.001, 0.001);
     }
     b.streak.visible = true;
+    return b;
   }
 
   /**
@@ -465,7 +478,7 @@ export class Gun {
       b.t += dt;
       // the streak: STREAK m long, its head at BULLET_SPEED from the muzzle, gone once it has arrived
       const run = b.t * BULLET_SPEED, head = Math.min(b.len, run), tail = Math.min(b.len, Math.max(0, run - STREAK));
-      b.streak.visible = tail < b.len - 0.01;
+      b.streak.visible = !b.bare && tail < b.len - 0.01;
       if (b.streak.visible) {
         b.streak.position.copy(b.from).addScaledVector(b.dir, tail);
         b.streak.scale.set(0.011, 0.011, head - tail);

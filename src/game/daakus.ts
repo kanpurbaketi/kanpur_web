@@ -6,15 +6,15 @@ import type { CollisionWorld } from '../player/collide';
 import { gltfLoader } from '../world/gltf';
 import { findBone } from '../world/handProp';
 import { gunInFist, type Targets } from '../player/gun';
-import { KUAN } from '../world/melaSite';
+import { KUAN, STAGE } from '../world/melaSite';
 
 /*
  The daakus (Explore world's mission): a gang with revolvers about Moti Jheel, on the way to the mela and in its aisles,
- and their leader hiding down in the maut ka kuan with two of his men. Each stands guard at his place until he sees Ramu
+ and their leader with two of his men on the kavi sammelan's stage, waiting for Ramu to climb the maut ka kuan. Each stands guard at his place until he sees Ramu
  (in range, nothing in between) or hears a shot near him; then he comes for him: runs to where Ramu was last seen, and
  where he can see him, stops and shoots: a TOZ-34 shotgun at the shoulder (models/toz.glb; "Firing Rifle", rifle_fire,
- its kick played with each shot; the chest turned so the barrels point at him). A shot hits more often near, less when Ramu runs. The men in the well stay down there and shoot up at the
- gallery. Ramu's bullets find them as they find anybody (Targets): a head shot kills, else two to the body (the leader
+ its kick played with each shot; the chest turned so the barrels point at him). A shot hits more often near, less when Ramu runs. The three on the stage stay there, and see nobody until
+ the ambush (ambush(): the leader's shot at Ramu up on the well's gallery); then they see and shoot as far as the well. Ramu's bullets find them as they find anybody (Targets): a head shot kills, else two to the body (the leader
  three). The leader down: the mission is done (onLeaderDown).
  They wear their own models (faces covered; tools/blender/build_ramu_rig.py --char daaku_member / daaku_leader): the
  men in black, the leader in a red checked gamchha.
@@ -28,6 +28,7 @@ const SIGHT = 42;              // m a daaku sees Ramu from (nothing in the way)
 const SHOOT_RANGE = 34;        // ... and shoots from
 const RUN = 4.3;               // m/s, coming for him
 const ALERT = 14;              // s a daaku keeps after him once he has seen or heard him
+const STAGE_RANGE = 160;       // m the three on the stage see and shoot across, once the ambush is sprung
 const UP = new THREE.Vector3(0, 1, 0);
 /** models/toz.glb (tools/blender/build_props.py build_toz): its origin in the right fist, barrels along +z; the muzzle */
 const TOZ_MUZZLE = new THREE.Vector3(0, 0.044, 0.837);
@@ -47,7 +48,7 @@ interface Daaku {
   head: THREE.Object3D | null; top: THREE.Object3D | null;
   x: number; y: number; z: number; heading: number;
   post: [number, number]; postHeading: number;
-  leader: boolean; inWell: boolean;
+  leader: boolean; onStage: boolean;
   alert: number;                  // s left of being after Ramu
   seen: [number, number];         // where he was last seen or heard
   sees: boolean; lookT: number;   // can see him (checked every so often)
@@ -90,28 +91,29 @@ export class Daakus implements Targets {
       return Math.hypot(x - from[0] - ax * k, z - from[1] - az * k) < 45 && Math.hypot(x - from[0], z - from[1]) > 50;
     });
     const places = [...spread(onWay, 12, 22), ...spread(aisles, 8, 16)];
-    // the well: the leader a little off the middle, his two men either side (the sand floor is 12 m across)
-    const well: [number, number][] = [[KUAN.x + 1.5, KUAN.z - 1], [KUAN.x - 3.5, KUAN.z + 3], [KUAN.x + 4, KUAN.z + 3.5]];
+    // the stage: the leader at the middle of its front edge (the audience's side, toward the well), a man either side
+    const mid = (STAGE.z0 + STAGE.z1) / 2;
+    const well: [number, number][] = [[STAGE.x1 - 1.4, mid], [STAGE.x1 - 1.9, mid - 2.6], [STAGE.x1 - 1.9, mid + 2.6]];
     const n = places.length + well.length;
     const [men, boss, gunScene] = await Promise.all([makeActors(DAAKU_RIG, n - 1), makeActors(LEADER_RIG, 1),
       gltfLoader().loadAsync('models/toz.glb').then((x) => x.scene)]);
     const actors = [...men.slice(0, places.length), boss[0], ...men.slice(places.length)];   // the leader first in the well
     actors.forEach((a, i) => {
-      const inWell = i >= places.length, leader = i === places.length;
-      const [x, z] = inWell ? well[i - places.length] : places[i];
-      const heading = inWell ? Math.atan2(x - KUAN.x, z - KUAN.z) + Math.PI : Math.random() * Math.PI * 2;
+      const onStage = i >= places.length, leader = i === places.length;
+      const [x, z] = onStage ? well[i - places.length] : places[i];
+      const heading = onStage ? Math.atan2(KUAN.x - x, KUAN.z - z) : Math.random() * Math.PI * 2;   // (on the stage: toward the well, as aiming turns them)
       const body = a.root.children[0];
       const rig = new Rider(body);
       const gun = gunScene.clone();
       gun.traverse((o) => { o.castShadow = true; });
       g.group.add(a.root, gun);
-      const y = world.floorAt(x, z, 0.6);
+      const y = world.floorAt(x, z, onStage ? 3 : 0.6);
       const d: Daaku = {
         a, rig, gun,
         hand: findBone(body, 'RightHand'), index: findBone(body, 'RightHandIndex1'), arm: findBone(body, 'RightArm'),
         spine: findBone(body, 'Spine1') ?? findBone(body, 'Spine'), head: findBone(body, 'Head'), top: findBone(body, 'HeadTop_End'),
         left: findBone(body, 'LeftHand'), leftTip: findBone(body, 'LeftHandMiddle1'),
-        x, y, z, heading, post: [x, z], postHeading: heading, leader, inWell,
+        x, y, z, heading, post: [x, z], postHeading: heading, leader, onStage,
         alert: 0, seen: [x, z], sees: false, lookT: Math.random() * 0.3, fireT: 1 + Math.random() * 2, aimW: 0, flinch: 0,
         hits: 0, out: false, fwd: false, sweep: false, kvx: 0, kvz: 0, key: 0, shots: 0, aimFace: null, edits: [],
       };
@@ -130,6 +132,41 @@ export class Daakus implements Targets {
     return l ? [l.x, l.z] : [KUAN.x, KUAN.z];
   }
 
+  /** the ambush sprung: the three on the stage see (and shoot) as far as the well */
+  awake = false;
+  /** hold fire (a cutscene): they aim but do not shoot */
+  holdFire = false;
+
+  /** the leader (on the stage), for a camera: where he stands, which way he faces, his head */
+  get leader(): { position: THREE.Vector3; facing: number; headPosition(out: THREE.Vector3): boolean } {
+    const d = this.men.find((m) => m.leader)!;
+    return { position: new THREE.Vector3(d.x, d.y, d.z), facing: d.heading, headPosition: (o) => { if (!d.head) return false; d.head.getWorldPosition(o); return true; } };
+  }
+
+  /** the three on the stage, standing: their heads (for a camera that frames them) */
+  stageHeads(): THREE.Vector3[] {
+    return this.men.filter((d) => d.onStage && !d.out && d.head).map((d) => d.head!.getWorldPosition(new THREE.Vector3()));
+  }
+
+  /** shot `i` of these Targets is the leader's */
+  isLeader(i: number): boolean { return !!this.men[i]?.leader; }
+
+  /**
+   * The ambush: the three on the stage wake, turned on Ramu, and the leader's shot hits him (`hit` false: it misses).
+   */
+  ambush(hit = true): void {
+    this.awake = true;
+    const R = this.ramu.position;
+    for (const d of this.men) {
+      if (!d.onStage || d.out) continue;
+      d.alert = ALERT * 4; d.sees = true; d.seen = [R.x, R.z]; d.lookT = 0.5;
+      d.heading = Math.atan2(-(R.x - d.x), -(R.z - d.z)) + Math.PI;
+      d.fireT = 2.5 + Math.random();
+    }
+    const l = this.men.find((m) => m.leader && !m.out);
+    if (l) this.fire(l, Math.hypot(R.x - l.x, R.y + 1.3 - l.y - 1.4, R.z - l.z), hit);
+  }
+
   /** Ramu knocked out and back at the start: they lose him */
   calm(): void { for (const d of this.men) { d.alert = 0; d.sees = false; } }
 
@@ -141,22 +178,23 @@ export class Daakus implements Targets {
       // can he see Ramu? (every so often: a ray from his eyes to Ramu's chest)
       if ((d.lookT -= dt) <= 0) {
         d.lookT = 0.25 + Math.random() * 0.1;
-        d.sees = d3 < SIGHT && this.clear(d.x, d.y + 1.55, d.z, R.x, chestY, R.z) && !this.ramu.knockedOut;
+        const sight = d.onStage ? (this.awake ? STAGE_RANGE : 0) : SIGHT;   // (the stage's three see nobody before the ambush)
+        d.sees = d3 < sight && this.clear(d.x, d.y + 1.55, d.z, R.x, chestY, R.z) && !this.ramu.knockedOut;
         if (d.sees) { d.alert = ALERT; d.seen = [R.x, R.z]; }
       }
       if (d.alert > 0) d.alert -= dt;
       d.flinch = Math.max(0, d.flinch - dt);
 
       let speed = 0, aiming = false, face = d.heading;
-      if (d.alert > 0 && d.sees && d3 < SHOOT_RANGE) {
+      if (d.alert > 0 && d.sees && d3 < (d.onStage ? STAGE_RANGE : SHOOT_RANGE)) {
         // he can see him, near enough: stand, face him, shoot
         aiming = true;
         face = d.aimW > 0.5 && d.aimFace !== null ? d.aimFace : Math.atan2(-dx, -dz) + Math.PI;   // (a heading h faces -sin h, -cos h)
-        if ((d.fireT -= dt) <= 0 && d.flinch <= 0 && Math.abs(wrap(face - d.heading)) < 0.35 && d.aimW > 0.8) {
+        if (!this.holdFire && (d.fireT -= dt) <= 0 && d.flinch <= 0 && Math.abs(wrap(face - d.heading)) < 0.35 && d.aimW > 0.8) {
           this.fire(d, d3);
           d.fireT = (d.leader ? 1.0 : 1.4) + Math.random() * 1.3;
         }
-      } else if (d.alert > 0 && !d.inWell) {
+      } else if (d.alert > 0 && !d.onStage) {
         // after him: to where he was last seen (or heard)
         const tx = d.seen[0] - d.x, tz = d.seen[1] - d.z, l = Math.hypot(tx, tz);
         if (l > 2.5) {
@@ -169,8 +207,8 @@ export class Daakus implements Targets {
           d.y = this.world.floorAt(d.x, d.z, d.y + 0.6);
         } else d.alert = Math.min(d.alert, 3);           // nobody there: a look round, then back to waiting
       } else if (d.alert > 0) {
-        face = Math.atan2(-dx, -dz) + Math.PI;            // (in the well: turned toward him, waiting for a sight of him)
-      } else if (!d.inWell && Math.hypot(d.post[0] - d.x, d.post[1] - d.z) > 1.5) {
+        face = Math.atan2(-dx, -dz) + Math.PI;            // (on the stage: turned toward him, waiting for a sight of him)
+      } else if (!d.onStage && Math.hypot(d.post[0] - d.x, d.post[1] - d.z) > 1.5) {
         // nothing going on: back to his place, walking
         const tx = d.post[0] - d.x, tz = d.post[1] - d.z, l = Math.hypot(tx, tz);
         speed = 1.4;
@@ -268,7 +306,7 @@ export class Daakus implements Targets {
 
   scare(x: number, z: number, r: number): void {
     for (const d of this.men) {
-      if (d.out || Math.hypot(d.x - x, d.z - z) > r) continue;
+      if (d.out || Math.hypot(d.x - x, d.z - z) > r || (d.onStage && !this.awake)) continue;   // (the stage's three wait for him at the well)
       d.alert = ALERT;
       if (!d.sees) d.seen = [x, z];
     }
@@ -370,7 +408,7 @@ export class Daakus implements Targets {
   }
 
   /** a shot at Ramu: a hit more often near (and from the leader), less when he runs; a miss goes past him */
-  private fire(d: Daaku, dist: number): void {
+  private fire(d: Daaku, dist: number, force?: boolean): void {
     d.gun.updateMatrixWorld(true);
     const muzzle = d.gun.localToWorld(TOZ_MUZZLE.clone());
     d.shots++;
@@ -378,7 +416,7 @@ export class Daakus implements Targets {
     let p = Math.max(0.1, Math.min(0.7, 0.78 - dist * 0.017));
     if (this.ramu.speed > 3) p *= 0.55;
     if (d.leader) p *= 1.15;
-    const hit = Math.random() < p;
+    const hit = force ?? Math.random() < p;
     let end: THREE.Vector3;
     if (hit) end = chest;
     else {

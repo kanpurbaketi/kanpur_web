@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { storeMicPose } from '../world/handProp';
-import { gltfLoader } from '../world/gltf';
+import { gltfLoader, TEX_MAX_NEAR } from '../world/gltf';
 import { CollisionWorld } from './collide';
 import { Controls } from '../game/controls';
 import { NIGHT } from '../world/night';
@@ -820,7 +820,7 @@ export class Ramu {
    * with idle / walk / jog / run / jump clips. The file faces +Z, the game faces -Z, hence the half turn.
    */
   private buildBody(): void {
-    gltfLoader().loadAsync(this.body.model).then((gltf) => {
+    gltfLoader(TEX_MAX_NEAR).loadAsync(this.body.model).then((gltf) => {
       this.skeleton = gltf.scene;
       gltf.scene.traverse((o) => {
         const m = o as THREE.SkinnedMesh;

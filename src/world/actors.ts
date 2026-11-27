@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { storeMicPose } from './handProp';
-import { gltfLoader, lookUrl } from './gltf';
+import { gltfLoader, lookUrl, shrinkTexture } from './gltf';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Face } from './face';
 import { NIGHT } from './night';
@@ -116,6 +116,7 @@ function lookMaterial(look: string, base: THREE.MeshStandardMaterial): Promise<T
   let p = lookCache.get(look);
   if (!p) {
     p = new THREE.TextureLoader().loadAsync(lookUrl(look)).then((tex) => {
+      shrinkTexture(tex);                         // (a phone: smaller)
       tex.flipY = false;                         // as glTF textures are
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 4;
@@ -177,7 +178,10 @@ function load(name: RigName): Promise<Source> {
 export class Actor {
   readonly root = new THREE.Group();
   private mixer: THREE.AnimationMixer;
-  private actions: Record<string, THREE.AnimationAction> = {};
+  /** the rig's clips, and an action for each as it is first played (made up front, every clip for every one of a crowd
+   of hundreds, they held hundreds of MB, more than a phone's browser allows a page) */
+  private clips = new Map<string, THREE.AnimationClip>();
+  private acts = new Map<string, THREE.AnimationAction>();
   private current: THREE.AnimationAction | null = null;
   private stride: number;
   private step: number;
@@ -213,11 +217,7 @@ export class Actor {
     this.stride = (RIGS[name].height / CLIP_HEIGHT) * this.step;
     this.lie = src.lie;
     this.mixer = new THREE.AnimationMixer(body);
-    for (const clip of src.clips) {
-      const a = this.mixer.clipAction(clip);
-      if (ONCE.has(clip.name)) { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
-      this.actions[clip.name] = a;
-    }
+    for (const clip of src.clips) this.clips.set(clip.name, clip);
     if (this.step < 1) {
       // short steps: the walk at part weight over the standing pose (a copy of the idle clip, so it is its own action)
       const idle = src.clips.find((c) => c.name === 'idle');
@@ -269,11 +269,23 @@ export class Actor {
 
   /** Crossfade to a looping clip and set its playback speed. */
   /** the rig has this clip */
-  has(name: string): boolean { return !!this.actions[name]; }
+  has(name: string): boolean { return this.clips.has(name); }
+
+  /** the action of clip `name`, made the first time it is wanted */
+  private act(name: string): THREE.AnimationAction | null {
+    let a = this.acts.get(name);
+    if (a) return a;
+    const clip = this.clips.get(name);
+    if (!clip) return null;
+    a = this.mixer.clipAction(clip);
+    if (ONCE.has(name)) { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+    this.acts.set(name, a);
+    return a;
+  }
 
   play(name: string, timeScale = 1, fade = 0.25): void {
-    if (!this.actions[name]) name = 'idle';
-    if (name === 'idle' && this.guard && this.actions.guard_stand) name = 'guard_stand';
+    if (!this.clips.has(name)) name = 'idle';
+    if (name === 'idle' && this.guard && this.clips.has('guard_stand')) name = 'guard_stand';
     if (this.state !== name) this.start(name, fade);
     this.state = name;
     if (this.current) this.current.timeScale = timeScale;
@@ -284,14 +296,14 @@ export class Actor {
    * particular occasion (the third punch taken, say): the clip starts again only when the key changes.
    */
   once(name: string, key: string, timeScale = 1, fade = 0.1): void {
-    if (this.state === key || !this.actions[name]) return;
+    if (this.state === key || !this.clips.has(name)) return;
     this.state = key;
     this.start(name, fade);
     if (this.current) this.current.timeScale = timeScale;
   }
 
   private start(name: string, fade: number): void {
-    const next = this.actions[name];
+    const next = this.act(name);
     if (!next) return;
     const prev = this.current;
     const stepping = this.under !== null && (name === 'walk' || name === 'run');
@@ -307,7 +319,7 @@ export class Actor {
    */
   move(speed: number, idle = 'idle', walk = 'walk'): void {
     if (speed < 0.25) this.play(idle);
-    else if (speed < 2.6) this.play(this.actions[walk] ? walk : 'walk', speed / (WALK_SPEED * this.stride));
+    else if (speed < 2.6) this.play(this.clips.has(walk) ? walk : 'walk', speed / (WALK_SPEED * this.stride));
     else this.play('run', speed / (RUN_SPEED * this.stride));
   }
 

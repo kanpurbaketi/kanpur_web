@@ -1,3 +1,4 @@
+import { shrinkTexture, TEX_MAX_NEAR } from './gltf';
 import * as THREE from 'three';
 
 /*
@@ -24,7 +25,7 @@ const faceTextures = new Map<string, THREE.Texture>();
 function faceTexture(url: string, ready: { value: number }): THREE.Texture {
   let t = faceTextures.get(url);
   if (!t) {
-    t = new THREE.TextureLoader().load(url, () => { t!.userData.ok = true; for (const r of t!.userData.waiting as { value: number }[]) r.value = 1; });
+    t = new THREE.TextureLoader().load(url, () => { shrinkTexture(t!, TEX_MAX_NEAR); t!.userData.ok = true; for (const r of t!.userData.waiting as { value: number }[]) r.value = 1; });
     t.colorSpace = THREE.SRGBColorSpace;
     t.flipY = false;                           // glTF's UVs
     t.anisotropy = 8;

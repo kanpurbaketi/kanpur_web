@@ -110,16 +110,29 @@ const cache = new Map<string, Promise<Source>>();     // by file: the goon is th
 const lookCache = new Map<string, Promise<THREE.MeshStandardMaterial>>();
 const nextLook: Record<RigName, number> = { uncle: 0, security: 0, security_thin: 0, goon: 0, girl: 0, boy: 0, aunty: 0, burqa: 0, kumar: 0, anchor: 0, buddha: 0, anaya: 0, daaku_leader: 0, daaku_member: 0 };
 
-/** The model's material wearing another texture (one material per look, shared by everyone who has that look). */
-function lookMaterial(look: string, base: THREE.MeshStandardMaterial): Promise<THREE.MeshStandardMaterial> {
-  if (!look) return Promise.resolve(base);
-  let p = lookCache.get(look);
+const lookTextures = new Map<string, Promise<THREE.Texture>>();
+/** a look's texture, loaded once (the rigged people and the still figures share it) */
+function lookTexture(look: string): Promise<THREE.Texture> {
+  let p = lookTextures.get(look);
   if (!p) {
     p = new THREE.TextureLoader().loadAsync(lookUrl(look)).then((tex) => {
       shrinkTexture(tex);                         // (a phone: smaller)
       tex.flipY = false;                         // as glTF textures are
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 4;
+      return tex;
+    });
+    lookTextures.set(look, p);
+  }
+  return p;
+}
+
+/** The model's material wearing another texture (one material per look, shared by everyone who has that look). */
+function lookMaterial(look: string, base: THREE.MeshStandardMaterial): Promise<THREE.MeshStandardMaterial> {
+  if (!look) return Promise.resolve(base);
+  let p = lookCache.get(look);
+  if (!p) {
+    p = lookTexture(look).then((tex) => {
       const mat = base.clone();
       mat.map = tex;
       mat.emissiveMap = tex;
@@ -354,8 +367,27 @@ export const lookCount = (name: RigName): number => LOOKS[name].length;
 
 /** The material of one look of a kind, for anything else that wears it (the still figures: figures.ts). */
 export async function rigMaterial(name: RigName, look: number): Promise<THREE.MeshStandardMaterial> {
+  const ls = LOOKS[name];
+  let l = ls[look % ls.length];
+  // a look with a texture of its own needs nothing of the rigged model (7-9 MB, its clips): a figure (a rider in the
+  // traffic, an onlooker) is made from the look alone. The model as built (look '') is swapped for another of its looks
+  if (!l) l = ls.find((x) => x) ?? '';
+  if (l) return figureMaterial(l);
   const src = await load(name);
-  return lookMaterial(LOOKS[name][look % LOOKS[name].length], src.material);
+  return lookMaterial(l, src.material);
+}
+
+const figureMats = new Map<string, Promise<THREE.MeshStandardMaterial>>();
+/** a still figure's material from a look's texture alone: as the rigged models' own (load: rough, its colours glowing a little) */
+function figureMaterial(look: string): Promise<THREE.MeshStandardMaterial> {
+  let p = figureMats.get(look);
+  if (!p) {
+    p = lookTexture(look).then((tex) => {
+      return new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: new THREE.Color().setScalar(NIGHT ? 0.16 : 0.06), roughness: 0.85, metalness: 0 });
+    });
+    figureMats.set(look, p);
+  }
+  return p;
 }
 
 const liteCache = new Map<string, Promise<Source>>();

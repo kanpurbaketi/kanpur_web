@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addFigures, figure, figurePosts, ONLOOKER, population, Spot } from './figures';
+import { addFigures, figure, figurePosts, melaPeople, ONLOOKER, population, Spot } from './figures';
 import { banner, Bulbs, Geo, litMat, rnd } from './geo';
 import { beamMaterial, NIGHT } from './night';
 import { cloneCar, loadPBR } from './vehicleModels';
@@ -214,7 +214,7 @@ function carModel(file: string, dancer: RigName, n: number): THREE.Group {
   loadPBR(file).then((parts) => root.add(cloneCar(parts, '#ffffff')));
   // somebody standing up on the roof and dancing as the car goes round the wall (the Hip Hop and Silly Dancing clips, one
   // each way)
-  makeActors(dancer, 1, true).then(([a]) => {
+  melaPeople.ready.then(() => makeActors(dancer, 1, true)).then(([a]) => {   // (once Ramu is near the mela)
     a.root.position.set(0, 1.43, -0.4);
     a.root.rotation.y = n % 2 ? Math.PI : Math.PI * 0.8;
     a.play(n % 2 ? 'dance_silly' : 'dance_hiphop', 0.95 + n * 0.08, 0);

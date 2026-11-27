@@ -11,7 +11,7 @@ import { groundDecals } from './roadDirt';
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { MELA_MIX, Pedestrians } from './pedestrians';
-import { figurePosts, ONLOOKER, population, someone, Spot } from './figures';
+import { figurePosts, melaPeople, ONLOOKER, population, someone, Spot } from './figures';
 import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, DX, DZ, GATE, HINDOLA, inMela, INFLATABLE, KUAN, MELA, Rect, SAMMELAN, SAMMELAN_GATES, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
 import { buildInflatable } from './inflatable';
 import { buildMautKuan } from './mautKuan';
@@ -539,7 +539,7 @@ export class Mela {
     this.crowd.setCount(population.on ? (desktop ? 64 : 26) : 0);
     this.crowd.lite = 0.5;                              // half of them the light bodies (actors.ts)
     // as many guards as when the crowd was 24 (12) strong: more people, not more of them after Ramu
-    if (population.on) this.crowd.populate(desktop ? 64 : 26, { ...MELA_MIX, security: (MELA_MIX.security ?? 0) * (desktop ? 24 / 64 : 12 / 26) });
+    if (population.on) void melaPeople.ready.then(() => this.crowd.populate(desktop ? 64 : 26, { ...MELA_MIX, security: (MELA_MIX.security ?? 0) * (desktop ? 24 / 64 : 12 / 26) }));
     this.crowd.huntIf = (x, z) => inMela(x, z);        // its guards go for Ramu once he is inside, never through the cloth
     this.crowd.huntRange = 70;                          // ... from anywhere they can see across the ground
     this.group.add(this.crowd.group);
@@ -826,7 +826,7 @@ export class Mela {
     const cast: RigName[] = [...poets, 'kumar', 'anchor'];
     const kinds = [...new Set(cast)];
     // (nobody about, Explore world: no cast, and nothing waits on it there)
-    this.sammelan = !population.on ? new Promise<Sammelan>(() => {}) : Promise.all(kinds.map((k) => makeActors(k, cast.filter((p) => p === k).length))).then(async (made) => {
+    this.sammelan = !population.on ? new Promise<Sammelan>(() => {}) : melaPeople.ready.then(() => Promise.all(kinds.map((k) => makeActors(k, cast.filter((p) => p === k).length)))).then(async (made) => {
       const left = new Map(kinds.map((k, i) => [k, made[i]]));
       const person = (kind: RigName, [x, z]: [number, number], y: number) => {
         const p = new Person(left.get(kind)!.shift()!, x, y, z, FACE);
@@ -895,7 +895,7 @@ export class Mela {
     const AUD_KINDS: RigName[] = ['uncle', 'aunty', 'girl', 'boy', 'uncle', 'aunty', 'boy'];
     const kindOf = people.map((p) => AUD_KINDS[Math.floor(rnd(p.n! * 0.37 + 5) * AUD_KINDS.length)]);
     const audKinds = [...new Set(kindOf)];
-    Promise.all(audKinds.map((k) => makeActors(k, kindOf.filter((x) => x === k).length, true))).then((made) => {
+    melaPeople.ready.then(() => Promise.all(audKinds.map((k) => makeActors(k, kindOf.filter((x) => x === k).length, true)))).then((made) => {
       const left = new Map(audKinds.map((k, i) => [k, made[i]]));
       people.forEach((p, i) => {
         const a = left.get(kindOf[i])!.shift()!;
@@ -1090,7 +1090,7 @@ export class Mela {
     const KINDS: RigName[] = ['uncle', 'aunty', 'girl', 'boy', 'uncle', 'boy', 'aunty', 'girl', 'uncle'];
     const kindOf = keepers.map((p) => KINDS[Math.floor(rnd(p.n! * 0.53 + 3) * KINDS.length)]);
     const kinds = [...new Set(kindOf)];
-    Promise.all(kinds.map((k) => makeActors(k, kindOf.filter((x) => x === k).length, true))).then((made) => {
+    melaPeople.ready.then(() => Promise.all(kinds.map((k) => makeActors(k, kindOf.filter((x) => x === k).length, true)))).then((made) => {
       const left = new Map(kinds.map((k, i) => [k, made[i]]));
       keepers.forEach((p, i) => {
         const a = left.get(kindOf[i])!.shift()!;
@@ -1204,7 +1204,7 @@ export class Mela {
     }).catch((e) => console.error('lever failed to load', e));
     if (!population.on) spots.length = 0;
     const kinds = [...new Set(spots.map((s) => s.kind))];
-    Promise.all(kinds.map((k) => makeActors(k, spots.filter((s) => s.kind === k).length))).then((made) => {
+    melaPeople.ready.then(() => Promise.all(kinds.map((k) => makeActors(k, spots.filter((s) => s.kind === k).length)))).then((made) => {
       const left = new Map(kinds.map((k, i) => [k, made[i]]));
       spots.forEach((s, i) => {
         const a = left.get(s.kind)!.shift()!;

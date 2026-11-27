@@ -11,9 +11,9 @@ import { CollisionWorld } from './player/collide';
 import { ADULT, Ramu, TEEN } from './player/ramu';
 import { Gun } from './player/gun';
 import { Daakus } from './game/daakus';
-import { population } from './world/figures';
+import { melaPeople, population } from './world/figures';
 import { MissionBox } from './game/story/director';
-import { KUAN } from './world/melaSite';
+import { KUAN, MELA } from './world/melaSite';
 import { Blood } from './world/blood';
 import { CROWD_MAX, loadSettings, onSettingsChange } from './game/settings';
 import { Stats, repairRs } from './game/stats';
@@ -76,6 +76,8 @@ const params = new URLSearchParams(location.search);
 /** a test start (menu → Testing, development only): the mission to begin the stage at */
 /** Explore world (menu → Explore world): free roam as grown-up Ramu, with weapons (src/player/gun.ts) */
 const EXPLORE = params.has('explore');
+/** m from the mela's edge at which its people start loading (they take a few seconds to come in) */
+const MELA_NEAR = 150;
 const TEST_FROM = import.meta.env.DEV && params.has('debug') ? Number(params.get('from')) || 0 : 0;
 
 async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> {
@@ -547,6 +549,11 @@ void main() {
         }
       }
       ramu.update(dt);
+      // the mela's people load once he is within MELA_NEAR of it (not at the start: a stage begins far off, at the chowk)
+      if (mela && !melaPeople.woke) {
+        const p = ramu.position, dx = Math.max(MELA.x0 - p.x, 0, p.x - MELA.x1), dz = Math.max(MELA.z0 - p.z, 0, p.z - MELA.z1);
+        if (Math.hypot(dx, dz) < MELA_NEAR) melaPeople.wake();
+      }
       if (gun && !paused) gun.update(dt);                 // (after his clip: the arm up at the aim, the gun in his fist)
       if (daakus && !paused) daakus.update(dt);
       if (bulletCam && !paused) bulletCam.update(dt, real);   // (before the director: its camera shot this frame)

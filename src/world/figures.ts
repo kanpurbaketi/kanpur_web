@@ -68,6 +68,18 @@ function resolve(s: Spot, i: number): { kind: FigureKind; look: number } {
  */
 export const population = { on: true };
 
+/**
+ * The mela's people (its crowd, the kavi sammelan's cast and audience, the stall keepers, the ride operators, the well's
+ * dancers): not loaded until Ramu comes near the mela (main.ts calls `melaPeople.wake()`), so a start far off (stage 1's
+ * chowk, the city) does not fetch and hold them. Whatever builds them waits on `melaPeople.ready`.
+ */
+export const melaPeople = (() => {
+  let wake!: () => void;
+  const ready = new Promise<void>((r) => { wake = r; });
+  let woke = false;
+  return { ready, get woke() { return woke; }, wake: () => { if (!woke) { woke = true; wake(); } } };
+})();
+
 export function figurePosts(spots: Spot[]): [number, number, number, number, number][] {
   if (!population.on) return [];
   return spots.map((s) => {

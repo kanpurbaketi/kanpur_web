@@ -90,6 +90,8 @@ const RIGGED: Record<RigName, { speed: [number, number]; linger: number; tough: 
   anchor: { speed: [1.0, 1.3], linger: 0.15, tough: TOUGH },
   buddha: { speed: [0.8, 1.0], linger: 0.25, tough: TOUGH },
   anaya: { speed: [1.0, 1.2], linger: 0.3, tough: TOUGH },
+  daaku_leader: { speed: [1.0, 1.3], linger: 0.1, tough: 5 },   // (Explore world's daakus: src/game/daakus.ts, not in the crowds)
+  daaku_member: { speed: [1.0, 1.3], linger: 0.1, tough: 5 },
 };
 const ACTOR_RANGE = 95;
 const BODY = 0.27;        // a person's radius, m

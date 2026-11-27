@@ -16,12 +16,13 @@ import { KUAN } from '../world/melaSite';
  him). A shot hits more often near, less when Ramu runs. The men in the well stay down there and shoot up at the
  gallery. Ramu's bullets find them as they find anybody (Targets): a head shot kills, else two to the body (the leader
  three). The leader down: the mission is done (onLeaderDown).
- Until the daakus' own models come (face-covered, T-posed, through Mixamo), they are the goon: the uncle's body in dark
- clothes, the leader in a red pagdi.
+ They wear their own models (faces covered; tools/blender/build_ramu_rig.py --char daaku_member / daaku_leader): the
+ men in black, the leader in a red checked gamchha.
 */
 
-/** the rig the daakus wear (swap for their own once built: tools/blender/build_ramu_rig.py --char daaku...) */
-export const DAAKU_RIG: RigName = 'goon';
+/** the rigs the daakus wear */
+export const DAAKU_RIG: RigName = 'daaku_member';
+export const LEADER_RIG: RigName = 'daaku_leader';
 
 const SIGHT = 42;              // m a daaku sees Ramu from (nothing in the way)
 const SHOOT_RANGE = 34;        // ... and shoots from
@@ -37,7 +38,6 @@ interface Daaku {
   gun: THREE.Object3D;
   hand: THREE.Object3D | null; index: THREE.Object3D | null; arm: THREE.Object3D | null; spine: THREE.Object3D | null;
   head: THREE.Object3D | null; top: THREE.Object3D | null;
-  pagdi: THREE.Mesh | null;
   x: number; y: number; z: number; heading: number;
   post: [number, number]; postHeading: number;
   leader: boolean; inWell: boolean;
@@ -61,7 +61,6 @@ export class Daakus implements Targets {
   onShot: (muzzle: THREE.Vector3, end: THREE.Vector3, loud: number, flesh: boolean) => void = () => {};
   /** the leader is dead */
   onLeaderDown: () => void = () => {};
-  private height = rigHeight(DAAKU_RIG);
 
   private constructor(private world: CollisionWorld, private ramu: Ramu) {}
 
@@ -82,12 +81,13 @@ export class Daakus implements Targets {
     // the well: the leader a little off the middle, his two men either side (the sand floor is 12 m across)
     const well: [number, number][] = [[KUAN.x + 1.5, KUAN.z - 1], [KUAN.x - 3.5, KUAN.z + 3], [KUAN.x + 4, KUAN.z + 3.5]];
     const n = places.length + well.length;
-    const [actors, gunScene] = await Promise.all([makeActors(DAAKU_RIG, n), gltfLoader().loadAsync('models/revolver.glb').then((x) => x.scene)]);
+    const [men, boss, gunScene] = await Promise.all([makeActors(DAAKU_RIG, n - 1), makeActors(LEADER_RIG, 1),
+      gltfLoader().loadAsync('models/revolver.glb').then((x) => x.scene)]);
+    const actors = [...men.slice(0, places.length), boss[0], ...men.slice(places.length)];   // the leader first in the well
     actors.forEach((a, i) => {
       const inWell = i >= places.length, leader = i === places.length;
       const [x, z] = inWell ? well[i - places.length] : places[i];
       const heading = inWell ? Math.atan2(x - KUAN.x, z - KUAN.z) + Math.PI : Math.random() * Math.PI * 2;
-      if (leader) a.shape(1.04, 1.12);
       const body = a.root.children[0];
       const rig = new Rider(body);
       const gun = gunScene.clone();
@@ -98,15 +98,10 @@ export class Daakus implements Targets {
         a, rig, gun,
         hand: findBone(body, 'RightHand'), index: findBone(body, 'RightHandIndex1'), arm: findBone(body, 'RightArm'),
         spine: findBone(body, 'Spine1') ?? findBone(body, 'Spine'), head: findBone(body, 'Head'), top: findBone(body, 'HeadTop_End'),
-        pagdi: null,
         x, y, z, heading, post: [x, z], postHeading: heading, leader, inWell,
         alert: 0, seen: [x, z], sees: false, lookT: Math.random() * 0.3, fireT: 1 + Math.random() * 2, aimW: 0, flinch: 0,
         hits: 0, out: false, fwd: false, sweep: false, kvx: 0, kvz: 0, key: 0,
       };
-      if (leader) {           // the leader: a red pagdi, so he is told from his men
-        d.pagdi = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.105, 0.1, 14), new THREE.MeshStandardMaterial({ color: '#a3161a', roughness: 0.8 }));
-        g.group.add(d.pagdi);
-      }
       a.play('idle', 0.9 + Math.random() * 0.2, 0);
       a.update(Math.random() * 3);
       g.men.push(d);
@@ -261,7 +256,7 @@ export class Daakus implements Targets {
 
   // ---- inside ----
 
-  private tall(d: Daaku): number { return this.height * (d.a.root.children[0]?.scale.y ?? 1); }
+  private tall(d: Daaku): number { return rigHeight(d.leader ? LEADER_RIG : DAAKU_RIG) * (d.a.root.children[0]?.scale.y ?? 1); }
 
   /** nothing solid between the two points */
   private clear(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): boolean {
@@ -301,17 +296,10 @@ export class Daakus implements Targets {
     d.spine.updateMatrixWorld(true);
   }
 
-  /** the revolver in his fist (aimed: along the shot at Ramu), and the leader's pagdi on his head */
+  /** the revolver in his fist (aimed: along the shot at Ramu) */
   private hold(d: Daaku, tx: number, ty: number, tz: number): void {
     d.a.root.updateMatrixWorld(true);
     d.gun.visible = d.a.root.visible && !d.out;
-    if (d.pagdi && d.head && d.top) {
-      const h = d.head.getWorldPosition(_v), top = d.top.getWorldPosition(_w);
-      const up = top.clone().sub(h).normalize();
-      d.pagdi.position.copy(h).lerp(top, 0.62);
-      d.pagdi.quaternion.setFromUnitVectors(UP, up);
-      d.pagdi.visible = d.a.root.visible;
-    }
     if (!d.gun.visible || !d.hand) return;
     const f = gunInFist(d.rig, d.hand, d.index);
     if (!f) return;

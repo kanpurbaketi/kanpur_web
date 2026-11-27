@@ -34,6 +34,8 @@ CHARS = {
     'anchor': ('anchor/anchor_rigged.fbx', 'anchor_rig.glb', 1.70, 1024),      # the kavi sammelan's anchor, at the mic
     'buddha': ('budda/buddha_rigged.fbx', 'buddha_rig.glb', 1.63, 1024),       # the old poet with the white beard
     'anaya': ('anaya/anaya_rigged.fbx', 'anaya_rig.glb', 1.60, 1024),         # the girl with the candy floss on the well's gallery
+    'daaku_leader': ('daaku_leader/daaku_leader_rigged.fbx', 'daaku_leader_rig.glb', 1.80, 1024),   # Explore world: the daakus' leader, in the well
+    'daaku_member': ('daaku_member/daaku_member_rigged.fbx', 'daaku_member_rig.glb', 1.74, 1024),   # and his men
 }
 CHAR = argv[argv.index('--char') + 1] if '--char' in argv else 'ramu'
 PLAYER = CHAR in ('ramu', 'ramu_adult')     # the player: Ramu's own clips, no light copy
@@ -53,7 +55,7 @@ RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'f
              'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far', 'fall_back', 'hang_jump', 'fall_balance', 'climb_rail', 'slip_fall'}
 
 # the revolver's clips (Explore world): Ramu's (src/player/gun.ts: one-handed from the hip, two-handed aimed), and the
-# daakus' who shoot back (src/game/daakus.ts; until their own models come, they are the uncle's body in dark clothes)
+# daakus' who shoot back (src/game/daakus.ts: daaku_leader, daaku_member)
 GUN_CLIPS = {'gun_point', 'gun_aim'}
 ARMED = PLAYER or CHAR in ('uncle',) or CHAR.startswith('daaku')
 
@@ -63,7 +65,7 @@ GUARD_ONLY = {'yell'}
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
 # to the uncle's rest orientations (the same T-pose, the same bone rolls) and that pose made their rest (to_tpose below).
-APOSE = {'kumar', 'anchor', 'buddha', 'anaya'}
+APOSE = {'kumar', 'anchor', 'buddha', 'anaya', 'daaku_leader', 'daaku_member'}
 REF_REST = None
 bpy.ops.wm.read_factory_settings(use_empty=True)
 if CHAR in APOSE:

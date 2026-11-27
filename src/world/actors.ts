@@ -15,7 +15,7 @@ import { NIGHT } from './night';
  Pedestrians moves them (see Pedestrians.addRigged): an Actor only knows how to stand somewhere and play a clip.
 */
 
-export type RigName = 'uncle' | 'security' | 'security_thin' | 'goon' | 'girl' | 'boy' | 'aunty' | 'burqa' | 'kumar' | 'anchor' | 'buddha' | 'anaya';
+export type RigName = 'uncle' | 'security' | 'security_thin' | 'goon' | 'girl' | 'boy' | 'aunty' | 'burqa' | 'kumar' | 'anchor' | 'buddha' | 'anaya' | 'daaku_leader' | 'daaku_member';
 
 /** height in metres (as built), used to match the walk clip's stride to the ground speed */
 /** `step`: how much of the walk clip's stride they take (a sari allows short steps only) */
@@ -32,6 +32,8 @@ const RIGS: Record<RigName, { file: string; height: number; step?: number }> = {
   anchor: { file: 'models/anchor_rig.glb', height: 1.70 },      // the kavi sammelan's anchor, at the mic
   buddha: { file: 'models/buddha_rig.glb', height: 1.63 },      // the old poet with the white beard
   anaya: { file: 'models/anaya_rig.glb', height: 1.60 },        // the girl with the candy floss on the well's gallery
+  daaku_leader: { file: 'models/daaku_leader_rig.glb', height: 1.80 },   // Explore world: the daakus' leader (red checked gamchha)
+  daaku_member: { file: 'models/daaku_member_rig.glb', height: 1.74 },   // and his men, in black, faces covered
 };
 /** how tall a kind of person is, m (as built; Actor.shape may scale them a little) */
 export const rigHeight = (name: RigName): number => RIGS[name].height;
@@ -49,6 +51,8 @@ const LOOKS: Record<RigName, string[]> = {
   anchor: [''],
   buddha: [''],
   anaya: [''],
+  daaku_leader: [''],
+  daaku_member: [''],
 };
 /** nearer than this (metres from the camera) a person wears the full body; further, the light one */
 const LOD_NEAR = 24;
@@ -104,7 +108,7 @@ function hipsAt(clip: THREE.AnimationClip | undefined, end: boolean): THREE.Vect
 interface Source { scene: THREE.Object3D; clips: THREE.AnimationClip[]; lie: THREE.Vector3; material: THREE.MeshStandardMaterial }
 const cache = new Map<string, Promise<Source>>();     // by file: the goon is the uncle's model
 const lookCache = new Map<string, Promise<THREE.MeshStandardMaterial>>();
-const nextLook: Record<RigName, number> = { uncle: 0, security: 0, security_thin: 0, goon: 0, girl: 0, boy: 0, aunty: 0, burqa: 0, kumar: 0, anchor: 0, buddha: 0, anaya: 0 };
+const nextLook: Record<RigName, number> = { uncle: 0, security: 0, security_thin: 0, goon: 0, girl: 0, boy: 0, aunty: 0, burqa: 0, kumar: 0, anchor: 0, buddha: 0, anaya: 0, daaku_leader: 0, daaku_member: 0 };
 
 /** The model's material wearing another texture (one material per look, shared by everyone who has that look). */
 function lookMaterial(look: string, base: THREE.MeshStandardMaterial): Promise<THREE.MeshStandardMaterial> {

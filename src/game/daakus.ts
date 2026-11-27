@@ -33,7 +33,9 @@ const UP = new THREE.Vector3(0, 1, 0);
 const TOZ_MUZZLE = new THREE.Vector3(0, 0.044, 0.837);
 /** carried, not aimed: the barrels this far below level, ahead of him (rad) */
 const CARRY_DIP = 0.6;
-const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
+/** aimed, the chest tilts up or down at most this far (rad) */
+const MAX_TILT = 0.5;
+const _q = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
 
 interface Daaku {
@@ -56,6 +58,10 @@ interface Daaku {
   out: boolean; fwd: boolean; sweep: boolean; kvx: number; kvz: number;
   key: number;                    // a count for the one-shot clips' keys
   shots: number;                  // his shots so far (each one plays the kick: the clip's key)
+  aimFace: number | null;         // aimed: the heading that puts the barrels on Ramu (the clip turns him side-on to them)
+  /** the bones changed after the clip posed them (the chest's tilt, the fingers): as the clip left them, and as changed.
+   *  A bone the clip leaves still has no track in the file, so the clip never sets it back: undone before each pose */
+  edits: { bone: THREE.Object3D; base: THREE.Quaternion; now: THREE.Quaternion }[];
 }
 
 export class Daakus implements Targets {
@@ -107,7 +113,7 @@ export class Daakus implements Targets {
         left: findBone(body, 'LeftHand'), leftTip: findBone(body, 'LeftHandMiddle1'),
         x, y, z, heading, post: [x, z], postHeading: heading, leader, inWell,
         alert: 0, seen: [x, z], sees: false, lookT: Math.random() * 0.3, fireT: 1 + Math.random() * 2, aimW: 0, flinch: 0,
-        hits: 0, out: false, fwd: false, sweep: false, kvx: 0, kvz: 0, key: 0, shots: 0,
+        hits: 0, out: false, fwd: false, sweep: false, kvx: 0, kvz: 0, key: 0, shots: 0, aimFace: null, edits: [],
       };
       a.play('idle', 0.9 + Math.random() * 0.2, 0);
       a.update(Math.random() * 3);
@@ -145,7 +151,7 @@ export class Daakus implements Targets {
       if (d.alert > 0 && d.sees && d3 < SHOOT_RANGE) {
         // he can see him, near enough: stand, face him, shoot
         aiming = true;
-        face = Math.atan2(-dx, -dz) + Math.PI;            // (a heading h faces -sin h, -cos h)
+        face = d.aimW > 0.5 && d.aimFace !== null ? d.aimFace : Math.atan2(-dx, -dz) + Math.PI;   // (a heading h faces -sin h, -cos h)
         if ((d.fireT -= dt) <= 0 && d.flinch <= 0 && Math.abs(wrap(face - d.heading)) < 0.35 && d.aimW > 0.8) {
           this.fire(d, d3);
           d.fireT = (d.leader ? 1.0 : 1.4) + Math.random() * 1.3;
@@ -183,11 +189,15 @@ export class Daakus implements Targets {
       else if (aiming) d.a.once('rifle_fire', 'rifle' + d.shots, 1, 0.15);   // up to the shoulder, then held; a shot: the kick again
       else d.a.move(speed);
       this.place(d);
+      for (const e of d.edits) e.bone.quaternion.copy(e.base);      // last frame's changes undone before the clip poses him
       const posed = d.a.update(dt);
-      if (posed && d.aimW > 0.05) this.aimChest(d, R.x, chestY, R.z);
-      // the fingers closed on the gun: the right round the stock's wrist, the left (aimed) cradling the fore-end. Only on
-      // a frame the clip set them (it keys every finger), else the turn would build up frame on frame
-      if (posed) { d.rig.grip('Right', 1); if (d.aimW > 0.05) d.rig.grip('Left', 0.75 * d.aimW); }
+      if (posed) {
+        d.edits.length = 0;
+        if (d.aimW > 0.05) this.aimChest(d, R.x, chestY, R.z); else d.aimFace = null;
+        // the fingers closed on the gun: the right round the stock's wrist, the left (aimed) cradling the fore-end
+        this.edit(d, /RightHand(Index|Middle|Ring|Pinky|Thumb)\d$/, () => d.rig.grip('Right', 1));
+        if (d.aimW > 0.05) this.edit(d, /LeftHand(Index|Middle|Ring|Pinky|Thumb)\d$/, () => d.rig.grip('Left', 0.75 * d.aimW));
+      } else for (const e of d.edits) e.bone.quaternion.copy(e.now);   // not posed this frame: as changed last time
       this.hold(d, R.x, chestY, R.z);
     }
   }
@@ -292,18 +302,40 @@ export class Daakus implements Targets {
     this.hold(d, 0, 0, 0);
   }
 
-  /** the chest turned so the barrels (his right fist to his left hand, under the fore-end) point at Ramu's chest */
+  /**
+   * The barrels (his right fist to his left hand, under the fore-end) onto Ramu's chest. The clip stands him side-on to
+   * them, so the turn left and right is his whole body's (`aimFace`: the heading that puts them on Ramu, turned to in
+   * update); up and down, his chest tilts (at most MAX_TILT): a spine twisted all the way round folds him over.
+   */
   private aimChest(d: Daaku, tx: number, ty: number, tz: number): void {
     if (!d.hand || !d.left || !d.spine) return;
     d.a.root.updateMatrixWorld(true);
-    const fist = d.hand.getWorldPosition(_v), fore = this.leftGrip(d, _w);
-    const want = new THREE.Vector3(tx, ty, tz).sub(fist).normalize();
-    _q.setFromUnitVectors(fore.sub(fist).normalize(), want);
-    _q2.identity().slerp(_q, d.aimW);
-    const parent = d.spine.parent!.getWorldQuaternion(new THREE.Quaternion());
-    const world = d.spine.getWorldQuaternion(new THREE.Quaternion()).premultiply(_q2);
-    d.spine.quaternion.copy(parent.invert().multiply(world));
-    d.spine.updateMatrixWorld(true);
+    const fist = d.hand.getWorldPosition(new THREE.Vector3()), hands = this.leftGrip(d, new THREE.Vector3()).sub(fist);
+    const want = new THREE.Vector3(tx, ty, tz).sub(fist);
+    // the barrels' heading relative to his, now: the heading that would put them on Ramu
+    const rel = wrap(Math.atan2(hands.x, hands.z) - d.heading);
+    d.aimFace = wrap(Math.atan2(want.x, want.z) - rel);
+    // the tilt: from the barrels' slope to the slope to Ramu, about the level line across the shot
+    const slope = (v: THREE.Vector3) => Math.atan2(v.y, Math.hypot(v.x, v.z));
+    const tilt = Math.max(-MAX_TILT, Math.min(MAX_TILT, slope(want) - slope(hands))) * d.aimW;
+    const across = new THREE.Vector3(-want.z, 0, want.x).normalize();
+    if (Math.abs(tilt) < 1e-3 || across.lengthSq() < 0.5) return;
+    this.edit(d, null, () => {
+      _q.setFromAxisAngle(across, tilt);
+      const parent = d.spine!.parent!.getWorldQuaternion(new THREE.Quaternion());
+      const world = d.spine!.getWorldQuaternion(new THREE.Quaternion()).premultiply(_q);
+      d.spine!.quaternion.copy(parent.invert().multiply(world));
+      d.spine!.updateMatrixWorld(true);
+    }, [d.spine]);
+  }
+
+  /** a change to bones after the clip posed them, remembered so it can be undone before the next pose */
+  private edit(d: Daaku, names: RegExp | null, change: () => void, bones?: THREE.Object3D[]): void {
+    const list = bones ?? [];
+    if (names) d.a.root.traverse((o) => { if (names.test(o.name)) list.push(o); });
+    const base = list.map((b) => b.quaternion.clone());
+    change();
+    list.forEach((b, i) => d.edits.push({ bone: b, base: base[i], now: b.quaternion.clone() }));
   }
 
   /** where the left hand closes under the fore-end: the palm's middle */

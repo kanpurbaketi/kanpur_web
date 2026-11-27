@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addFigures, figure, figurePosts, ONLOOKER, Spot } from './figures';
+import { addFigures, figure, figurePosts, ONLOOKER, population, Spot } from './figures';
 import { banner, Bulbs, Geo, litMat, rnd } from './geo';
 import { beamMaterial, NIGHT } from './night';
 import { cloneCar, loadPBR } from './vehicleModels';
@@ -464,7 +464,7 @@ export function buildMautKuan() {
 
   // moving vehicles: bikes ride near-horizontal bands high on the wall, cars lower and tilted
   interface Veh { obj: THREE.Group; a0: number; w: number; y0: number; amp: number; sp: number; phi: number; ph: number; off: number }
-  const vehicles: Veh[] = [
+  const vehicles: Veh[] = !population.on ? [] : [      // (nobody about, Explore world: no show)
     { obj: bikeModel(1, '#d62828'), a0: 0.0, w: 1.55, y0: 5.6, amp: 0.9, sp: 0.5, phi: 0.1, ph: 0.0, off: 0.04 },
     { obj: bikeModel(4, '#1f4aa6'), a0: 2.2, w: 1.4, y0: 4.4, amp: 1.0, sp: 0.4, phi: 0.08, ph: 1.7, off: 0.04 },
     { obj: bikeModel(6, '#2a2a30'), a0: 4.1, w: 1.7, y0: 6.2, amp: 0.8, sp: 0.6, phi: 0.12, ph: 3.1, off: 0.04 },
@@ -529,12 +529,13 @@ export function buildMautKuan() {
   const loop = (pts: [number, number][], back: [number, number][]) => [...pts, ...back.reverse()];
   const rails = [
     // the two gallery rails also hold the camera in (camH): from outside, the rail and the banners came between it and Ramu
-    { ring: arc(0, TAU, R + 0.22, 96).slice(0, 96), h: H + 1.1, camH: H + 6 },
-    { ring: loop(arc(A1 + LAND, A1 + TAU, RG1 - 0.05, 96), arc(A1 + LAND, A1 + TAU, RG1 - 0.1, 96)), h: H + 1.1, camH: H + 6 },
+    // (railings: bullets and looks go through them, thin)
+    { ring: arc(0, TAU, R + 0.22, 96).slice(0, 96), h: H + 1.1, camH: H + 6, thin: true },
+    { ring: loop(arc(A1 + LAND, A1 + TAU, RG1 - 0.05, 96), arc(A1 + LAND, A1 + TAU, RG1 - 0.1, 96)), h: H + 1.1, camH: H + 6, thin: true },
     // the stair's outer handrail, in lengths that rise with it, and the closed end of the landing
     ...Array.from({ length: 14 }, (_, k) => {
       const a0 = A0 - (SPAN * k) / 14, a1 = A0 - (SPAN * (k + 1)) / 14;
-      return { ring: loop(arc(a0, a1, RS1, 4), arc(a0, a1, RS1 + 0.06, 4)), h: Math.min(H, (H * (A0 - a1)) / (SPAN - LAND)) + 1.1, camH: 0 };
+      return { ring: loop(arc(a0, a1, RS1, 4), arc(a0, a1, RS1 + 0.06, 4)), h: Math.min(H, (H * (A0 - a1)) / (SPAN - LAND)) + 1.1, camH: 0, thin: true };
     }),
     { ring: [wallPoint(A1, RG1, 0), wallPoint(A1, RS1 + 0.06, 0), wallPoint(A1 - 0.004, RS1 + 0.06, 0), wallPoint(A1 - 0.004, RG1, 0)].map((p) => [p.x, p.z] as [number, number]), h: H + 1.1, camH: 0 },
   ];

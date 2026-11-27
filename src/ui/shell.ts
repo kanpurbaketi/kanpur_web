@@ -27,6 +27,13 @@ export function goStage(n: number): void {
   u.searchParams.set('stage', String(n));
   location.href = u.toString();
 }
+/** Explore world: the same Moti Jheel, roaming free, as grown-up Ramu with weapons (?explore) */
+export function goExplore(): void {
+  const u = new URL(location.href);
+  u.search = '';
+  u.searchParams.set('explore', '');
+  location.href = u.toString();
+}
 /** back to roaming free (no stage), with a message to show (an i18n key, and the stage it is about) */
 export function goFree(msg?: string, n?: number): void {
   const u = new URL(location.href);

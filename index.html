@@ -42,6 +42,23 @@
     #use-tip { position: fixed; left: 50%; bottom: 22%; transform: translateX(-50%); z-index: 6; display: none;
       padding: 6px 12px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; font: 600 14px system-ui, sans-serif; white-space: pre-line; text-align: center;
       pointer-events: none; }
+    /* ---- Explore world: the weapon, the crosshair (src/player/gun.ts) ---- */
+    #weapon { position: fixed; right: 16px; bottom: 30px; z-index: 5; display: none; align-items: center; gap: 8px;
+      padding: 7px 12px; border-radius: 8px; background: rgba(0,0,0,.5); color: #fff; font: 600 14px system-ui, sans-serif;
+      cursor: pointer; user-select: none; }
+    #weapon em { font-style: normal; font-size: 18px; color: #ffd27a; margin-left: 4px; }
+    body.explore #weapon { display: flex; }
+    #crosshair { position: fixed; left: 50%; top: 50%; width: 0; height: 0; z-index: 4; display: none; pointer-events: none; }
+    body.gun-out #crosshair { display: block; }
+    #crosshair i { position: absolute; background: rgba(255,255,255,.9); box-shadow: 0 0 2px rgba(0,0,0,.9); transition: transform .12s; }
+    #crosshair i:nth-child(1), #crosshair i:nth-child(2) { width: 2px; height: 8px; left: -1px; }
+    #crosshair i:nth-child(1) { top: -15px; } #crosshair i:nth-child(2) { top: 7px; }
+    #crosshair i:nth-child(3), #crosshair i:nth-child(4) { width: 8px; height: 2px; top: -1px; }
+    #crosshair i:nth-child(3) { left: -15px; } #crosshair i:nth-child(4) { left: 7px; }
+    #crosshair b { position: absolute; left: -2px; top: -2px; width: 4px; height: 4px; border-radius: 50%; background: #fff; box-shadow: 0 0 2px #000; }
+    #crosshair.aim i:nth-child(1) { transform: translateY(5px); } #crosshair.aim i:nth-child(2) { transform: translateY(-5px); }
+    #crosshair.aim i:nth-child(3) { transform: translateX(5px); } #crosshair.aim i:nth-child(4) { transform: translateX(-5px); }
+    #crosshair.hit i, #crosshair.hit b { background: #ff3b2f; }
     /* ---- menu ---- */
     .menu-btn { position: fixed; left: 16px; top: 16px; z-index: 20; width: 44px; height: 44px; border-radius: 10px;
       border: 0; background: rgba(0,0,0,.45); display: grid; place-content: center; gap: 4px; cursor: pointer;

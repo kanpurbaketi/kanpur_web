@@ -21,6 +21,16 @@ const CROUCH = 1.2, ACCEL = 12, GRAVITY = 9.8, TURN = 10, RADIUS = 0.35;
 const J_BEND = [0.30, 0.72], J_AIR = [0.74, 1.36], J_LAND = [1.36, 1.85];
 const WINDUP = 0.15;    // seconds of the knee bend before a standing jump leaves the ground
 const CAM_DIST = 3.2, EYE = 1.35;
+/** aiming a gun: the camera this close, this far over his right shoulder, this much lower, the view this much narrower */
+const AIM_DIST = 1.55, AIM_SIDE = 0.5, AIM_DROP = 0.08, AIM_FOV = 0.82;
+/** a gun out, not aiming: the camera at its usual distance but this far over his right shoulder and this much higher, so
+ the crosshair (the middle of the screen) is out past him, not on the back of his head */
+const ARMED_SIDE = 0.75, ARMED_LIFT = 0.12;
+
+/** which body the player has: the teen (the stages) or the grown man (Explore world); his height sets the eye line */
+export interface Body { model: string; eye: number }
+export const TEEN: Body = { model: 'models/ramu_rig.glb', eye: EYE };
+export const ADULT: Body = { model: 'models/ramu_adult_rig.glb', eye: 1.55 };
 
 /**
  * Ramu on a vehicle (set every frame by the driving): which way it faces, its pose for the rider (body frame, kind, steer,
@@ -93,8 +103,23 @@ export class Ramu {
   onUse: (() => void) | null = null;
   /** the vehicle keys: headlights (pressed), horn (down and up) */
   onKey: ((a: 'lights' | 'horn', down: boolean) => void) | null = null;
-  /** poses him on a vehicle (IK on his rig) */
-  private rider: Rider | null = null;
+  /** poses him on a vehicle (IK on his rig); also the gun's arm (src/player/gun.ts) */
+  rider: Rider | null = null;
+  /** the loaded model (its bones), null until it has loaded */
+  skeleton: THREE.Object3D | null = null;
+  /** a gun in his hand (src/player/gun.ts): the punch key fires instead, and he faces where the camera looks while aiming
+   or shooting */
+  armed = false;
+  /** shots asked for (the punch key, armed) since the gun last took them */
+  private shots = 0;
+  /** seconds he keeps facing the aim after a shot (the gun lowered after) */
+  private aimHold = 0;
+  /** 0 .. 1: how far the camera has gone over his shoulder (aiming) */
+  private aimW = 0;
+  private armedW = 0;
+  private aimFov = 0;
+  /** where the game's camera last was (a cutscene's camera elsewhere leaves it): the crosshair's line starts here */
+  readonly aimFrom = new THREE.Vector3();
   private lookIdle = 0;    // seconds since the player last turned the camera
   /** the chase camera's point on a vehicle (it lags the vehicle a little, and looks ahead as it goes) */
   private chase = new THREE.Vector3();
@@ -102,13 +127,28 @@ export class Ramu {
   private baseFov = 0;
   private skin = { gamma: { value: 1 }, tint: { value: new THREE.Color(1, 1, 1) }, glow: { value: NIGHT ? 0.2 : 0.1 } };
 
-  constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement, private controls: Controls) {
+  constructor(private camera: THREE.PerspectiveCamera, private world: CollisionWorld, dom: HTMLElement, private controls: Controls, private body: Body = TEEN) {
     onSettingsChange((s) => (this.cfg = s));
     this.buildBody();
     this.buildBlob();
     this.root.add(this.model);
     this.bindInput(dom);
   }
+
+  /** shots asked for since the last call (the gun fires them) */
+  takeShots(): number { const n = this.shots; this.shots = 0; return n; }
+
+  /** the aim held (its key down), armed and on foot */
+  /** one of his clips (by name), if the rig has it */
+  clip(name: string): THREE.AnimationClip | undefined { return this.actions[name]?.getClip(); }
+
+  get aimHeld(): boolean { return this.armed && this.enabled && !this.ride && this.controls.held('aim', this.keys); }
+
+  /** facing where the camera looks: aiming, or just after a shot */
+  get aimingPose(): boolean { return this.armed && !this.ride && !this.pose && (this.aimHeld || this.aimHold > 0); }
+
+  /** the camera's yaw and pitch (radians): where the crosshair points */
+  get aimAngles(): { yaw: number; pitch: number } { return { yaw: this.yaw, pitch: this.pitch }; }
 
   get position(): THREE.Vector3 {
     return this.root.position;
@@ -329,7 +369,7 @@ export class Ramu {
     this.mixer?.update(dt);
     this.face?.update(dt);
     this.updateBlob();
-    if (!this.cinematic) this.updateCamera(p.x, floor + EYE, p.z, CAM_DIST + 0.8);     // (the ground's height: not down into the roll with him)
+    if (!this.cinematic) this.updateCamera(p.x, floor + this.body.eye, p.z, CAM_DIST + 0.8);     // (the ground's height: not down into the roll with him)
     return true;
   }
 
@@ -423,7 +463,7 @@ export class Ramu {
       this.animate(dt, 0, false);
       this.updateBlob();
       const q = this.root.position;
-      if (!this.cinematic) this.updateCamera(q.x, q.y + EYE, q.z, CAM_DIST);
+      if (!this.cinematic) this.updateCamera(q.x, q.y + this.body.eye, q.z, CAM_DIST);
       return;
     }
     if (input.lengthSq() > 1) input.normalize();
@@ -468,7 +508,12 @@ export class Ramu {
     }
     // face movement direction + simple limb swing
     const hs = Math.hypot(this.vel.x, this.vel.z);
-    if (dir.lengthSq() > 0.0025) {
+    this.aimHold = Math.max(0, this.aimHold - dt);
+    if (this.aimingPose && this.stun <= 0) {                 // the gun up: he faces where the camera looks, and steps sideways
+      let d = this.yaw - this.model.rotation.y;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      this.model.rotation.y += d * Math.min(1, 18 * dt);
+    } else if (dir.lengthSq() > 0.0025) {
       const want = Math.atan2(-dir.x, -dir.z);
       let d = want - this.model.rotation.y;
       d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -481,7 +526,7 @@ export class Ramu {
     this.pickHands();
     this.updateBlob();
 
-    if (!this.cinematic) this.updateCamera(p.x, p.y + EYE, p.z, CAM_DIST);
+    if (!this.cinematic) this.updateCamera(p.x, p.y + this.body.eye, p.z, CAM_DIST);
   }
 
   /**
@@ -521,6 +566,26 @@ export class Ramu {
 
   /** the camera on its arm from the point (px, py, pz), pulled in where something is in the way */
   private updateCamera(px: number, py: number, pz: number, dist: number): void {
+    // aiming: closer, over the right shoulder, the view a little narrower
+    const aimTo = this.aimHeld ? 1 : 0;
+    this.aimW += (aimTo - this.aimW) * Math.min(1, 12 * (1 / 60));
+    if (this.aimW > 0.001 || this.aimFov) {
+      if (!this.aimFov) this.aimFov = this.camera.fov;
+      this.camera.fov = this.aimFov * (1 + (AIM_FOV - 1) * this.aimW);
+      this.camera.updateProjectionMatrix();
+      if (this.aimW <= 0.001) { this.camera.fov = this.aimFov; this.camera.updateProjectionMatrix(); this.aimFov = 0; }
+    }
+    this.armedW += ((this.armed && !this.ride ? 1 : 0) - this.armedW) * Math.min(1, 6 * (1 / 60));
+    if (this.aimW > 0.001 || this.armedW > 0.001) {
+      const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);            // the camera's right
+      const carry = this.armedW * (1 - this.aimW);
+      const side = AIM_SIDE * this.aimW + ARMED_SIDE * carry, ox = rx * side, oz = rz * side;
+      py += ARMED_LIFT * carry;
+      const t0 = this.world.raycast(px, py, pz, px + ox, py, pz + oz);   // not through a wall beside him
+      px += ox * Math.max(0, t0 - 0.15); pz += oz * Math.max(0, t0 - 0.15);
+      py -= AIM_DROP * this.aimW;
+      dist += (AIM_DIST - dist) * this.aimW;
+    }
     const cp = Math.cos(this.pitch);
     const bx = Math.sin(this.yaw) * cp, by = -Math.sin(this.pitch), bz = Math.cos(this.yaw) * cp;
     const t = this.world.raycast(px, py, pz, px + bx * dist, py + by * dist, pz + bz * dist);
@@ -530,12 +595,21 @@ export class Ramu {
     const lift = Math.max(0, 1.7 - d) * 0.28;
     this.camera.position.set(px + bx * d, Math.max(0.3, py + by * d + lift), pz + bz * d);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.aimFrom.copy(this.camera.position);
+  }
+
+  /** the crosshair's line: its direction (from yaw and pitch, as the camera looks) */
+  aimDir(out: THREE.Vector3): THREE.Vector3 {
+    const cp = Math.cos(this.pitch);
+    return out.set(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
   }
 
   /** a key (or mouse button) went down: the one-shot actions */
   private press(code: string): void {
     if (this.controls.matches('jump', code)) this.jumpQueued = true;
-    if (this.controls.matches('punch', code)) this.punchQueued = true;
+    if (this.controls.matches('punch', code)) {
+      if (this.armed) { if (this.enabled) { this.shots++; this.aimHold = 2.5; } } else this.punchQueued = true;
+    }
     if (this.controls.matches('use', code) && this.enabled) this.onUse?.();
     if (this.controls.matches('lights', code) && this.enabled) this.onKey?.('lights', true);
     if (this.controls.matches('horn', code) && this.enabled) this.onKey?.('horn', true);
@@ -561,6 +635,7 @@ export class Ramu {
       this.press('Mouse' + e.button);
     });
     addEventListener('mouseup', (e) => this.keys.delete('Mouse' + e.button));
+    dom.addEventListener('contextmenu', (e) => e.preventDefault());     // right click is the aim
     addEventListener('mousemove', (e) => {
       if (document.pointerLockElement !== dom) return;
       this.look(e.movementX, e.movementY);
@@ -632,7 +707,7 @@ export class Ramu {
       e.preventDefault();
     });
     document.getElementById('btn-punch')?.addEventListener('touchstart', (e) => {
-      this.punchQueued = true;
+      if (this.armed) { this.shots++; this.aimHold = 2.5; } else this.punchQueued = true;   // armed: it shoots
       e.preventDefault();
     });
     document.getElementById('btn-use')?.addEventListener('touchstart', (e) => {
@@ -663,7 +738,8 @@ export class Ramu {
    * with idle / walk / jog / run / jump clips. The file faces +Z, the game faces -Z, hence the half turn.
    */
   private buildBody(): void {
-    gltfLoader().loadAsync('models/ramu_rig.glb').then((gltf) => {
+    gltfLoader().loadAsync(this.body.model).then((gltf) => {
+      this.skeleton = gltf.scene;
       gltf.scene.traverse((o) => {
         const m = o as THREE.SkinnedMesh;
         if (!m.isMesh) return;

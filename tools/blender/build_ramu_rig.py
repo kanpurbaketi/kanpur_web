@@ -23,6 +23,7 @@ ONLY = set(argv[argv.index('--only') + 1].split(',')) if '--only' in argv else N
 # character -> (rigged FBX, output file, height in metres, texture size)
 CHARS = {
     'ramu': ('ramu_teen/ramu_rigged.fbx', 'ramu_rig.glb', 1.52, 2048),
+    'ramu_adult': ('ramu_adult/ramu_adult_rigged.fbx', 'ramu_adult_rig.glb', 1.75, 2048),   # grown-up Ramu: the player in Explore world
     'uncle': ('uncle/uncle_rigged.fbx', 'uncle_rig.glb', 1.66, 1024),
     'security': ('security/security_fat_rigged.fbx', 'security_rig.glb', 1.72, 1024),
     'security_thin': ('common_assets/security_thin.fbx', 'security_thin_rig.glb', 1.75, 1024),   # the thin guard (actors.ts: half the guards)
@@ -33,22 +34,30 @@ CHARS = {
     'anchor': ('anchor/anchor_rigged.fbx', 'anchor_rig.glb', 1.70, 1024),      # the kavi sammelan's anchor, at the mic
     'buddha': ('budda/buddha_rigged.fbx', 'buddha_rig.glb', 1.63, 1024),       # the old poet with the white beard
     'anaya': ('anaya/anaya_rigged.fbx', 'anaya_rig.glb', 1.60, 1024),         # the girl with the candy floss on the well's gallery
+    'daaku_leader': ('daaku_leader/daaku_leader_rigged.fbx', 'daaku_leader_rig.glb', 1.80, 1024),   # Explore world: the daakus' leader, in the well
+    'daaku_member': ('daaku_member/daaku_member_rigged.fbx', 'daaku_member_rig.glb', 1.74, 1024),   # and his men
 }
 CHAR = argv[argv.index('--char') + 1] if '--char' in argv else 'ramu'
+PLAYER = CHAR in ('ramu', 'ramu_adult')     # the player: Ramu's own clips, no light copy
 SRC, OUT_NAME, HEIGHT, TEX = CHARS[CHAR]
 SRC = os.path.join(ROOT, 'assets', SRC)
 FPS = 30
 SKIN_LIFT = 1.0        # skin is left as generated: the game's Settings > Skin tone slider lightens / darkens it live
 BODY_LIFT = 0.92       # <1 lightens everything a little
 ANIMS = os.path.join(ROOT, 'assets', 'anims')   # Mixamo FBX clips, shared by every character (see import_mixamo_clips)
-KEEP_ROOT = {'fall', 'fall2', 'get_up'}
+KEEP_ROOT = {'fall', 'fall2', 'get_up', 'fall_sweep'}
 # clips in the folder that nothing plays yet (every clip baked goes into every character's file): left out until used
-UNUSED = {'gunplay', 'sweep fall', 'kp_fall_reach'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
+UNUSED = {'kp_fall_reach'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
 # clips only Ramu plays (stage 1, part 3: hanging from the giant wheel, flying off it, the leap from the well): not baked into the others
 # clips whose left arm the FBX leaves in the T-pose: that arm comes from the idle instead
 LEFT_ARM_FROM_IDLE = {'hungry'}
 RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling',
              'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far', 'fall_back', 'hang_jump', 'fall_balance', 'climb_rail', 'slip_fall'}
+
+# the revolver's clips (Explore world): Ramu's (src/player/gun.ts: one-handed from the hip, two-handed aimed), and the
+# daakus' who shoot back (src/game/daakus.ts: daaku_leader, daaku_member)
+GUN_CLIPS = {'gun_point', 'gun_aim'}
+ARMED = PLAYER or CHAR in ('uncle',) or CHAR.startswith('daaku')
 
 # clips only the guards play (shouting at Ramu while they talk: person.ts talkClip): not baked into the others
 GUARD_ONLY = {'yell'}
@@ -56,7 +65,7 @@ GUARD_ONLY = {'yell'}
 # Rigged standing in an A-pose (arms down, hands turned their own way): the clips are rotations relative to the T-pose
 # rest the other rigs share, so on these the arms and hands came out twisted. Before anything else their bones are posed
 # to the uncle's rest orientations (the same T-pose, the same bone rolls) and that pose made their rest (to_tpose below).
-APOSE = {'kumar', 'anchor', 'buddha', 'anaya'}
+APOSE = {'kumar', 'anchor', 'buddha', 'anaya', 'daaku_leader', 'daaku_member'}
 REF_REST = None
 bpy.ops.wm.read_factory_settings(use_empty=True)
 if CHAR in APOSE:
@@ -248,6 +257,7 @@ mat.blend_method = 'OPAQUE'        # the FBX comes in as alpha-hashed; the textu
 # (src/world/face.ts) from the same landmarks, exported on the mesh.
 FACE = {
     'ramu': dict(eyes=[(228, 362), (370, 362)], ew=52, mouth=(293, 490), mw=110),
+    'ramu_adult': dict(eyes=[(228, 306), (366, 306)], ew=50, mouth=(298, 458), mw=105),
     'uncle': dict(eyes=[(228, 292), (360, 292)], ew=52, mouth=(300, 421), mw=125, lid=0.6),       # his brows sit low
     'security': dict(eyes=[(222, 325), (365, 325)], ew=52, mouth=(298, 470), mw=100, lid=0.7),
     'security_thin': dict(eyes=[(224, 340), (366, 340)], ew=50, mouth=(306, 472), mw=110, lid=0.7),
@@ -694,6 +704,9 @@ CLIP_RULES = (
     (('slip', 'fall'), 'slip_fall'),               # Ramu slipping off the well's rail and falling back in ("slip and fall")
     (('hanging', 'idle'), 'hang_idle'), (('stand', 'freehang'), 'hang_start'), (('braced', 'free'), 'hang_braced'), (('braced', 'drop'), 'hang_drop'),
     (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
+    (('sweep', 'fall'), 'fall_sweep'),             # shot in the chest (Explore world): legs gone from under them, down on the back
+    (('gunplay',), 'gun_point'),                   # the revolver from the hip, one-handed (Explore world; upper body only)
+    (('shooting',), 'gun_aim'),                     # the revolver aimed two-handed, a shot's recoil (Explore world; upper body only)
     (('yelling',), 'yell'),                         # a guard shouting at Ramu (security only: GUARD_ONLY)
     (('throw',), 'throw'),                          # the audience pelting a bad poet
     (('grabbing', 'mic'), 'grab_mic'),             # Ramu taking the mic from the anchor (stage 1, part 2)
@@ -784,7 +797,9 @@ def import_mixamo_clips():
     sc = bpy.context.scene
     for f in files:
         name = clip_name(os.path.splitext(os.path.basename(f))[0])
-        if name in RAMU_ONLY and CHAR != 'ramu':
+        if name in RAMU_ONLY and not PLAYER:
+            continue
+        if name in GUN_CLIPS and not ARMED:
             continue
         if name in GUARD_ONLY and not CHAR.startswith('security'):
             continue
@@ -1080,7 +1095,7 @@ def offer_hand(t):
     finger_curl(0.85)                                # round the stick
 
 
-if CHAR in ('ramu', 'anaya'):
+if PLAYER or CHAR == 'anaya':
     reach_clip('offer', 40, offer_base, offer_target, (SH.x - 0.5, 0.3, SH.z - 0.45), offer_hand)
 
 
@@ -1201,7 +1216,7 @@ print('RIG exported', round(os.path.getsize(path) / 1e6, 2), 'MB')
 # For the people who are seldom seen up close and many at once (the kavi sammelan's audience: actors.ts `lite`): the game
 # plays the full file's clips on it (same bones, same names) and dresses it in the full file's material.
 LITE_TRIS = 11000
-if CHAR != 'ramu':
+if not PLAYER:
     bpy.ops.object.select_all(action='DESELECT')
     lite = mesh.copy()
     lite.data = mesh.data.copy()

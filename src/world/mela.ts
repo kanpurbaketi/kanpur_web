@@ -11,7 +11,7 @@ import { groundDecals } from './roadDirt';
 import { LightPool } from './night';
 import { banner, BULB, Bulbs, bannerMat, FEST, Geo, litMat, rnd } from './geo';
 import { MELA_MIX, Pedestrians } from './pedestrians';
-import { figurePosts, ONLOOKER, someone, Spot } from './figures';
+import { figurePosts, ONLOOKER, population, someone, Spot } from './figures';
 import { AUDIENCE, CAROUSEL, CHAIR_SWING, COLUMBUS, DX, DZ, GATE, HINDOLA, inMela, INFLATABLE, KUAN, MELA, Rect, SAMMELAN, SAMMELAN_GATES, STAGE, STAGE_ENTRY, STAGE_STAIRS, STALL_BLOCKS, TEAR, WALL_LOOP, WHEEL } from './melaSite';
 import { buildInflatable } from './inflatable';
 import { buildMautKuan } from './mautKuan';
@@ -41,7 +41,7 @@ const C = (h: string) => new THREE.Color(h);
 
 interface Ride {
   group: THREE.Group; update(t: number, dt: number): void; post: [number, number, number, number?, number?][]; light: [number, number, number, string];
-  rails?: { ring: [number, number][]; h: number; camH?: number }[]; floor?: (x: number, z: number) => number | null;
+  rails?: { ring: [number, number][]; h: number; camH?: number; thin?: boolean }[]; floor?: (x: number, z: number) => number | null;
 }
 
 /** collision outlines for rides (the ride's own frame): a box round its footing, a circle round a round one */
@@ -493,7 +493,7 @@ export class Mela {
   /** solid circles for collision: [x, z, r] */
   readonly posts: [number, number, number, number?, number?][] = [];   // [x, z, r, height (default: tall), foot (default: the ground)]
   /** railings you can't climb over, and walkable surfaces such as the well's stair and gallery */
-  readonly rails: { ring: [number, number][]; h: number; camH: number }[] = [];   // camH: the camera cannot cross below this height (0 = it can)
+  readonly rails: { ring: [number, number][]; h: number; camH: number; thin?: boolean }[] = [];   // thin: a railing (bullets go through)   // camH: the camera cannot cross below this height (0 = it can)
   readonly floors: ((x: number, z: number) => number | null)[] = [];
   /** collision rings for the boundary cloth (thin quads; none across the tear) */
   readonly walls: [number, number][][] = [];
@@ -536,10 +536,10 @@ export class Mela {
 
     // the crowd strolling the aisles: a mela is packed
     this.crowd = new Pedestrians(this.aisles(map), true);
-    this.crowd.setCount(desktop ? 64 : 26);
+    this.crowd.setCount(population.on ? (desktop ? 64 : 26) : 0);
     this.crowd.lite = 0.5;                              // half of them the light bodies (actors.ts)
     // as many guards as when the crowd was 24 (12) strong: more people, not more of them after Ramu
-    this.crowd.populate(desktop ? 64 : 26, { ...MELA_MIX, security: (MELA_MIX.security ?? 0) * (desktop ? 24 / 64 : 12 / 26) });
+    if (population.on) this.crowd.populate(desktop ? 64 : 26, { ...MELA_MIX, security: (MELA_MIX.security ?? 0) * (desktop ? 24 / 64 : 12 / 26) });
     this.crowd.huntIf = (x, z) => inMela(x, z);        // its guards go for Ramu once he is inside, never through the cloth
     this.crowd.huntRange = 70;                          // ... from anywhere they can see across the ground
     this.group.add(this.crowd.group);
@@ -552,7 +552,7 @@ export class Mela {
     this.rides.push(r);
     const c = Math.cos(ry), s = Math.sin(ry);
     for (const [px, pz, pr, ph, pb] of r.post) this.posts.push([x + px * c + pz * s, z - px * s + pz * c, pr, ph, pb]);
-    if (r.rails) for (const w of r.rails) this.rails.push({ h: w.h, camH: w.camH ?? 0, ring: w.ring.map(([px, pz]) => [x + px * c + pz * s, z - px * s + pz * c] as [number, number]) });
+    if (r.rails) for (const w of r.rails) this.rails.push({ h: w.h, camH: w.camH ?? 0, thin: w.thin, ring: w.ring.map(([px, pz]) => [x + px * c + pz * s, z - px * s + pz * c] as [number, number]) });
     if (r.floor) { const f = r.floor; this.floors.push((wx, wz) => f((wx - x) * c - (wz - z) * s, (wx - x) * s + (wz - z) * c)); }
     lights?.add(x, r.light[1], z, r.light[3], 230, 34);
   }
@@ -825,7 +825,8 @@ export class Mela {
     const ground = (x: number, z: number): number => stairs(x, z) ?? (x > STAGE.x0 && x < STAGE.x1 && z > STAGE.z0 && z < STAGE.z1 ? FLOOR : 0);
     const cast: RigName[] = [...poets, 'kumar', 'anchor'];
     const kinds = [...new Set(cast)];
-    this.sammelan = Promise.all(kinds.map((k) => makeActors(k, cast.filter((p) => p === k).length))).then(async (made) => {
+    // (nobody about, Explore world: no cast, and nothing waits on it there)
+    this.sammelan = !population.on ? new Promise<Sammelan>(() => {}) : Promise.all(kinds.map((k) => makeActors(k, cast.filter((p) => p === k).length))).then(async (made) => {
       const left = new Map(kinds.map((k, i) => [k, made[i]]));
       const person = (kind: RigName, [x, z]: [number, number], y: number) => {
         const p = new Person(left.get(kind)!.shift()!, x, y, z, FACE);
@@ -890,6 +891,7 @@ export class Mela {
     }
     // they are rigged people sitting on the dari (the floor clips: Sitting Idle, and two ways of sitting still), each at
     // their own moment of it, blinking now and then
+    if (!population.on) people.length = 0;
     const AUD_KINDS: RigName[] = ['uncle', 'aunty', 'girl', 'boy', 'uncle', 'aunty', 'boy'];
     const kindOf = people.map((p) => AUD_KINDS[Math.floor(rnd(p.n! * 0.37 + 5) * AUD_KINDS.length)]);
     const audKinds = [...new Set(kindOf)];
@@ -1084,6 +1086,7 @@ export class Mela {
     this.group.add(bulbs.object(0.7));
     // the keepers and their customers are rigged people (the light bodies, actors.ts), talking: the keeper selling, the
     // customer haggling, or looking round at the goods; each at their own moment of it
+    if (!population.on) keepers.length = 0;
     const KINDS: RigName[] = ['uncle', 'aunty', 'girl', 'boy', 'uncle', 'boy', 'aunty', 'girl', 'uncle'];
     const kindOf = keepers.map((p) => KINDS[Math.floor(rnd(p.n! * 0.53 + 3) * KINDS.length)]);
     const kinds = [...new Set(kindOf)];
@@ -1199,6 +1202,7 @@ export class Mela {
         this.leverArms[i] = arm;
       });
     }).catch((e) => console.error('lever failed to load', e));
+    if (!population.on) spots.length = 0;
     const kinds = [...new Set(spots.map((s) => s.kind))];
     Promise.all(kinds.map((k) => makeActors(k, spots.filter((s) => s.kind === k).length))).then((made) => {
       const left = new Map(kinds.map((k, i) => [k, made[i]]));

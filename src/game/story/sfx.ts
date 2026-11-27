@@ -1,35 +1,77 @@
 /*
- The story's sounds. A recording in public/audio/sfx/<name>.mp3 is played if there is one; otherwise it is made here
- with WebAudio (the audio context starts on the first click, and the stage's Start is one).
-   stomach   a long hungry growl: a low buzzing tone that bends up and down, gurgling, under a little muffled noise
-   applause  a crowd clapping: hundreds of short noise bursts (each a clap, its own pitch), thick at first, thinning out
-   boo       a crowd booing: a dozen low voices on an "ooo" (buzzing tones through the vowel's two formants), each its own
-             pitch, sliding down
-   thud      something soft hitting somebody: a short low knock
+ The game's sound effects: recordings in public/audio/sfx (tools/audio/make_sounds.sh; CC0, public/audio/CREDITS.md),
+ loaded once and played through WebAudio as loud and as long as asked; until a recording has loaded (or if it is
+ missing), the stand-in made here plays instead (the audio context starts on the first click, and the stage's Start is one).
+   stomach   a hungry growl              (stand-in: a low buzzing tone that bends up and down, gurgling)
+   applause  a crowd clapping            (stand-in: hundreds of short noise bursts, thick at first, thinning out)
+   boo       a crowd booing              (stand-in: a dozen low voices on an "ooo", sliding down)
+   thud      something soft hitting somebody (stand-in: a short low knock)
+   punch     a fist landing, one of four at random (stand-in: the thud)
+   shot      the revolver firing; flesh: a bullet into somebody; ricochet: one off a wall; cock: the hammer drawn back
+             (Explore world: src/player/gun.ts; stand-in: the thud)
 */
 
 let ctx: AudioContext | null = null;
 const audio = () => (ctx ??= new AudioContext());
 
-/** try the recording first */
-function file(name: string): Promise<boolean> {
-  return new Promise((done) => {
-    const a = new Audio(`audio/sfx/${name}.mp3`);
-    const t = setTimeout(() => done(false), 700);
-    a.addEventListener('canplaythrough', () => { clearTimeout(t); void a.play().then(() => done(true), () => done(false)); }, { once: true });
-    a.addEventListener('error', () => { clearTimeout(t); done(false); }, { once: true });
-    a.load();
-  });
+export type Sfx = 'stomach' | 'applause' | 'boo' | 'thud' | 'punch' | 'shot' | 'flesh' | 'ricochet' | 'cock';
+
+/** the recordings of each (a random one plays) */
+const FILES: Record<Sfx, string[]> = {
+  stomach: ['stomach'], applause: ['applause'], boo: ['boo'], thud: ['thud'],
+  punch: ['punch1', 'punch2', 'punch3', 'punch4'],
+  shot: ['shot1', 'shot2'], flesh: ['flesh1', 'flesh2', 'flesh3'], ricochet: ['ricochet'], cock: ['cock'],
+};
+/** how loud each recording plays at volume 1 (they are loudness-matched; the crowds sit a little under the hits) */
+const GAIN: Record<Sfx, number> = { stomach: 0.9, applause: 0.8, boo: 0.8, thud: 0.8, punch: 0.7, shot: 0.9, flesh: 0.8, ricochet: 0.5, cock: 0.6 };
+
+const buffers = new Map<string, Promise<AudioBuffer | null>>();
+function load(name: string): Promise<AudioBuffer | null> {
+  let p = buffers.get(name);
+  if (!p) {
+    p = fetch(`audio/sfx/${name}.mp3`)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+      .then((b) => audio().decodeAudioData(b))
+      .catch(() => null);
+    buffers.set(name, p);
+  }
+  return p;
 }
 
-export type Sfx = 'stomach' | 'applause' | 'boo' | 'thud';
+/** start loading every recording (once the audio context may exist: after the first click) */
+export function preloadSfx(): void {
+  for (const list of Object.values(FILES)) for (const f of list) void load(f);
+}
+
+/** a recording, if loaded: as loud as `volume`, cut off (faded) after `secs` */
+function recording(buf: AudioBuffer, volume: number, secs: number): void {
+  const c = audio();
+  const t0 = c.currentTime + 0.01;
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = 0.95 + Math.random() * 0.1;         // never quite the same twice
+  const g = c.createGain();
+  g.gain.value = volume;
+  const len = Math.min(secs, buf.duration / src.playbackRate.value);
+  if (len < buf.duration / src.playbackRate.value - 0.05) {    // cut short: faded out over the last part
+    g.gain.setValueAtTime(volume, t0 + Math.max(0, len - 0.8));
+    g.gain.linearRampToValueAtTime(0, t0 + len);
+  }
+  src.connect(g).connect(c.destination);
+  src.start(t0);
+  src.stop(t0 + len + 0.05);
+}
 
 export async function playSfx(name: Sfx, volume = 1, secs = 3.5): Promise<void> {
-  if (await file(name)) return;
+  const c = audio();
+  if (c.state === 'suspended') void c.resume();
+  const list = FILES[name];
+  const buf = await Promise.race([load(list[Math.floor(Math.random() * list.length)]), new Promise<null>((r) => setTimeout(() => r(null), 120))]);
+  if (buf) return recording(buf, volume * GAIN[name], name === 'applause' || name === 'boo' ? secs : buf.duration);
   if (name === 'stomach') growl(volume);
   else if (name === 'applause') applause(volume, secs);
   else if (name === 'boo') boo(volume, secs);
-  else if (name === 'thud') thud(volume);
+  else thud(volume);
 }
 
 function boo(volume: number, dur: number): void {

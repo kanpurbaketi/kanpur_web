@@ -5,6 +5,7 @@ interface Seg {
   ax: number; az: number; bx: number; bz: number; h: number; cam: boolean;
   camH: number;   // the camera is stopped below this height (a railing is low for a walker, but the camera must not cross it)
   base: number;   // its foot (0 = the ground; a person standing on a gallery is in the way only of somebody up there)
+  thin: boolean;  // a railing (bars, mesh): it stops a walker and the camera, not a bullet or a look through it
 }
 
 /** how tall a walker is: something whose foot is above his head does not stop him */
@@ -40,8 +41,8 @@ export class CollisionWorld {
     }
   }
 
-  addWall(ring: P2[], h: number, cam = true, camH = h): void {
-    this.addRing(ring, h, cam, camH);
+  addWall(ring: P2[], h: number, cam = true, camH = h, thin = false): void {
+    this.addRing(ring, h, cam, camH, 0, thin);
   }
 
   addFloor(f: (x: number, z: number) => number | null): void {
@@ -76,10 +77,10 @@ export class CollisionWorld {
     return (cx + 4096) * 8192 + (cz + 4096);
   }
 
-  private addRing(pts: P2[], h: number, cam = true, camH = h, base = 0): void {
+  private addRing(pts: P2[], h: number, cam = true, camH = h, base = 0, thin = false): void {
     for (let i = 0; i < pts.length; i++) {
       const a = pts[i], b = pts[(i + 1) % pts.length];
-      const s: Seg = { ax: a[0], az: a[1], bx: b[0], bz: b[1], h, cam, camH, base };
+      const s: Seg = { ax: a[0], az: a[1], bx: b[0], bz: b[1], h, cam, camH, base, thin };
       const x0 = Math.floor(Math.min(a[0], b[0]) / CELL), x1 = Math.floor(Math.max(a[0], b[0]) / CELL);
       const z0 = Math.floor(Math.min(a[1], b[1]) / CELL), z1 = Math.floor(Math.max(a[1], b[1]) / CELL);
       for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) {
@@ -144,6 +145,27 @@ export class CollisionWorld {
    * Fraction (0..1) along the segment from (x0,y0,z0) to (x1,y1,z1) where it first hits a wall,
    * or 1 if clear. Used to pull the camera in front of buildings.
    */
+  /**
+   * A bullet's line (or a look) from one point to another: how far along it (0..1) the first wall it meets, at that
+   * wall's own height (not the camera's). Railings and thin posts let it through.
+   */
+  fireLine(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): number {
+    let best = 1;
+    const rx = x1 - x0, rz = z1 - z0;
+    for (const s of this.near(Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1))) {
+      if (!s.cam || s.thin) continue;
+      const sx = s.bx - s.ax, sz = s.bz - s.az;
+      const den = rx * sz - rz * sx;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((s.ax - x0) * sz - (s.az - z0) * sx) / den;
+      const u = ((s.ax - x0) * rz - (s.az - z0) * rx) / den;
+      if (t < 0 || t > best || u < 0 || u > 1) continue;
+      const y = y0 + (y1 - y0) * t;
+      if (y < s.h && y > s.base) best = t;
+    }
+    return best;
+  }
+
   raycast(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): number {
     let best = 1;
     const rx = x1 - x0, rz = z1 - z0;

@@ -15,7 +15,7 @@ import { NIGHT } from './night';
  Pedestrians moves them (see Pedestrians.addRigged): an Actor only knows how to stand somewhere and play a clip.
 */
 
-export type RigName = 'uncle' | 'security' | 'security_thin' | 'goon' | 'girl' | 'boy' | 'aunty' | 'burqa' | 'kumar' | 'anchor' | 'buddha' | 'anaya';
+export type RigName = 'uncle' | 'security' | 'security_thin' | 'goon' | 'girl' | 'boy' | 'aunty' | 'burqa' | 'kumar' | 'anchor' | 'buddha' | 'anaya' | 'daaku_leader' | 'daaku_member';
 
 /** height in metres (as built), used to match the walk clip's stride to the ground speed */
 /** `step`: how much of the walk clip's stride they take (a sari allows short steps only) */
@@ -32,7 +32,11 @@ const RIGS: Record<RigName, { file: string; height: number; step?: number }> = {
   anchor: { file: 'models/anchor_rig.glb', height: 1.70 },      // the kavi sammelan's anchor, at the mic
   buddha: { file: 'models/buddha_rig.glb', height: 1.63 },      // the old poet with the white beard
   anaya: { file: 'models/anaya_rig.glb', height: 1.60 },        // the girl with the candy floss on the well's gallery
+  daaku_leader: { file: 'models/daaku_leader_rig.glb', height: 1.80 },   // Explore world: the daakus' leader (red checked gamchha)
+  daaku_member: { file: 'models/daaku_member_rig.glb', height: 1.74 },   // and his men, in black, faces covered
 };
+/** how tall a kind of person is, m (as built; Actor.shape may scale them a little) */
+export const rigHeight = (name: RigName): number => RIGS[name].height;
 /** the looks of each kind: '' is the model as built, the rest are textures in models/looks/<name>.jpg (.webp when built) */
 const LOOKS: Record<RigName, string[]> = {
   uncle: ['', 'uncle_b', 'uncle_c', 'uncle_d', 'uncle_e', 'uncle_f', 'uncle_g', 'uncle_h'],
@@ -47,6 +51,8 @@ const LOOKS: Record<RigName, string[]> = {
   anchor: [''],
   buddha: [''],
   anaya: [''],
+  daaku_leader: [''],
+  daaku_member: [''],
 };
 /** nearer than this (metres from the camera) a person wears the full body; further, the light one */
 const LOD_NEAR = 24;
@@ -57,7 +63,7 @@ const _at = new THREE.Vector3();
 const WALK_SPEED = 1.35, RUN_SPEED = 5.0, CLIP_HEIGHT = 1.52;
 
 /** clips that play through once and hold their last pose */
-export const ONCE = new Set(['punch', 'kick', 'hit', 'hit2', 'block', 'shove', 'fall', 'fall2', 'get_up', 'jump',
+export const ONCE = new Set(['punch', 'kick', 'hit', 'hit2', 'block', 'shove', 'fall', 'fall2', 'fall_sweep', 'get_up', 'jump',
   'stomach', 'stomach_hit', 'push', 'push_one', 'pockets', 'head_no', 'angry_point', 'disappointed', 'throw', 'offer',
   'hang_start', 'hang_braced', 'hang_drop',
   'ticket_check', 'shove_aside', 'pick_up', 'give', 'take', 'car_bail', 'mic_give', 'mic_take', 'rise', 'self_point', 'struck', 'pick_try', 'pick_start', 'pick_open', 'climb_roof', 'roof_leap', 'jump_far']);   // made in Katpootli (assets/anims/kp_*.fbx)   // Ramu on the giant wheel (stage 1, part 3)   // the last row: stage 1's scenes
@@ -77,7 +83,10 @@ export function prepareClips(clips: THREE.AnimationClip[]): THREE.AnimationClip[
   return clips.map((clip) => {
     const name = clip.name.replace(/^.*\|/, '');
     // "Shove Reaction" stands still at both ends; the stumble is in the middle
-    const cut = name === 'hit' ? [0.1, 2.0] : name === 'fall' ? [1.0, clip.duration] : name === 'shove' ? [0.15, 1.9] : null;
+    // "Sweep Fall" (shot in the chest) crouches for its first 20 frames before the blow lands: from the moment it does
+    // (frame 21, the head snapping back; the feet are off the ground by frame 28)
+    const cut = name === 'hit' ? [0.1, 2.0] : name === 'fall' ? [1.0, clip.duration] : name === 'shove' ? [0.15, 1.9]
+      : name === 'fall_sweep' ? [0.68, clip.duration] : null;
     const out = cut ? THREE.AnimationUtils.subclip(clip, name, Math.round(cut[0] * 30), Math.round(cut[1] * 30), 30) : clip;
     out.name = name;
     return out;
@@ -99,7 +108,7 @@ function hipsAt(clip: THREE.AnimationClip | undefined, end: boolean): THREE.Vect
 interface Source { scene: THREE.Object3D; clips: THREE.AnimationClip[]; lie: THREE.Vector3; material: THREE.MeshStandardMaterial }
 const cache = new Map<string, Promise<Source>>();     // by file: the goon is the uncle's model
 const lookCache = new Map<string, Promise<THREE.MeshStandardMaterial>>();
-const nextLook: Record<RigName, number> = { uncle: 0, security: 0, security_thin: 0, goon: 0, girl: 0, boy: 0, aunty: 0, burqa: 0, kumar: 0, anchor: 0, buddha: 0, anaya: 0 };
+const nextLook: Record<RigName, number> = { uncle: 0, security: 0, security_thin: 0, goon: 0, girl: 0, boy: 0, aunty: 0, burqa: 0, kumar: 0, anchor: 0, buddha: 0, anaya: 0, daaku_leader: 0, daaku_member: 0 };
 
 /** The model's material wearing another texture (one material per look, shared by everyone who has that look). */
 function lookMaterial(look: string, base: THREE.MeshStandardMaterial): Promise<THREE.MeshStandardMaterial> {
@@ -239,6 +248,17 @@ export class Actor {
       parent.add(m);
       this.lite.push(m);
     }
+  }
+
+  private chestBone: THREE.Object3D | null | undefined;
+  /** where the chest is in the world now (the upper spine; the root if the rig has none): a pool of blood under a body */
+  chest(out: THREE.Vector3): THREE.Vector3 {
+    if (this.chestBone === undefined) {
+      this.chestBone = null;
+      this.root.traverse((o) => { if (!this.chestBone && (o as THREE.Bone).isBone && /Spine1$/.test(o.name)) this.chestBone = o; });
+    }
+    this.root.updateMatrixWorld(true);
+    return (this.chestBone ?? this.root).getWorldPosition(out);
   }
 
   /** a build of their own: `tall` scales the height, `wide` the breadth (0.85: thin); the stride follows the legs */

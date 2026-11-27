@@ -449,15 +449,15 @@ export class Gun {
 
   /**
    * Somebody else's shot (a daaku's): its flash at `muzzle`, its streak to `end`, the bang (`loud`: 0..1, by how far off),
-   * dust where it strikes unless it struck a person (`flesh`)
+   * dust where it strikes unless it struck a person (`flesh`); no streak (`streak` false) for one the bullet cam follows
    */
-  shotFx(muzzle: THREE.Vector3, end: THREE.Vector3, loud: number, flesh: boolean): void {
+  shotFx(muzzle: THREE.Vector3, end: THREE.Vector3, loud: number, flesh: boolean, streak = true): void {
     const f = this.flashes.find((x) => x.t <= 0) ?? this.flashes[0];
     f.s.position.copy(muzzle);
     f.s.material.rotation = Math.random() * Math.PI;
     f.s.visible = true;
     f.t = 0.06;
-    this.launch(muzzle, end);
+    this.launch(muzzle, end).bare = !streak;
     if (loud > 0.02) void playSfx('shot', loud);
     if (!flesh) this.puff(end);
   }

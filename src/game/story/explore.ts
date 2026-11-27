@@ -4,27 +4,45 @@ import type { Ramu } from '../../player/ramu';
 import type { Daakus } from '../daakus';
 import { BULLET_SPEED } from '../../player/gun';
 import { GALLERY } from '../../world/mautKuan';
-import { KUAN } from '../../world/melaSite';
+import { KUAN, STAGE } from '../../world/melaSite';
 
 /*
  Explore world's mission, the scripted parts (the daakus themselves: src/game/daakus.ts):
- - the ambush: Ramu climbs to the top of the maut ka kuan, where the leader is said to hide; a shot from the kavi
-   sammelan's stage hits him, he turns, and the camera finds the leader on the stage with a man either side, aiming at
-   him (a cutscene: Skip lands in the same place, the three awake and shooting);
- - the bullet cam: a shot of Ramu's that will hit the leader is followed from just behind the bullet, in slow motion,
-   all the way to him, and a moment after it lands.
+ - the ambush: Ramu climbs to the top of the maut ka kuan, where the leader is said to hide, and goes round to the side
+   facing the kavi sammelan's stage (mission 1: wellSpot). Only then do the leader and his two men appear on the stage;
+   one of the men fires, and the bullet comes at Ramu in slow motion (the bullet cam) and hits him; he turns, and the
+   camera finds the leader with a man either side, aiming at him (a cutscene: Skip lands in the same place); then
+   mission 2, kill the leader, and the three shoot at him;
+ - the bullet cam: that shot, and a shot of Ramu's that will hit the leader, followed from beside the bullet in slow
+   motion all the way, and a moment after it lands.
 */
 
 /** Ramu up on the well's gallery (its floor is the wall's top) */
 export const onGallery = (r: Ramu): boolean =>
   r.position.y > GALLERY.y - 1.5 && Math.hypot(r.position.x - KUAN.x, r.position.z - KUAN.z) < KUAN.r + 2;
 
-/** waits for Ramu on the gallery, then springs the ambush; resolves once he has control again */
-export async function exploreAmbush(d: Director, ramu: Ramu, daakus: Daakus): Promise<void> {
-  await d.until(() => onGallery(ramu) && !ramu.knockedOut);
+/** the place on the well's gallery nearest the stage: where mission 1 sends Ramu, and where the ambush is sprung */
+export function wellSpot(): [number, number] {
+  const sx = (STAGE.x0 + STAGE.x1) / 2 - KUAN.x, sz = (STAGE.z0 + STAGE.z1) / 2 - KUAN.z, l = Math.hypot(sx, sz);
+  const r = (GALLERY.r0 + GALLERY.r1) / 2;
+  return [KUAN.x + (sx / l) * r, KUAN.z + (sz / l) * r];
+}
+const SPOT_R = 4;             // m from wellSpot that springs it
+
+/** waits for Ramu at wellSpot, then springs the ambush; resolves once he has control again (mission 2 then) */
+export async function exploreAmbush(d: Director, ramu: Ramu, daakus: Daakus, cam: BulletCam): Promise<void> {
+  const [wx, wz] = wellSpot();
+  await d.until(() => onGallery(ramu) && !ramu.knockedOut && Math.hypot(ramu.position.x - wx, ramu.position.z - wz) < SPOT_R);
+  // they appear, aim (a moment: the guns up), and one of the men fires; the bullet cam takes it to him
   daakus.holdFire = true;
-  daakus.ambush(true);                                  // the leader's shot: it hits him
-  await d.wait(0.45);                                    // (the flinch)
+  daakus.reveal();
+  const t0 = performance.now();
+  await d.until(() => daakus.stageAimed || performance.now() - t0 > 1500);
+  let flew = false;
+  daakus.onFiring = (muzzle, end, land) => (flew = cam.start(muzzle, end, land, false));
+  daakus.openFire(true);
+  daakus.onFiring = null;
+  if (flew) await d.until(() => !cam.active);
   await d.scene(async () => {
     const L = daakus.leader, sp = L.position, R = ramu.position;
     // he turns to where it came from
@@ -72,6 +90,7 @@ export class BulletCam {
   private side = new THREE.Vector3();
   private len = 0;
   private land: () => void = () => {};
+  private release = true;
   private bullet: THREE.Group;
 
   constructor(scene: THREE.Scene, private d: Director) {
@@ -93,9 +112,13 @@ export class BulletCam {
 
   get active(): boolean { return this.on; }
 
-  /** a shot at the leader: from `muzzle` to `end`; `land` when it gets there. False if one is already flying */
-  start(muzzle: THREE.Vector3, end: THREE.Vector3, land: () => void): boolean {
+  /**
+   * a shot to follow: from `muzzle` to `end`; `land` when it gets there. False if one is already flying. `release`
+   * false: the camera and the black bars are left as they are at the end (a cutscene follows on)
+   */
+  start(muzzle: THREE.Vector3, end: THREE.Vector3, land: () => void, release = true): boolean {
     if (this.on) return false;
+    this.release = release;
     this.on = true;
     this.t = 0; this.hold = 0; this.landed = false;
     this.from.copy(muzzle);
@@ -124,9 +147,11 @@ export class BulletCam {
     if (this.landed && (this.hold += real) >= AFTER) {
       this.on = false;
       this.d.timeScale = 1;
-      this.d.subs.cinema(false);
-      this.d.cam.release(0.6);
-      this.d.locked = false;
+      if (this.release) {
+        this.d.subs.cinema(false);
+        this.d.cam.release(0.6);
+        this.d.locked = false;
+      }
       return;
     }
     this.frame();
@@ -145,8 +170,8 @@ export class BulletCam {
     const back = this.landed ? 2.4 : THREE.MathUtils.lerp(0.12, 0.6, k);
     const side = this.landed ? 0.6 : THREE.MathUtils.lerp(0.3, 0.22, k);
     const pos = (this.landed ? end.clone() : head.clone())
-      .addScaledVector(this.dir, -back).addScaledVector(this.side, side).add(new THREE.Vector3(0, this.landed ? 0.25 : 0.05, 0));
-    const look = this.landed ? end : head.clone().addScaledVector(this.dir, THREE.MathUtils.lerp(0.12, 2, k));
+      .addScaledVector(this.dir, -back).addScaledVector(this.side, side).add(new THREE.Vector3(0, this.landed ? 0.9 : 0.05, 0));   // (landed: from above, over the well's banner)
+    const look = this.landed ? end.clone().setY(end.y - 0.3) : head.clone().addScaledVector(this.dir, THREE.MathUtils.lerp(0.12, 2, k));
     this.d.shot({ pos, look, fov: this.landed ? 38 : 32 }, 0);
   }
 }

@@ -44,7 +44,7 @@ import { goFree, guardBack, introCard, loadingFailed, loadingScreen, passedCard,
 import { Director } from './game/story/director';
 import { stage1, STAGE1_STEPS } from './game/story/stage1';
 import { stage1Part2 } from './game/story/stage1b';
-import { BulletCam, exploreAmbush } from './game/story/explore';
+import { BulletCam, exploreAmbush, wellSpot } from './game/story/explore';
 import { type Part3From, stage1Part3 } from './game/story/stage1c';
 import { CartKeepers } from './world/cartKeepers';
 import { GateQueue } from './world/gateQueue';
@@ -302,13 +302,13 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
     // the mission: the daakus about Moti Jheel, and their leader hiding down in the maut ka kuan
     if (mela) {
       const box = new MissionBox();
-      box.set(1, 'explore.m1', 'explore.m1.h1', [KUAN.x, KUAN.z]);
+      box.set(1, 'explore.m1', 'explore.m1.h1', wellSpot());
       exploreBox = box;
       void Daakus.create(world, ramu, peds.spots(), mela.crowd.spots(), spawnAt).then((g) => {
         daakus = g;
         scene.add(g.group);
         gun!.addTargets(g);
-        g.onShot = (muzzle, end, loud, flesh) => gun!.shotFx(muzzle, end, loud, flesh);
+        g.onShot = (muzzle, end, loud, flesh, streak) => gun!.shotFx(muzzle, end, loud, flesh, streak);
         g.onHurt = (dmg) => {
           const was = health.value;
           health.hurt(dmg);
@@ -327,7 +327,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
         if (director) {
           const cam = bulletCam = new BulletCam(scene, director);
           gun!.onHitting = (crowd, i, muzzle, end, land) => crowd === g && g.isLeader(i) && cam.start(muzzle, end, land);
-          void exploreAmbush(director, ramu, g).then(() => { ambushed = true; });
+          void exploreAmbush(director, ramu, g, cam).then(() => { ambushed = true; });
           if (params.has('debug')) (window as unknown as { __bulletCam: BulletCam }).__bulletCam = cam;
         }
         if (params.has('debug')) (window as unknown as { __daakus: Daakus }).__daakus = g;
@@ -588,11 +588,13 @@ void main() {
     if (exploreBox) {
       exploreBox.update(dt, ramu.position.x, ramu.position.z);
       // to the well (where he is said to hide; near it, the way up), and once the ambush is sprung, to him on the stage
-      const [lx, lz] = ambushed && daakus ? daakus.leaderAt : [KUAN.x, KUAN.z];
-      const hint = ambushed ? 'explore.m1.h3' : Math.hypot(ramu.position.x - KUAN.x, ramu.position.z - KUAN.z) < 30 ? 'explore.m1.h2' : 'explore.m1.h1';
-      if (hint !== exploreBox.hintNow) exploreBox.set(1, 'explore.m1', hint, [lx, lz]);
+      // mission 1: up the well to its side facing the stage; 2 (after the ambush): the leader
+      const [lx, lz] = ambushed && daakus ? daakus.leaderAt : wellSpot();
+      const title = ambushed ? 'explore.m2' : 'explore.m1';
+      const hint = ambushed ? 'explore.m2.h1' : Math.hypot(ramu.position.x - KUAN.x, ramu.position.z - KUAN.z) < 30 ? 'explore.m1.h2' : 'explore.m1.h1';
+      if (hint !== exploreBox.hintNow) exploreBox.set(ambushed ? 2 : 1, title, hint, [lx, lz]);
       else exploreBox.target = [lx, lz];
-      hud.guide = { x: lx, z: lz, title: t('explore.m1'), hint: t(hint), path: [] };
+      hud.guide = { x: lx, z: lz, title: t(title), hint: t(hint), path: [] };
     }
     if (!fixed) hud.update(ramu.position.x, ramu.position.z, ramu.yaw);
     renderer.info.reset();

@@ -139,6 +139,9 @@ export class Ramu {
   takeShots(): number { const n = this.shots; this.shots = 0; return n; }
 
   /** the aim held (its key down), armed and on foot */
+  /** one of his clips (by name), if the rig has it */
+  clip(name: string): THREE.AnimationClip | undefined { return this.actions[name]?.getClip(); }
+
   get aimHeld(): boolean { return this.armed && this.enabled && !this.ride && this.controls.held('aim', this.keys); }
 
   /** facing where the camera looks: aiming, or just after a shot */

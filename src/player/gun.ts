@@ -32,6 +32,8 @@ const FIST_DOWN = 0.035;
 const BULLET_SPEED = 260;     // m/s the streak flies at (slower than a real bullet, so the eye catches it)
 const STREAK = 2.4;            // m long, the streak
 const TRAIL_LIFE = 0.9;        // s the trail hangs in the air
+/** the clips' moments: gun_point held with the arm out (frame 25), gun_aim's shot from its frame 7 to its end */
+const POINT_T = 24 / 30, AIM_CLIP_KICK = 6 / 30, AIM_CLIP_END = 35 / 30;
 const RANGE = 120;             // m a bullet carries
 const COOLDOWN = 0.32;         // s between shots (a revolver: as fast as the hammer comes back)
 const RECOIL = 0.16;           // radians the arm kicks up, easing back over a fraction of a second
@@ -39,6 +41,47 @@ const SCARE = 70;              // m within which a shot sends people running
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _m = new THREE.Matrix4();
+const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _t = new THREE.Vector3();
+
+/** bone turned by `q` in the world (about its own joint) */
+function turnWorld(bone: THREE.Object3D, q: THREE.Quaternion): void {
+  const parent = bone.parent!.getWorldQuaternion(_q3);
+  const world = bone.getWorldQuaternion(new THREE.Quaternion()).premultiply(q);
+  bone.quaternion.copy(parent.invert().multiply(world));
+  bone.updateMatrixWorld(true);
+}
+
+/** the upper body of a clip (spine, neck, head, shoulders, arms, hands: not the legs, not the fingers), laid over a pose */
+const UPPER = /(Spine\d?|Neck|Head|(Left|Right)(Shoulder|Arm|ForeArm|Hand))$/;
+class UpperClip {
+  private parts: { bone: THREE.Object3D; f: THREE.Interpolant }[] = [];
+  /** the clip's hips: not laid over (the legs stay as they are), but their lean carried into the spine above them */
+  private hips: { bone: THREE.Object3D; f: THREE.Interpolant } | null = null;
+  constructor(clip: THREE.AnimationClip, root: THREE.Object3D) {
+    for (const tr of clip.tracks) {
+      const { nodeName, propertyName } = THREE.PropertyBinding.parseTrackName(tr.name);
+      if (propertyName !== 'quaternion') continue;
+      const bone = THREE.PropertyBinding.findNode(root, nodeName) as THREE.Object3D | null;
+      // (each track makes its own interpolant: for a quaternion track, a slerp between keys)
+      const f = (tr as unknown as { createInterpolant(): THREE.Interpolant }).createInterpolant();
+      if (bone && /Hips$/.test(nodeName)) this.hips = { bone, f };
+      else if (bone && UPPER.test(nodeName)) this.parts.push({ bone, f });
+    }
+  }
+  /** the pose at `t` s, `w` of the way from the one there now */
+  apply(t: number, w: number): void {
+    if (w <= 0.001) return;
+    for (const p of this.parts) {
+      _q.fromArray(p.f.evaluate(t) as unknown as number[]);
+      // the bone on the hips: as the clip's hips would hold it, under the hips there now
+      if (this.hips && p.bone.parent === this.hips.bone) {
+        _q2.fromArray(this.hips.f.evaluate(t) as unknown as number[]);
+        _q.premultiply(_q2).premultiply(_q3.copy(this.hips.bone.quaternion).invert());
+      }
+      p.bone.quaternion.slerp(_q, w);
+    }
+  }
+}
 const UP = new THREE.Vector3(0, 1, 0);
 
 function glowTexture(inner: string, outer: string): THREE.Texture {
@@ -79,6 +122,14 @@ export class Gun {
   private aimPoint = new THREE.Vector3();
   private bones: { arm: THREE.Object3D; fore: THREE.Object3D; hand: THREE.Object3D; index: THREE.Object3D | null } | null = null;
   private reach = 0;
+  /** the gun clips (baked into the rig: gun_aim two-handed, gun_point one-handed), false if the rig has none */
+  private clips: { aim: UpperClip; point: UpperClip } | false | null = null;
+  private twoW = 0;
+  /** where the two-handed clip is: 0 held steady, else playing a shot's recoil through */
+  private shootT = 0;
+  /** the turn of the chest that lays the barrel along the shot (eased) */
+  private corr = new THREE.Quaternion();
+  private spine: THREE.Object3D | null = null;
   private fingers: { bone: THREE.Bone; q: THREE.Quaternion }[] | null = null;
   private wasDrawn = false;
   /** what the shots have done (tests read it) */
@@ -186,50 +237,79 @@ export class Gun {
     const hit = this.trace(o, dir);
     this.aimPoint.copy(o).addScaledVector(dir, hit.t);
 
-    // the arm up at it while aiming (or just after a shot)
+    // the arm up at it while aiming (or just after a shot): two-handed while aimed (right click), one-handed from the hip
     const want = r.aimingPose ? 1 : 0;
     this.aimW += (want - this.aimW) * Math.min(1, dt * (want ? 14 : 6));
-    sk.updateMatrixWorld(true);
+    this.twoW += ((r.aimHeld ? 1 : 0) - this.twoW) * Math.min(1, dt * 10);
+    if (this.shootT > 0 && (this.shootT += dt) >= AIM_CLIP_END) this.shootT = 0;   // a shot's recoil played through: held again
     const rig = r.rider;
+    if (!this.clips) {
+      const aimC = r.clip('gun_aim'), pointC = r.clip('gun_point');
+      this.clips = aimC && pointC ? { aim: new UpperClip(aimC, sk), point: new UpperClip(pointC, sk) } : false;
+    }
+    sk.updateMatrixWorld(true);
     const shoulder = b.arm.getWorldPosition(_v);
     const aim = _w.copy(this.aimPoint).sub(shoulder).normalize();
-    if (this.kick > 0) aim.applyAxisAngle(_a.crossVectors(aim, UP).normalize(), RECOIL * this.kick).normalize();
     const gunUp = _b.copy(UP).addScaledVector(aim, -UP.dot(aim)).normalize();
-    if (rig && this.aimW > 0.01) {
+    // the recoil: the gun's muzzle flips up (the two-handed clip has its own kick in the arms)
+    const kickAxis = _a.crossVectors(aim, UP).normalize();
+    const kicked = aim.clone().applyAxisAngle(kickAxis, RECOIL * this.kick * (1 - 0.5 * this.twoW)).normalize();
+    if (this.clips && rig && this.aimW > 0.01) {
+      // the clips' arms and chest over whatever the legs are doing
+      this.clips.point.apply(POINT_T, this.aimW * (1 - this.twoW));
+      this.clips.aim.apply(this.shootT, this.aimW * this.twoW);
+      sk.updateMatrixWorld(true);
+      // then the chest turned so the arm (shoulder to hand: the clips aim along it) points at the crosshair's mark (eased:
+      // a clip's recoil still shows)
+      const sh = b.arm.getWorldPosition(new THREE.Vector3()), hand = b.hand.getWorldPosition(new THREE.Vector3());
+      const goal = _q.setFromUnitVectors(hand.sub(sh).normalize(), _t.copy(this.aimPoint).sub(sh).normalize());
+      this.corr.slerp(goal, Math.min(1, dt * 18));
+      const spine = this.spine ?? (this.spine = findBone(sk, 'Spine1') ?? findBone(sk, 'Spine'));
+      if (spine) turnWorld(spine, _q2.identity().slerp(this.corr, this.aimW));
+      // from the hip: the forearm flicks up with the shot
+      if (this.kick > 0 && this.twoW < 0.5) turnWorld(b.fore, _q2.setFromAxisAngle(kickAxis, RECOIL * 1.6 * this.kick * this.aimW));
+    } else if (!this.clips && rig && this.aimW > 0.01) {
+      // (no gun clips in this rig: the arm reached up at it)
       const right = new THREE.Vector3().crossVectors(aim, UP).normalize();
-      const target = shoulder.clone().addScaledVector(aim, this.reach);
+      const target = shoulder.clone().addScaledVector(kicked, this.reach);
       const pole = shoulder.clone().addScaledVector(UP, -1).addScaledVector(right, 0.6);
       rig.reach('Right', target, pole, this.aimW);
-      // the knuckles a little under the barrel, the palm in toward his left
-      const along = aim.clone().multiplyScalar(Math.cos(GRIP_TILT)).addScaledVector(gunUp, -Math.sin(GRIP_TILT));
-      const palm = new THREE.Vector3().crossVectors(UP, aim).normalize();
+      const along = kicked.clone().multiplyScalar(Math.cos(GRIP_TILT)).addScaledVector(gunUp, -Math.sin(GRIP_TILT));
+      const palm = new THREE.Vector3().crossVectors(UP, kicked).normalize();
       rig.handTo('Right', along, palm, this.aimW);
     }
+    if (this.aimW <= 0.01) this.corr.identity();
     rig?.grip('Right', 1);
     sk.updateMatrixWorld(true);
 
     // the gun in the fist: aimed, along the shot; carried, as the hand holds it
-    const along = new THREE.Vector3(), palm = new THREE.Vector3();
-    const wrist = b.hand.getWorldPosition(new THREE.Vector3());
-    if (!rig?.hand('Right', along, palm)) return;
-    const across = new THREE.Vector3().crossVectors(palm, along).normalize();      // index to little finger
-    const fist = wrist.clone();
-    if (b.index) fist.lerp(b.index.getWorldPosition(new THREE.Vector3()), 0.8); else fist.addScaledVector(along, 0.07);
-    // into the fist: the skinned fingers close lower than the knuckle bones (this rig has one finger bone for all four)
-    fist.addScaledVector(palm, 0.022).addScaledVector(across, FIST_DOWN).addScaledVector(along, 0.025);
-    const upC = across.clone().negate();
-    const fwdC = along.clone().multiplyScalar(Math.cos(GRIP_TILT)).addScaledVector(upC, Math.sin(GRIP_TILT)).normalize();
-    const fwd = fwdC.lerp(aim, this.aimW).normalize();
-    const up = upC.lerp(gunUp, this.aimW);
+    const f = rig && this.fistFrame(rig, b);
+    if (!f) return;
+    const fwd = f.fwd.clone().lerp(kicked, this.aimW).normalize();
+    const up = f.up.clone().lerp(gunUp, this.aimW);
     up.addScaledVector(fwd, -up.dot(fwd)).normalize();
     const x = new THREE.Vector3().crossVectors(up, fwd);
     _m.makeBasis(x, up, fwd);
-    this.holder.position.copy(fist);
+    this.holder.position.copy(f.fist);
     this.holder.quaternion.setFromRotationMatrix(_m);
 
     // shots
     const n = r.takeShots();
     if (n > 0 && this.cool <= 0) this.fire(o, dir);
+  }
+
+  /** the fist as the hand is now: where the handle sits in it, and which way a gun held in it points (its barrel, its top) */
+  private fistFrame(rig: NonNullable<Ramu['rider']>, b: NonNullable<Gun['bones']>): { fist: THREE.Vector3; fwd: THREE.Vector3; up: THREE.Vector3 } | null {
+    const along = new THREE.Vector3(), palm = new THREE.Vector3();
+    if (!rig.hand('Right', along, palm)) return null;
+    const across = new THREE.Vector3().crossVectors(palm, along).normalize();      // index to little finger
+    const fist = b.hand.getWorldPosition(new THREE.Vector3());
+    if (b.index) fist.lerp(b.index.getWorldPosition(new THREE.Vector3()), 0.8); else fist.addScaledVector(along, 0.07);
+    // into the fist: the skinned fingers close lower than the knuckle bones (this rig has one finger bone for all four)
+    fist.addScaledVector(palm, 0.022).addScaledVector(across, FIST_DOWN).addScaledVector(along, 0.025);
+    const up = across.clone().negate();
+    const fwd = along.clone().multiplyScalar(Math.cos(GRIP_TILT)).addScaledVector(up, Math.sin(GRIP_TILT)).normalize();
+    return { fist, fwd, up };
   }
 
   /** where a shot's line starts: on the camera's line, level with Ramu (nothing between him and the camera is hit) */
@@ -260,6 +340,7 @@ export class Gun {
   private fire(o: THREE.Vector3, dir: THREE.Vector3): void {
     this.cool = COOLDOWN;
     this.kick = 1;
+    this.shootT = AIM_CLIP_KICK;
     this.tally.shots++;
     void playSfx('shot', 1);
     const muzzle = this.holder.localToWorld(MUZZLE.clone());

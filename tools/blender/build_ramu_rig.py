@@ -45,12 +45,13 @@ BODY_LIFT = 0.92       # <1 lightens everything a little
 ANIMS = os.path.join(ROOT, 'assets', 'anims')   # Mixamo FBX clips, shared by every character (see import_mixamo_clips)
 KEEP_ROOT = {'fall', 'fall2', 'get_up'}
 # clips in the folder that nothing plays yet (every clip baked goes into every character's file): left out until used
-UNUSED = {'gunplay', 'sweep fall', 'kp_fall_reach'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
+UNUSED = {'sweep fall', 'kp_fall_reach'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
 # clips only Ramu plays (stage 1, part 3: hanging from the giant wheel, flying off it, the leap from the well): not baked into the others
 # clips whose left arm the FBX leaves in the T-pose: that arm comes from the idle instead
 LEFT_ARM_FROM_IDLE = {'hungry'}
 RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling',
-             'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far', 'fall_back', 'hang_jump', 'fall_balance', 'climb_rail', 'slip_fall'}
+             'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far', 'fall_back', 'hang_jump', 'fall_balance', 'climb_rail', 'slip_fall',
+             'gun_point', 'gun_aim'}   # the revolver in Explore world (src/player/gun.ts): one-handed from the hip, two-handed aimed
 
 # clips only the guards play (shouting at Ramu while they talk: person.ts talkClip): not baked into the others
 GUARD_ONLY = {'yell'}
@@ -697,6 +698,8 @@ CLIP_RULES = (
     (('slip', 'fall'), 'slip_fall'),               # Ramu slipping off the well's rail and falling back in ("slip and fall")
     (('hanging', 'idle'), 'hang_idle'), (('stand', 'freehang'), 'hang_start'), (('braced', 'free'), 'hang_braced'), (('braced', 'drop'), 'hang_drop'),
     (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
+    (('gunplay',), 'gun_point'),                   # the revolver from the hip, one-handed (Explore world; upper body only)
+    (('shooting',), 'gun_aim'),                     # the revolver aimed two-handed, a shot's recoil (Explore world; upper body only)
     (('yelling',), 'yell'),                         # a guard shouting at Ramu (security only: GUARD_ONLY)
     (('throw',), 'throw'),                          # the audience pelting a bad poet
     (('grabbing', 'mic'), 'grab_mic'),             # Ramu taking the mic from the anchor (stage 1, part 2)

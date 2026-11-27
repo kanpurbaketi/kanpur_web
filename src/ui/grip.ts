@@ -108,7 +108,7 @@ const css = `
 .grip-key { font-size: 13px; color: #f2dcc4; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
 .grip.ok .grip-btn { background: #5fd17f; }
 .grip.miss .grip-btn { background: #ff6b5a; }
-@media (max-width: 760px) { .grip { bottom: 36vh; } .grip-key { display: none; } }   /* above the mission box */
+@media (max-width: 760px) and (orientation: portrait) { .grip { bottom: 36vh; } .grip-key { display: none; } }   /* above the mission box */
 `;
 const style = document.createElement('style');
 style.textContent = css;

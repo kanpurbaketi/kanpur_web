@@ -69,6 +69,9 @@ export class Ramu {
   private keys = new Set<string>();
   private touchMove = new THREE.Vector2();
   private touchRun = false;
+  /** the touch screen's AIM and CROUCH buttons (toggles: a thumb cannot hold one and look at once) */
+  private touchAim = false;
+  private touchCrouch = false;
   private jumpQueued = false;
   /** the jump under way: 0 none, 1 bending to spring, 2 in the air, 3 landing; seconds into the phase; how long the flight should last */
   private jumpPhase = 0;
@@ -142,7 +145,7 @@ export class Ramu {
   /** one of his clips (by name), if the rig has it */
   clip(name: string): THREE.AnimationClip | undefined { return this.actions[name]?.getClip(); }
 
-  get aimHeld(): boolean { return this.armed && this.enabled && !this.ride && this.controls.held('aim', this.keys); }
+  get aimHeld(): boolean { return this.armed && this.enabled && !this.ride && (this.controls.held('aim', this.keys) || this.touchAim); }
 
   /** facing where the camera looks: aiming, or just after a shot */
   get aimingPose(): boolean { return this.armed && !this.ride && !this.pose && (this.aimHeld || this.aimHold > 0); }
@@ -447,7 +450,7 @@ export class Ramu {
     if (this.jumpPhase === 1 && (this.stun > 0 || !this.enabled)) this.jumpPhase = 0;
     if (this.jumpPhase === 1 && this.jumpT >= WINDUP) this.takeOff();
     if (this.jumpPhase === 3 && this.jumpT > 0.5) this.jumpPhase = 0;
-    const crouching = this.enabled && this.controls.held('crouch', this.keys);
+    const crouching = this.enabled && (this.controls.held('crouch', this.keys) || this.touchCrouch);
     if (this.punchQueued && this.enabled && this.stun <= 0 && this.wake <= 0 && this.grounded && !this.punching && this.actions.punch) {
       this.punching = true;
       this.punchT = 0;
@@ -731,6 +734,12 @@ export class Ramu {
       this.jumpQueued = true;
       e.preventDefault();
     });
+    const toggle = (id: string, flip: () => boolean) => {
+      const b = document.getElementById(id);
+      b?.addEventListener('touchstart', (e) => { b.classList.toggle('on', flip()); e.preventDefault(); });
+    };
+    toggle('btn-aim', () => (this.touchAim = !this.touchAim));
+    toggle('btn-crouch', () => (this.touchCrouch = !this.touchCrouch));
   }
 
   /**

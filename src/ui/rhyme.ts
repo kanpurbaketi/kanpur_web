@@ -145,7 +145,7 @@ const css = `
 .rq-choice.right { background: rgba(60,170,90,.45); border-color: #5fd17f; }
 .rq-choice.wrong { background: rgba(200,50,40,.5); border-color: #ff6b5a; }
 .rq-hint { margin-top: 8px; font-size: 12px; color: #cdbfae; }
-@media (max-width: 760px) { .rq { bottom: 96px; padding: 12px; } .rq-line { font-size: 18px; } .rq-list { grid-template-columns: 1fr; gap: 6px; } .rq-choice { font-size: 14px; padding: 9px 10px; } }
+@media (max-width: 760px) and (orientation: portrait) { .rq { bottom: 96px; padding: 12px; } .rq-line { font-size: 18px; } .rq-list { grid-template-columns: 1fr; gap: 6px; } .rq-choice { font-size: 14px; padding: 9px 10px; } }
 `;
 const style = document.createElement('style');
 style.textContent = css;

@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Ramu — Moti Jheel</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #d6d3c4; font-family: system-ui, sans-serif; }
@@ -32,13 +35,26 @@
     .tbtn { position: fixed; display: none; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.7);
       background: rgba(0,0,0,.3); color: #fff; font-weight: 600; font-size: 13px; }
     .tbtn.on { background: rgba(232,89,12,.7); }
-    #btn-jump { right: 24px; bottom: 40px; }
-    #btn-run { right: 100px; bottom: 40px; }
-    #btn-punch { right: 24px; bottom: 116px; }
-    #btn-use { right: 100px; bottom: 116px; font-size: 11px; }
-    #btn-horn { right: 176px; bottom: 40px; }
-    #btn-lights { right: 176px; bottom: 116px; font-size: 11px; }
+    /* the touch buttons on a grid from the bottom right corner: column c (leftward), row r (upward); kept clear of a
+       phone's notch and home bar (the safe-area insets) */
+    :root { --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --st: env(safe-area-inset-top, 0px);
+      --sb: env(safe-area-inset-bottom, 0px); --b: 64px; --g: 12px; --r0: calc(24px + var(--sr)); --b0: calc(28px + var(--sb)); }
+    .tbtn { width: var(--b); height: var(--b); right: calc(var(--r0) + var(--c, 0) * (var(--b) + var(--g)));
+      bottom: calc(var(--b0) + var(--r, 0) * (var(--b) + var(--g))); -webkit-tap-highlight-color: transparent; touch-action: none;
+      -webkit-user-select: none; user-select: none; padding: 0; letter-spacing: -.2px; }
+    #btn-jump { --c: 0; --r: 0; }
+    #btn-run { --c: 1; --r: 0; }
+    #btn-crouch { --c: 2; --r: 0; font-size: 11px; }
+    #btn-punch { --c: 0; --r: 1; }
+    #btn-use { --c: 1; --r: 1; font-size: 11px; }
+    #btn-aim { --c: 0; --r: 2; }
+    #btn-horn { --c: 2; --r: 0; }
+    #btn-lights { --c: 2; --r: 1; font-size: 11px; }
+    #btn-punch .shoot, body.gun-out #btn-punch .fist { display: none; }
+    body.gun-out #btn-punch .shoot { display: inline; }
+    body.gun-out #btn-punch { background: rgba(160,30,20,.55); }
     body:not(.driving) .tbtn.car { display: none !important; }
+    body.driving .tbtn.foot, body:not(.gun-out) .tbtn.gun { display: none !important; }
     #use-tip { position: fixed; left: 50%; bottom: 22%; transform: translateX(-50%); z-index: 6; display: none;
       padding: 6px 12px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; font: 600 14px system-ui, sans-serif; white-space: pre-line; text-align: center;
       pointer-events: none; }
@@ -150,6 +166,72 @@
       #minimap { width: 120px; height: 120px; }
       #hint { display: none; }
     }
+    body.cinema #weapon { visibility: hidden; }
+
+    /* ---- touch screens (body.touch, src/ui/mobile.ts): laid out for the phone held sideways ---- */
+    body.touch { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent; }
+    /* the weapon (tap to change), beside AIM */
+    body.touch #weapon { right: calc(var(--r0) + var(--b) + var(--g)); bottom: calc(var(--b0) + 2 * (var(--b) + var(--g)) + var(--b) / 2 - 18px); }
+    body.touch .sh-toast { font-size: 15px; }
+    body.touch #life { left: calc(16px + var(--sl)); }
+    /* held upright anyway: the mission box under the map, off Ramu and the buttons */
+    @media (orientation: portrait) {
+      body.touch .obj { top: calc(150px + var(--st)); bottom: auto; }
+      body.touch #credits { font-size: 9px; padding: 1px 6px calc(1px + var(--sb)); }
+    }
+    /* a phone held sideways: the screen is short, so everything smaller and pushed into the corners, the middle left
+       for the street */
+    @media (orientation: landscape) and (max-height: 540px) {
+      body.touch { --b: 52px; --g: 10px; --r0: calc(14px + var(--sr)); --b0: calc(12px + var(--sb)); }
+      body.touch .tbtn { font-size: 12px; }
+      body.touch #btn-use, body.touch #btn-crouch, body.touch #btn-lights { font-size: 10px; }
+      body.touch .menu-btn { left: calc(10px + var(--sl)); top: calc(10px + var(--st)); width: 40px; height: 40px; }
+      body.touch .menu-drop { left: calc(10px + var(--sl)); top: calc(56px + var(--st)); max-height: calc(100vh - 66px); overflow: auto; }
+      body.touch .sh-chip { left: calc(58px + var(--sl)); top: calc(10px + var(--st)); height: 40px; }
+      body.touch .sh-chip-name { display: none; }
+      body.touch #life { left: calc(10px + var(--sl)); top: calc(58px + var(--st)); padding: 4px 8px; font-size: 11px; }
+      body.touch .life-track { width: 76px; height: 10px; }
+      body.touch #minimap { right: calc(10px + var(--sr)); top: calc(10px + var(--st)); width: 92px; height: 92px; border-width: 2px; }
+      body.touch .obj { top: calc(10px + var(--st)); bottom: auto; padding: 6px 10px 7px; min-width: 0;
+        width: min(420px, calc(100vw - 2 * (max(var(--sl), var(--sr)) + 192px))); }
+      body.touch .obj-line { font-size: 14px; margin-top: 1px; }
+      body.touch .obj-hint { font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      body.touch .sh-toast { top: 32%; font-size: 14px; padding: 9px 14px; max-width: calc(100vw - 2 * (max(var(--sl), var(--sr)) + 150px)); }
+      body.touch #credits { left: calc(8px + var(--sl)); right: auto; bottom: var(--sb); padding: 1px 6px; font-size: 9px; text-align: left;
+        border-radius: 4px 4px 0 0; background: rgba(0,0,0,.25); }
+      body.touch #debug { left: calc(10px + var(--sl)); bottom: calc(16px + var(--sb)); font-size: 10px; }
+      body.touch:not(.cinema) .subs { bottom: calc(10px + var(--sb)); max-width: calc(100vw - 2 * (var(--r0) + 3 * (var(--b) + var(--g)))); padding: 6px 12px 7px; }
+      body.touch .subs-line { font-size: 15px; }
+      body.touch .cine-skip { right: calc(14px + var(--sr)); top: calc(10px + var(--st)); bottom: auto; }
+      body.touch .rq { bottom: calc(8px + var(--sb)); max-height: calc(100vh - 70px); overflow: auto; padding: 10px 12px;
+        width: min(640px, calc(100vw - 2 * max(var(--sl), var(--sr)) - 24px)); }
+      body.touch .rq-line { font-size: 16px; margin: 4px 0 6px; }
+      body.touch .rq-list { gap: 6px; }
+      body.touch .rq-choice { font-size: 13px; padding: 7px 9px; }
+      body.touch .grip { bottom: calc(60px + var(--sb)); }
+      body.touch .grip-wrap { width: 84px; height: 84px; }
+      body.touch .grip-key { display: none; }
+      body.touch #use-tip { bottom: 26%; font-size: 13px; }
+      body.touch #ko-banner { font-size: 22px; }
+      body.touch .menu-overlay { padding: 8px calc(8px + var(--sr)) 8px calc(8px + var(--sl)); }
+      body.touch .menu-panel { max-height: calc(100vh - 16px); }
+      body.touch .menu-body { padding: 12px 16px 14px; }
+      body.touch .map-canvas { height: calc(100vh - 140px); }
+    }
+    /* held upright: a card asks for the phone to be turned */
+    .rotate { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; padding: 24px;
+      background: radial-gradient(ellipse at 50% 120%, #5a2c12, #1d140f 70%); color: #f3eee6; font-family: system-ui, sans-serif; }
+    .rotate.on { display: grid; }
+    .rotate-card { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 320px; text-align: center; }
+    .rotate-icon { color: #f3eee6; animation: tilt 2.4s ease-in-out infinite; }
+    @keyframes tilt { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+    .rotate-title { margin: 4px 0 0; font-size: 22px; color: #f2a54a; text-wrap: balance; }
+    .rotate-sub { margin: 0; font-size: 15px; line-height: 1.45; color: #d8c9b4; }
+    .rotate-anyway { margin-top: 10px; padding: 10px 16px; border: 1px solid rgba(243,238,230,.4); border-radius: 10px; background: none;
+      color: #f3eee6; font: 600 14px system-ui, sans-serif; cursor: pointer; }
+    .rotate-anyway:focus-visible { outline: 2px solid #f2992a; outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) { .rotate-icon { animation: none; transform: rotate(-90deg); } }
   </style>
 </head>
 <body>
@@ -160,7 +242,9 @@
   <div id="stick"><div id="knob"></div></div>
   <button class="tbtn" id="btn-run">RUN</button>
   <button class="tbtn" id="btn-jump">JUMP</button>
-  <button class="tbtn" id="btn-punch">PUNCH</button>
+  <button class="tbtn" id="btn-punch"><span class="fist">PUNCH</span><span class="shoot">SHOOT</span></button>
+  <button class="tbtn gun" id="btn-aim">AIM</button>
+  <button class="tbtn foot" id="btn-crouch">CROUCH</button>
   <button class="tbtn" id="btn-use">GET IN</button>
   <button class="tbtn car" id="btn-horn">HORN</button>
   <button class="tbtn car" id="btn-lights">LIGHTS</button>

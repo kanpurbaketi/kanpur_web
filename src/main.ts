@@ -20,6 +20,7 @@ import { Stats, repairRs } from './game/stats';
 import { Hud } from './ui/hud';
 import { Health } from './game/health';
 import { Menu } from './ui/menu';
+import { isTouch, setupMobile } from './ui/mobile';
 import { City } from './world/city';
 import { Landmarks } from './world/landmarks';
 import { Pedestrians } from './world/pedestrians';
@@ -676,6 +677,7 @@ void main() {
 }
 
 async function boot(): Promise<void> {
+  setupMobile();
   if (import.meta.env.DEV && params.has('debug')) {                // test scripts: straight into the world (a stage too, unrecorded)
     const st = stageOf(Number(params.get('stage')));
     const game = await main(st ? { stage: st, run: null } : null);
@@ -706,7 +708,7 @@ async function boot(): Promise<void> {
   guardBack();
   const msg = params.get('msg');
   if (msg) history.replaceState(null, '', location.pathname);
-  toast(msg?.startsWith('stage.') ? tk(msg, { n: params.get('n') ?? '' }) : t(EXPLORE ? 'explore.welcome' : 'free.welcome'), EXPLORE ? 10 : 7);
+  toast(msg?.startsWith('stage.') ? tk(msg, { n: params.get('n') ?? '' }) : t(EXPLORE ? (isTouch ? 'explore.welcome.touch' : 'explore.welcome') : 'free.welcome'), EXPLORE ? 10 : 7);
 }
 
 boot().catch((e) => {

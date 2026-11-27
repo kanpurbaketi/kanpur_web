@@ -328,7 +328,7 @@ const css = `
 .obj-head { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #f2c08a; }
 .obj-line { margin-top: 3px; font-size: 16px; font-weight: 700; line-height: 1.3; }
 .obj-hint { margin-top: 2px; font-size: 13px; color: #e9dccb; line-height: 1.35; }
-@media (max-width: 760px) { .obj { top: auto; bottom: 200px; width: calc(100vw - 32px); min-width: 0; } }
+@media (max-width: 760px) and (orientation: portrait) { .obj { top: auto; bottom: 200px; width: calc(100vw - 32px); min-width: 0; } }
 `;
 const style = document.createElement('style');
 style.textContent = css;

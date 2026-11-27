@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /*
  Shrinks the game's models for deploying, after `vite build` (npm run build runs it): every .glb under <dir>/models
- gets its animation keys thinned where they change nothing, its geometry and animation quantised and meshopt-compressed
- (EXT_meshopt_compression: the game's loaders decode it, src/world/gltf.ts), and its textures turned to WebP
+ gets its animation keys thinned where they change nothing, its geometry and animation meshopt-compressed (losslessly: not
+ quantised, see below; EXT_meshopt_compression: the game's loaders decode it, src/world/gltf.ts), and its textures turned to WebP
  (EXT_texture_webp); the clothes' looks (models/looks/*.jpg) become .webp in their place, which the built game asks for.
  public/models stays as Blender and the import scripts write it (the dev server serves those as they are).
    node scripts/compress-models.mjs dist          (default: dist)
@@ -10,8 +10,8 @@
 import { readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NodeIO } from '@gltf-transform/core';
-import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { dedup, meshopt, prune, resample, textureCompress } from '@gltf-transform/functions';
+import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extensions';
+import { dedup, prune, resample, textureCompress } from '@gltf-transform/functions';
 import { MeshoptEncoder } from 'meshoptimizer';
 import sharp from 'sharp';
 
@@ -37,8 +37,12 @@ for (const f of files(root)) {
       prune({ keepAttributes: true, keepExtras: true, keepLeaves: true }),
       resample({ tolerance: 1e-4 }),
       textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 88 }),
-      meshopt({ encoder: MeshoptEncoder, level: 'high' }),
     );
+    // meshopt-compressed losslessly, the vertices left as they are: quantising them (gltf-transform's meshopt()) moves
+    // each mesh's scale onto its node and stores its positions as -1..1 integers, and the game bakes meshes' matrices
+    // into their geometry (vehicles, chairs, carts: clipped to -1..1, crumpled) and reads face landmarks and seat
+    // heights in the model's own units (teeth gone, people sunk); so no quantising
+    doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.QUANTIZE });
     await io.write(f, doc);
     const b = statSync(f).size;
     before += a; after += b;

@@ -42,9 +42,4 @@ clip sfx/cock.mp3     111676 0.0 0.55 0.002 0.1 -20 1 "$LEAD"
 clip shout1.mp3       221544 0.0 2.0 0.01 0.3 -16 1 "$LEAD"
 clip shout2.mp3       401210 0.0 2.9 0.01 0.4 -16 1 "$LEAD"
 clip shout3.mp3       801386 0.0 0.95 0.01 0.2 -18 1 "$LEAD"
-# people talking round Ramu (src/game/ambience.ts), looped: its last 3 s crossfaded into its start, so it joins up
-X=3
-ffmpeg -v error -y -i "$R/453005.mp3" -filter_complex \
-  "[0:a]atrim=0:42,asetpts=PTS-STARTPTS,asplit[a][b];[a]atrim=$X:42,asetpts=PTS-STARTPTS[body];[b]atrim=0:$X,asetpts=PTS-STARTPTS[head];[body][head]acrossfade=d=$X:c1=tri:c2=tri,loudnorm=I=-22:TP=-2:LRA=11" \
-  -ac 2 -ar 44100 -b:a 96k "$O/crowd.mp3"
 ls -l "$O" "$O/sfx" | awk 'NF>5 {print $5, $NF}'

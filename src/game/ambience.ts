@@ -1,15 +1,13 @@
 /*
  The sounds of the street round Ramu (WebAudio):
-   crowd      people talking: public/audio/crowd.mp3 (a recording, looped), as loud as there are people near him, silent
-              on an empty street; until the file is there, nothing
    shouts     somebody run over (or Ramu knocked down by a vehicle): a shout, one of public/audio/shout1.mp3,
               shout2.mp3, shout3.mp3 (whichever are there), as loud as it is near; until one is there, nothing
    crickets   at night, faint chirping (made here, no file)
- It starts with the first key or click (browsers will not play before one). update() every frame with the people near
- Ramu (a count); shout() where somebody was hit.
+ (No background chatter of a crowd: a looped recording sounded put on, not of the place.)
+ It starts with the first key or click (browsers will not play before one). update() every frame; shout() where somebody
+ was hit.
 */
 
-const CROWD = 'audio/crowd.mp3';
 const SHOUTS = ['audio/shout1.mp3', 'audio/shout2.mp3', 'audio/shout3.mp3'];
 /** a shout further off than this (m) is not heard */
 const SHOUT_RANGE = 70;
@@ -17,13 +15,9 @@ const SHOUT_RANGE = 70;
 export class CityAmbience {
   private ctx: AudioContext | null = null;
   private out: GainNode | null = null;
-  private crowd: GainNode | null = null;
   private shouts: AudioBuffer[] = [];
   private lastShout = 0;
   private chirpT = 1;
-  private level = 0;
-  /** what it was told last (tests read it) */
-  heard = { people: 0 };
 
   constructor(private night: boolean) {
     const start = () => {
@@ -41,17 +35,6 @@ export class CityAmbience {
     const c = this.ctx;
     this.out = c.createGain();
     this.out.connect(c.destination);
-    this.crowd = c.createGain();
-    this.crowd.gain.value = 0;
-    this.crowd.connect(this.out);
-    void this.load(CROWD).then((buf) => {
-      if (!buf) return;
-      const s = c.createBufferSource();
-      s.buffer = buf;
-      s.loop = true;
-      s.connect(this.crowd!);
-      s.start(0, Math.random() * buf.duration);
-    });
     for (const u of SHOUTS) void this.load(u).then((buf) => { if (buf) this.shouts.push(buf); });
   }
 
@@ -66,14 +49,11 @@ export class CityAmbience {
     }
   }
 
-  /** every frame: `people` near Ramu (a count) */
-  update(dt: number, people: number): void {
-    this.heard.people = people;
+  /** every frame */
+  update(dt: number): void {
     const c = this.ctx;
-    if (!c || !this.crowd) return;
+    if (!c) return;
     if (c.state === 'suspended') void c.resume();
-    this.level += (Math.min(1, people / 10) - this.level) * Math.min(1, dt * 1.5);
-    this.crowd.gain.setTargetAtTime(this.level * 0.6, c.currentTime, 0.3);
     if (this.night && (this.chirpT -= dt) <= 0) { this.chirp(); this.chirpT = 0.5 + Math.random() * 1.2; }
   }
 

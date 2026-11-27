@@ -6,7 +6,6 @@ is required, but the sources are listed anyway. Each was trimmed, faded and loud
 
 | File | Source | Author |
 |---|---|---|
-| `crowd.mp3` | [Mumbai - Market](https://freesound.org/s/453005/) (looped) | Lenguaverde |
 | `shout1.mp3` | [Wounded man scream](https://freesound.org/s/221544/) | joseppujol |
 | `shout2.mp3` | [Man screams in pain](https://freesound.org/s/401210/) | stuxer |
 | `shout3.mp3` | [Fear - ohno ohno ohno](https://freesound.org/s/801386/) | Sadiquecat |

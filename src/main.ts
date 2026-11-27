@@ -380,7 +380,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   }
   // ... and the line for tickets at the mela's gate, roped off, a guard at the gap
   const queue = keepers ? await GateQueue.create() : null;
-  // the street's sounds: people talking (as many as are near), a shout when somebody is run over, crickets at night
+  // the street's sounds: a shout when somebody is run over, crickets at night
   const ambience = new CityAmbience(NIGHT);
   if (params.has('debug')) (window as unknown as { __ambience: CityAmbience }).__ambience = ambience;
   // somebody run over: a shout, as loud as it is near the camera, from its side
@@ -581,7 +581,7 @@ void main() {
       peds.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, prey[0], prey[1], ramu.position.y);
       mela?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, prey[0], prey[1], ramu.position.y);
       traffic?.update(dt, focus.x, focus.z, lookDir.x / l, lookDir.z / l, who[0], who[1]);
-      ambience.update(dt, peds.near(focus.x, focus.z, 30) + (mela?.crowd.near(focus.x, focus.z, 30) ?? 0) + (queue ? 6 * +(Math.hypot(focus.x - queue.gap[0], focus.z - queue.gap[1]) < 30) : 0));
+      ambience.update(dt);
       if (traffic && !fixed && !driving?.driving) {
         const bx = ramu.position.x, bz = ramu.position.z;
         // hit by a moving vehicle: hurt (more the faster it goes) and thrown clear

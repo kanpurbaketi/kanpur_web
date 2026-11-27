@@ -70,6 +70,10 @@ export class Ramu {
   private keys = new Set<string>();
   private touchMove = new THREE.Vector2();
   private touchRun = false;
+  /** the touch screen's driving arrows held: x steer (to the right), y -1 gas, +1 brake / reverse */
+  private touchDrive = new THREE.Vector2();
+  /** the sprint lock let go (set by bindTouch): getting on a vehicle puts it away */
+  private unlockSprint = (): void => {};
   /** the touch screen's AIM and CROUCH buttons (toggles: a thumb cannot hold one and look at once) */
   private touchAim = false;
   private touchCrouch = false;
@@ -295,7 +299,8 @@ export class Ramu {
     if (c.held('back', this.keys)) v.y += 1;
     if (c.held('left', this.keys)) v.x -= 1;
     if (c.held('right', this.keys)) v.x += 1;
-    v.add(this.touchMove);
+    if (this.ride) this.unlockSprint();
+    v.add(this.ride ? this.touchDrive : this.touchMove);   // (driving: the arrows; the stick, and a sprint lock, are put away)
     return v.clampScalar(-1, 1);
   }
 
@@ -683,9 +688,10 @@ export class Ramu {
       this.touchRun = false;
       this.touchMove.set(0, 0);
     };
+    this.unlockSprint = unlock;
     dom.addEventListener('touchstart', (e) => {
       for (const t of Array.from(e.changedTouches)) {
-        if (t.clientX < innerWidth * 0.42 && moveId < 0) {
+        if (t.clientX < innerWidth * 0.42 && moveId < 0 && !this.ride) {
           moveId = t.identifier;
           unlock();
           sx = t.clientX; sy = t.clientY; hot = false;
@@ -766,6 +772,31 @@ export class Ramu {
     };
     fireBtn(document.getElementById('btn-punch'));
     fireBtn(document.getElementById('btn-fire-l'));
+
+    // driving: arrows held down (each its own finger: gas and a turn at once)
+    const pedal = (id: string, axis: 'x' | 'y', dir: number) => {
+      const b = document.getElementById(id);
+      if (!b) return;
+      let id0 = -1;
+      b.addEventListener('touchstart', (e) => {
+        const t = e.changedTouches[0];
+        if (t && id0 < 0) { id0 = t.identifier; this.touchDrive[axis] = dir; b.classList.add('held'); }
+        e.preventDefault();
+      }, { passive: false });
+      const up = (e: TouchEvent) => {
+        if (!Array.from(e.changedTouches).some((t) => t.identifier === id0)) return;
+        id0 = -1;
+        if (this.touchDrive[axis] === dir) this.touchDrive[axis] = 0;
+        b.classList.remove('held');
+        e.preventDefault();
+      };
+      b.addEventListener('touchend', up);
+      b.addEventListener('touchcancel', up);
+    };
+    pedal('btn-gas', 'y', -1);
+    pedal('btn-brake', 'y', 1);
+    pedal('btn-left', 'x', -1);
+    pedal('btn-right', 'x', 1);
 
     const tap = (id: string, f: () => void) => {
       document.getElementById(id)?.addEventListener('touchstart', (e) => { f(); e.preventDefault(); }, { passive: false });

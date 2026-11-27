@@ -418,7 +418,7 @@ const EN = {
   'drive.getOn': '{key} — get on',
   'drive.getIn': '{key} — get in',
   'drive.owner': '"Oye! Meri gaadi!" The owner saw you',
-  'drive.btnOff': 'GET OFF',
+  'drive.btnOff': 'EXIT',
   'drive.btnStop': 'STOP',
   'drive.btnIn': 'GET IN',
 

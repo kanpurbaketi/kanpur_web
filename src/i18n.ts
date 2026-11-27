@@ -271,6 +271,10 @@ const EN = {
   'test.none': 'No missions yet.',
   'menu.stages': 'Stages',
   'menu.settings': 'Settings',
+  'settings.look': 'Look sensitivity',
+  'settings.lookSlow': 'Slow',
+  'settings.lookFast': 'Fast',
+  'settings.lookReset': 'Back to the default (5)',
 
   'profile.username': 'Username',
   'profile.email': 'Email',
@@ -684,6 +688,10 @@ const HI: Record<Key, string> = {
   'test.none': 'अभी कोई मिशन नहीं।',
   'menu.stages': 'स्टेज',
   'menu.settings': 'सेटिंग्स',
+  'settings.look': 'कैमरा घुमाने की रफ़्तार',
+  'settings.lookSlow': 'धीमी',
+  'settings.lookFast': 'तेज़',
+  'settings.lookReset': 'पहले जैसी (5)',
 
   'profile.username': 'यूज़रनेम',
   'profile.email': 'ईमेल',

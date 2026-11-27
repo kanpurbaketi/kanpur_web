@@ -5,6 +5,7 @@ import { CollisionWorld } from './collide';
 import { Controls } from '../game/controls';
 import { NIGHT } from '../world/night';
 import { loadSettings, onSettingsChange, Settings } from '../game/settings';
+import { lookScale } from '../game/lookSpeed';
 import { skinParams } from '../game/skin';
 import { CLIP_SECS, ONCE, prepareClips, PUNCH_LANDS } from '../world/actors';
 import { Rider, RidePose, SEATS } from './rider';
@@ -648,6 +649,7 @@ export class Ramu {
 
   private look(dx: number, dy: number, k = 0.0025): void {
     if (dx || dy) this.lookIdle = 0;
+    k *= lookScale();                                    // (the player's look sensitivity, Settings)
     this.yaw -= dx * k;
     this.pitch = Math.max(-1.2, Math.min(0.5, this.pitch - dy * k));
   }

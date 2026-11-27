@@ -1,3 +1,4 @@
+import { LOOK_DEFAULT, LOOK_MAX, LOOK_MIN, lookStep, setLookStep } from '../game/lookSpeed';
 import { account, ApiError, type Me } from '../game/account';
 import { STAGES, type Stage } from '../game/stages';
 import { fmtNum, lang, onLang, setLang, t, tk, type Lang } from '../i18n';
@@ -90,6 +91,20 @@ export function settingsView(opts: { onLogout: () => void; onLogin?: () => void 
     b.addEventListener('click', () => { setLang(l); account.saveLang(l); });
     seg.append(b);
   }
+  // look sensitivity: this device's (touch and mouse kept apart)
+  const hl = el('h3', '', t('settings.look'));
+  const row = el('div', 'sh-range');
+  const range = el('input');
+  range.type = 'range';
+  range.min = String(LOOK_MIN); range.max = String(LOOK_MAX); range.step = '1';
+  range.value = String(lookStep());
+  range.setAttribute('aria-label', t('settings.look'));
+  const out = el('output', '', String(lookStep()));
+  range.addEventListener('input', () => { setLookStep(Number(range.value)); out.textContent = range.value; });
+  const reset = el('button', 'sh-link', t('settings.lookReset'));
+  reset.type = 'button';
+  reset.addEventListener('click', () => { setLookStep(LOOK_DEFAULT); range.value = out.textContent = String(LOOK_DEFAULT); });
+  row.append(el('span', 'sh-muted', t('settings.lookSlow')), range, el('span', 'sh-muted', t('settings.lookFast')), out);
   const h2 = el('h3', '', t('settings.account'));
   const me = account.me;
   const who = el('p', 'sh-muted', me ? t('settings.signedInAs', { name: me.username }) : t('settings.notSignedIn'));
@@ -99,7 +114,7 @@ export function settingsView(opts: { onLogout: () => void; onLogin?: () => void 
     if (account.me) { await account.logout(); opts.onLogout(); }
     else if (await authDialog('login')) opts.onLogin?.();
   });
-  box.append(h1, seg, el('p', 'sh-muted', t('settings.langNote')), h2, who, act);
+  box.append(h1, seg, el('p', 'sh-muted', t('settings.langNote')), hl, row, reset, h2, who, act);
   return box;
 }
 
@@ -578,8 +593,12 @@ form .sh-links { margin-top: 0; }
 .sh-link { border: 0; padding: 0; background: none; color: #b5480a; font: 14px system-ui, sans-serif; text-decoration: underline; cursor: pointer; }
 .sh-seg { display: inline-flex; padding: 3px; border-radius: 10px; background: #e8e0d2; gap: 3px; }
 .sh-seg button { padding: 8px 18px; border: 0; border-radius: 8px; background: none; font: 600 14px system-ui, sans-serif; color: #5d5248; cursor: pointer; }
+.sh-range { display: flex; align-items: center; gap: 10px; max-width: 420px; }
+.sh-range input { flex: 1; accent-color: #e8590c; height: 28px; }
+.sh-range output { min-width: 22px; text-align: right; font: 700 15px system-ui, sans-serif; color: #3a2f27; font-variant-numeric: tabular-nums; }
 .sh-seg button[aria-checked="true"] { background: #fff; color: #2a241e; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
 .sh-settings .sh-muted { margin-top: 8px; }
+.sh-settings .sh-range .sh-muted { margin: 0; font-size: 13px; }
 .sh-chip { position: fixed; left: 68px; top: 16px; z-index: 19; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 6px 0 8px;
   box-sizing: border-box; border-radius: 10px; background: rgba(0,0,0,.45); color: #fff; font: 600 14px system-ui, sans-serif;
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }

@@ -4,7 +4,9 @@ joined and their transforms applied (standing up, +Y up), only the colour textur
 roughness / normal maps dropped: Mixamo only needs the look to place the joints), and written out twice:
   <out>.zip   the mesh as OBJ + MTL + texture.jpg (Mixamo takes a zip of these)
   <out>.fbx   the same mesh as a lean FBX, its texture embedded
-Upload the .zip first; the .fbx if Mixamo will not take that.
+  <out>_texture.png   the colour texture at its full size, for putting back on what Mixamo returns
+Upload the .zip first; the .fbx if Mixamo will not take that. Mixamo often drops an OBJ's texture: put it back on the
+rigged download with tools/blender/mixamo_retexture.py (the UVs come back unchanged).
 
   Blender -b -P tools/blender/mixamo_prep.py -- ~/Downloads/ramu_adult.fbx [out without extension]
 """
@@ -75,6 +77,10 @@ if colour is None:
 print('colour texture:', colour.name, tuple(colour.size))
 
 work = tempfile.mkdtemp()
+full = colour.copy()
+full.filepath_raw = out + '_texture.png'
+full.file_format = 'PNG'
+full.save()
 tex_path = os.path.join(work, 'texture.jpg')
 small = colour.copy()
 if max(small.size) > TEX:
@@ -106,5 +112,5 @@ with zipfile.ZipFile(out + '.zip', 'w', zipfile.ZIP_DEFLATED) as z:
 # the lean FBX, its texture embedded
 bpy.ops.export_scene.fbx(filepath=out + '.fbx', use_selection=False, object_types={'MESH'}, path_mode='COPY',
                          embed_textures=True, axis_forward='-Z', axis_up='Y', apply_scale_options='FBX_SCALE_ALL')
-for f in (out + '.zip', out + '.fbx'):
+for f in (out + '.zip', out + '.fbx', out + '_texture.png'):
     print(f'wrote {f}: {os.path.getsize(f) / 1e6:.1f} MB')

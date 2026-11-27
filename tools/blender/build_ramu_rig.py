@@ -43,9 +43,9 @@ FPS = 30
 SKIN_LIFT = 1.0        # skin is left as generated: the game's Settings > Skin tone slider lightens / darkens it live
 BODY_LIFT = 0.92       # <1 lightens everything a little
 ANIMS = os.path.join(ROOT, 'assets', 'anims')   # Mixamo FBX clips, shared by every character (see import_mixamo_clips)
-KEEP_ROOT = {'fall', 'fall2', 'get_up'}
+KEEP_ROOT = {'fall', 'fall2', 'get_up', 'fall_sweep'}
 # clips in the folder that nothing plays yet (every clip baked goes into every character's file): left out until used
-UNUSED = {'sweep fall', 'kp_fall_reach'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
+UNUSED = {'kp_fall_reach'}    # clips that keep their travel: a man knocked out ends up lying where the fall takes him
 # clips only Ramu plays (stage 1, part 3: hanging from the giant wheel, flying off it, the leap from the well): not baked into the others
 # clips whose left arm the FBX leaves in the T-pose: that arm comes from the idle instead
 LEFT_ARM_FROM_IDLE = {'hungry'}
@@ -698,6 +698,7 @@ CLIP_RULES = (
     (('slip', 'fall'), 'slip_fall'),               # Ramu slipping off the well's rail and falling back in ("slip and fall")
     (('hanging', 'idle'), 'hang_idle'), (('stand', 'freehang'), 'hang_start'), (('braced', 'free'), 'hang_braced'), (('braced', 'drop'), 'hang_drop'),
     (('hip hop', 'danc'), 'dance_hiphop'), (('silly', 'danc'), 'dance_silly'),
+    (('sweep', 'fall'), 'fall_sweep'),             # shot in the chest (Explore world): legs gone from under them, down on the back
     (('gunplay',), 'gun_point'),                   # the revolver from the hip, one-handed (Explore world; upper body only)
     (('shooting',), 'gun_aim'),                     # the revolver aimed two-handed, a shot's recoil (Explore world; upper body only)
     (('yelling',), 'yell'),                         # a guard shouting at Ramu (security only: GUARD_ONLY)

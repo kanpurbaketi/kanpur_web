@@ -59,7 +59,7 @@ const _at = new THREE.Vector3();
 const WALK_SPEED = 1.35, RUN_SPEED = 5.0, CLIP_HEIGHT = 1.52;
 
 /** clips that play through once and hold their last pose */
-export const ONCE = new Set(['punch', 'kick', 'hit', 'hit2', 'block', 'shove', 'fall', 'fall2', 'get_up', 'jump',
+export const ONCE = new Set(['punch', 'kick', 'hit', 'hit2', 'block', 'shove', 'fall', 'fall2', 'fall_sweep', 'get_up', 'jump',
   'stomach', 'stomach_hit', 'push', 'push_one', 'pockets', 'head_no', 'angry_point', 'disappointed', 'throw', 'offer',
   'hang_start', 'hang_braced', 'hang_drop',
   'ticket_check', 'shove_aside', 'pick_up', 'give', 'take', 'car_bail', 'mic_give', 'mic_take', 'rise', 'self_point', 'struck', 'pick_try', 'pick_start', 'pick_open', 'climb_roof', 'roof_leap', 'jump_far']);   // made in Katpootli (assets/anims/kp_*.fbx)   // Ramu on the giant wheel (stage 1, part 3)   // the last row: stage 1's scenes
@@ -79,7 +79,9 @@ export function prepareClips(clips: THREE.AnimationClip[]): THREE.AnimationClip[
   return clips.map((clip) => {
     const name = clip.name.replace(/^.*\|/, '');
     // "Shove Reaction" stands still at both ends; the stumble is in the middle
-    const cut = name === 'hit' ? [0.1, 2.0] : name === 'fall' ? [1.0, clip.duration] : name === 'shove' ? [0.15, 1.9] : null;
+    // "Sweep Fall" (shot in the chest) sways a moment before the legs go: from just before they do
+    const cut = name === 'hit' ? [0.1, 2.0] : name === 'fall' ? [1.0, clip.duration] : name === 'shove' ? [0.15, 1.9]
+      : name === 'fall_sweep' ? [0.35, clip.duration] : null;
     const out = cut ? THREE.AnimationUtils.subclip(clip, name, Math.round(cut[0] * 30), Math.round(cut[1] * 30), 30) : clip;
     out.name = name;
     return out;

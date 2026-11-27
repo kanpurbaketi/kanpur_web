@@ -65,6 +65,7 @@ interface Ped {
   out: boolean;       // laid out for good (until put back, far from the player)
   dead?: boolean;     // shot dead (Explore world): laid out, and not put back while the player is near
   shotN?: number;     // bullets taken
+  sweep?: boolean;    // shot dead in the chest, from in front: the legs go from under them (fall_sweep)
   atkN: number;       // attacks thrown so far (names each punch for the rigged clip)
   block: number; blockN: number;    // seconds left of holding a block, and blocks so far
   fwd: boolean;       // laid out face down (hit from behind)
@@ -241,7 +242,7 @@ export class Pedestrians {
     }
     if (!cands.length) return false;
     // a fresh start: whatever happened to them where they were is forgotten
-    p.hits = 0; p.shotN = 0; p.dead = false; p.flinch = 0; p.angry = 0; p.grudge = 0; p.out = false; p.down = 0; p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; p.stun = 0; p.panic = 0;
+    p.hits = 0; p.shotN = 0; p.dead = false; p.sweep = false; p.flinch = 0; p.angry = 0; p.grudge = 0; p.out = false; p.down = 0; p.mode = 0; p.atkKind = 0; p.atkE = 0; p.guard = 0; p.stun = 0; p.panic = 0;
     p.ox = 0; p.oz = 0; p.hold = 0; p.block = 0; p.fwd = false;
     p.a = cands[Math.floor(Math.random() * cands.length)];
     const links = this.nodes[p.a].links;
@@ -607,7 +608,7 @@ export class Pedestrians {
    */
   shot(i: number, d: THREE.Vector3, head: boolean): 'dead' | 'hurt' {
     const p = this.peds[i];
-    const fx = Math.sin(p.heading), fz = Math.cos(p.heading);
+    const fx = -Math.sin(p.heading), fz = -Math.cos(p.heading);   // the way they face (a heading h faces -sin h, -cos h)
     const fromBehind = fx * d.x + fz * d.z > 0.2;          // the bullet goes the way they face: it came from behind
     p.shotN = (p.shotN ?? 0) + 1;
     p.atkKind = 0; p.atkE = 0; p.wait = 0; p.hold = 0; p.ox = 0; p.oz = 0; p.block = 0;
@@ -615,14 +616,15 @@ export class Pedestrians {
       p.out = true;
       p.dead = true;
       p.fwd = fromBehind;                                  // shot in the back: down on their face
-      if (!fromBehind) p.heading = Math.atan2(-d.x, -d.z);  // facing the shot, thrown back from it
+      p.sweep = !head && !fromBehind;
+      if (!fromBehind) p.heading = Math.atan2(d.x, d.z);    // facing the shot, thrown back from it
       p.downT = 0;
       p.flinch = 0; p.angry = 0; p.grudge = 0; p.mode = 0; p.guard = 0; p.panic = 0;
       p.kvx = d.x * 0.6; p.kvz = d.z * 0.6;
       return 'dead';
     }
     p.hits++;
-    p.heading = Math.atan2(-d.x, -d.z);
+    p.heading = Math.atan2(d.x, d.z);                      // turned to face where it came from
     p.flinch = FLINCH;
     p.kvx = d.x * 1.5; p.kvz = d.z * 1.5;
     if (p.hostile || p.tough > TOUGH) {                    // a guard (or a hard case): comes for him
@@ -762,7 +764,11 @@ export class Pedestrians {
       Q.setFromAxisAngle(UP, p.heading);
       a.root.position.set(p.x, p.y < 0.3 ? Math.max(p.y, FOOTPATHS.at(p.x, p.z)) : p.y, p.z);   // up on a footpath
       a.root.quaternion.copy(Q);
-      if (p.out) a.once(p.fwd ? 'fall2' : 'fall', 'out', p.fwd ? 1.1 : 1.25);
+      if (p.out) {
+        if (p.fwd) a.once('fall2', 'out', 1.1);                                         // face down (shot in the back)
+        else if (p.sweep && a.has('fall_sweep')) a.once('fall_sweep', 'out', 1.15);    // shot in the chest: swept off their feet
+        else a.once('fall', 'out', 1.25);
+      }
       else if (p.down > V_GETUP) a.once('fall', 'thrown' + p.falls, V_FALL_SPEED);       // thrown by a vehicle: down ...
       else if (p.down > 0) {                                                             // ... and up again
         // The fall left the body lying behind where it stood, and the get-up clip starts at its own origin: the model moves

@@ -54,7 +54,7 @@ export async function stage1(d: Director, ramu: Ramu, keepers: CartKeepers, queu
 
   // ---- mission 3: another way in ----
   const search = searchArea(ramu);
-  await d.mission(3, 'm.s1.way', [{ at: search.at, hint: search.hint, radius: search.radius, done: (x, z) => { search.tick(); return inMela(x, z); } }]);
+  await d.mission(3, 'm.s1.way', [{ at: search.at, hint: search.hint, done: (x, z) => inMela(x, z) }]);
   hooks.step(3);
   if (mela) await stage1Part2(d, ramu, mela, hooks);
   else hooks.done('story.s1.part1');
@@ -112,30 +112,12 @@ async function part1Gate(d: Director, ramu: Ramu, queue: GateQueue, hooks: Story
   void turnedBack(d, ramu, queue);
 }
 
-/**
- Where to look for the torn sheet: a circle round it (not centred on it: the map should not give the spot away) that
- closes in each time 90 s go by without his getting 5 m nearer; and the hint, by how near he is.
-*/
+/** where the torn sheet is (the maps mark the spot, the box counts the metres to it); the hint, by how near he is */
 function searchArea(ramu: Ramu) {
-  const RADII = [40, 24, 13], OFF: [number, number] = [14, -15];
-  let level = 0, best = Infinity, since = 0, last = performance.now();
   const dist = () => Math.hypot(ramu.position.x - TEAR.x, ramu.position.z - TEAR.z);
   return {
-    radius: () => RADII[level],
-    at: (): [number, number] => {
-      if (dist() < 12) return [TEAR.x, TEAR.z];                    // found: no more hiding it
-      const k = RADII[level] / RADII[0];
-      return [TEAR.x + OFF[0] * k, TEAR.z + OFF[1] * k];
-    },
+    at: (): [number, number] => [TEAR.x, TEAR.z],
     hint: () => { const m = dist(); return m < 12 ? 'm.s1.way.h3' : m < 60 ? 'm.s1.way.h2' : 'm.s1.way.h1'; },
-    /** every frame (game time: paused menus do not count) */
-    tick: () => {
-      const now = performance.now(), dt = Math.min(0.25, (now - last) / 1000);
-      last = now;
-      const m = dist();
-      if (m < best - 5) { best = m; since = 0; return; }
-      if ((since += dt) > 90 && level < RADII.length - 1) { level++; since = 0; }
-    },
   };
 }
 

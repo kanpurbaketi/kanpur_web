@@ -29,6 +29,9 @@ const MUZZLE = new THREE.Vector3(0, 0.069, 0.24);
 const GRIP_TILT = 0.45;
 /** the handle this far down the knuckle line (index toward little finger) from the index knuckle: the middle of the fist */
 const FIST_DOWN = 0.035;
+const BULLET_SPEED = 260;     // m/s the streak flies at (slower than a real bullet, so the eye catches it)
+const STREAK = 2.4;            // m long, the streak
+const TRAIL_LIFE = 0.9;        // s the trail hangs in the air
 const RANGE = 120;             // m a bullet carries
 const COOLDOWN = 0.32;         // s between shots (a revolver: as fast as the hammer comes back)
 const RECOIL = 0.16;           // radians the arm kicks up, easing back over a fraction of a second
@@ -66,8 +69,8 @@ export class Gun {
   private flash: THREE.Sprite;
   private light: THREE.PointLight;
   private flashT = 0;
-  private tracer: THREE.Line;
-  private tracerT = 0;
+  /** the bullets in flight: a bright streak running from the muzzle to where it hit, and a faint trail left behind */
+  private bullets: { streak: THREE.Mesh; trail: THREE.Mesh; from: THREE.Vector3; dir: THREE.Vector3; len: number; t: number }[] = [];
   private puffs: { s: THREE.Sprite; t: number }[] = [];
   private hud = document.createElement('div');
   private cross = document.createElement('div');
@@ -97,11 +100,16 @@ export class Gun {
     this.flash.visible = false;
     this.light = new THREE.PointLight('#ffc46a', 0, 7, 2);
     scene.add(this.flash, this.light);
-    this.tracer = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, 1)]),
-      new THREE.LineBasicMaterial({ color: '#ffe9a8', transparent: true, opacity: 0.85, depthWrite: false }));
-    this.tracer.frustumCulled = false;
-    this.tracer.visible = false;
-    scene.add(this.tracer);
+    // the bullets' streaks and trails: a unit tube along +z (0..1), stretched from the muzzle to the end
+    const tube = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
+    for (let k = 0; k < 6; k++) {
+      const streak = new THREE.Mesh(tube, new THREE.MeshBasicMaterial({ color: '#ffd889', transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+      const trail = new THREE.Mesh(tube, new THREE.MeshBasicMaterial({ color: '#e8e2d6', transparent: true, opacity: 0,
+        depthWrite: false }));
+      for (const m of [streak, trail]) { m.frustumCulled = false; m.visible = false; scene.add(m); }
+      this.bullets.push({ streak, trail, from: new THREE.Vector3(), dir: new THREE.Vector3(), len: 0, t: TRAIL_LIFE });
+    }
 
     this.hud.id = 'weapon';
     this.cross.id = 'crosshair';
@@ -264,9 +272,7 @@ export class Gun {
     this.flashT = 0.05;
     const hit = this.trace(o, dir);
     const end = o.clone().addScaledVector(dir, hit.t);
-    (this.tracer.geometry as THREE.BufferGeometry).setFromPoints([muzzle, end]);
-    this.tracer.visible = true;
-    this.tracerT = 0.05;
+    this.launch(muzzle, end);
     for (const c of this.crowds) c.scare(this.ramu.position.x, this.ramu.position.z, SCARE);
     if (hit.crowd) {
       this.tally.hits++;
@@ -287,6 +293,21 @@ export class Gun {
   }
 
   /** dust where a bullet strikes */
+  /** a bullet's streak and trail, from the muzzle to `end` (the oldest one reused) */
+  private launch(muzzle: THREE.Vector3, end: THREE.Vector3): void {
+    const b = this.bullets.reduce((a, c) => (c.t > a.t ? c : a));
+    b.from.copy(muzzle);
+    b.len = Math.max(0.01, muzzle.distanceTo(end));
+    b.dir.copy(end).sub(muzzle).divideScalar(b.len);
+    b.t = 0;
+    for (const m of [b.streak, b.trail]) {
+      m.position.copy(muzzle);
+      m.lookAt(end);
+      m.scale.set(0.001, 0.001, 0.001);
+    }
+    b.streak.visible = true;
+  }
+
   private puff(at: THREE.Vector3): void {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: PUFF, color: '#b8ab95', transparent: true, depthWrite: false, opacity: 0.9 }));
     s.position.copy(at);
@@ -297,7 +318,23 @@ export class Gun {
 
   private effects(dt: number): void {
     if (this.flashT > 0 && (this.flashT -= dt) <= 0) { this.flash.visible = false; this.light.intensity = 0; }
-    if (this.tracerT > 0 && (this.tracerT -= dt) <= 0) this.tracer.visible = false;
+    for (const b of this.bullets) {
+      if (b.t >= TRAIL_LIFE) continue;
+      b.t += dt;
+      // the streak: STREAK m long, its head at BULLET_SPEED from the muzzle, gone once it has arrived
+      const run = b.t * BULLET_SPEED, head = Math.min(b.len, run), tail = Math.min(b.len, Math.max(0, run - STREAK));
+      b.streak.visible = tail < b.len - 0.01;
+      if (b.streak.visible) {
+        b.streak.position.copy(b.from).addScaledVector(b.dir, tail);
+        b.streak.scale.set(0.011, 0.011, head - tail);
+      }
+      // the trail: from the muzzle to the head, thinning out and widening as it fades
+      const age = b.t / TRAIL_LIFE;
+      b.trail.visible = b.t < TRAIL_LIFE && head > 0.05;
+      (b.trail.material as THREE.MeshBasicMaterial).opacity = 0.32 * (1 - age) * (1 - age);
+      const r = 0.006 + age * 0.03;
+      b.trail.scale.set(r, r, head);
+    }
     for (let i = this.puffs.length - 1; i >= 0; i--) {
       const p = this.puffs[i];
       p.t += dt;

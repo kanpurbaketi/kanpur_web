@@ -23,6 +23,9 @@ const WINDUP = 0.15;    // seconds of the knee bend before a standing jump leave
 const CAM_DIST = 3.2, EYE = 1.35;
 /** aiming a gun: the camera this close, this far over his right shoulder, this much lower, the view this much narrower */
 const AIM_DIST = 1.55, AIM_SIDE = 0.5, AIM_DROP = 0.08, AIM_FOV = 0.82;
+/** a gun out, not aiming: the camera at its usual distance but this far over his right shoulder and this much higher, so
+ the crosshair (the middle of the screen) is out past him, not on the back of his head */
+const ARMED_SIDE = 0.75, ARMED_LIFT = 0.12;
 
 /** which body the player has: the teen (the stages) or the grown man (Explore world); his height sets the eye line */
 export interface Body { model: string; eye: number }
@@ -113,6 +116,7 @@ export class Ramu {
   private aimHold = 0;
   /** 0 .. 1: how far the camera has gone over his shoulder (aiming) */
   private aimW = 0;
+  private armedW = 0;
   private aimFov = 0;
   /** where the game's camera last was (a cutscene's camera elsewhere leaves it): the crosshair's line starts here */
   readonly aimFrom = new THREE.Vector3();
@@ -568,9 +572,12 @@ export class Ramu {
       this.camera.updateProjectionMatrix();
       if (this.aimW <= 0.001) { this.camera.fov = this.aimFov; this.camera.updateProjectionMatrix(); this.aimFov = 0; }
     }
-    if (this.aimW > 0.001) {
+    this.armedW += ((this.armed && !this.ride ? 1 : 0) - this.armedW) * Math.min(1, 6 * (1 / 60));
+    if (this.aimW > 0.001 || this.armedW > 0.001) {
       const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);            // the camera's right
-      const side = AIM_SIDE * this.aimW, ox = rx * side, oz = rz * side;
+      const carry = this.armedW * (1 - this.aimW);
+      const side = AIM_SIDE * this.aimW + ARMED_SIDE * carry, ox = rx * side, oz = rz * side;
+      py += ARMED_LIFT * carry;
       const t0 = this.world.raycast(px, py, pz, px + ox, py, pz + oz);   // not through a wall beside him
       px += ox * Math.max(0, t0 - 0.15); pz += oz * Math.max(0, t0 - 0.15);
       py -= AIM_DROP * this.aimW;

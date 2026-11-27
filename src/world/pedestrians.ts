@@ -595,14 +595,14 @@ export class Pedestrians {
       const tall = rigHeight(p.rig) * (p.actor.root.children[0]?.scale.y ?? 1);
       const y = o.y + d.y * t - base;
       if (y < 0 || y > tall) continue;
-      best = { i, t, head: y > tall * 0.8 };
+      best = { i, t, head: y > tall * 0.85 };        // the head: the top of them, from the chin
     }
     return best;
   }
 
   /**
-   * Person `i` shot (by a bullet travelling along `d`): an ordinary person is killed outright, a guard by a shot to the
-   * head or a second one to the body; one still standing turns on the shooter. Returns what came of it, and where they
+   * Person `i` shot (by a bullet travelling along `d`): a shot to the head kills anybody outright; to the body it takes
+   * two for an ordinary person (the first sends them reeling, then running), three for a guard (who turns on the shooter). Returns what came of it, and where they
    * stood and faced (the blood goes there).
    */
   shot(i: number, d: THREE.Vector3, head: boolean): 'dead' | 'hurt' {
@@ -611,7 +611,7 @@ export class Pedestrians {
     const fromBehind = fx * d.x + fz * d.z > 0.2;          // the bullet goes the way they face: it came from behind
     p.shotN = (p.shotN ?? 0) + 1;
     p.atkKind = 0; p.atkE = 0; p.wait = 0; p.hold = 0; p.ox = 0; p.oz = 0; p.block = 0;
-    if (head || p.tough <= TOUGH || p.shotN >= 2) {
+    if (head || p.shotN >= (p.hostile || p.tough > TOUGH ? 3 : 2)) {
       p.out = true;
       p.dead = true;
       p.fwd = fromBehind;                                  // shot in the back: down on their face
@@ -625,9 +625,15 @@ export class Pedestrians {
     p.heading = Math.atan2(-d.x, -d.z);
     p.flinch = FLINCH;
     p.kvx = d.x * 1.5; p.kvz = d.z * 1.5;
-    p.angry = ANGRY * 2;
-    p.mode = 1;
-    p.cool = 0.4;
+    if (p.hostile || p.tough > TOUGH) {                    // a guard (or a hard case): comes for him
+      p.angry = ANGRY * 2;
+      p.mode = 1;
+      p.cool = 0.4;
+    } else {                                               // anybody else: away, wounded
+      p.angry = 0; p.grudge = 0;
+      p.mode = 1;                                          // (off their walk while reeling: put back on it after)
+      p.panic = Math.max(p.panic, 14);
+    }
     return 'hurt';
   }
 

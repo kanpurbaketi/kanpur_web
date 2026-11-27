@@ -10,6 +10,10 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { CollisionWorld } from './player/collide';
 import { ADULT, Ramu, TEEN } from './player/ramu';
 import { Gun } from './player/gun';
+import { Daakus } from './game/daakus';
+import { population } from './world/figures';
+import { MissionBox } from './game/story/director';
+import { KUAN } from './world/melaSite';
 import { Blood } from './world/blood';
 import { CROWD_MAX, loadSettings, onSettingsChange } from './game/settings';
 import { Stats, repairRs } from './game/stats';
@@ -151,13 +155,15 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   for (const [x, z] of city.pillars) world.addPost(x, z, 0.9);
   world.addFloor((x, z) => FOOTPATHS.at(x, z) || null);           // up on the raised footpaths, not in them
   for (const [x, z, r] of detail.obstacles) world.addPost(x, z, r);
+  // Explore world: nobody about but the daakus (the mela, the well, the rides, the street vendors leave their people out)
+  population.on = !(EXPLORE && !play);
   // the mela is part of the Moti Jheel map only (its coordinates are fixed to Tulsi Upvan)
   const mela = map.area === 'moti_jheel' ? new Mela(map, NIGHT ? lightPool : null, desktop) : null;
   if (mela) {
     scene.add(mela.group);
     if (params.has('debug')) (window as unknown as { __mela: Mela }).__mela = mela;   // for test scripts
     for (const [x, z, r, h, base] of mela.posts) world.addPost(x, z, r, h, base);
-    for (const w of mela.rails) world.addWall(w.ring, w.h, w.camH > 0, w.camH);
+    for (const w of mela.rails) world.addWall(w.ring, w.h, w.camH > 0, w.camH, w.thin);
     for (const f of mela.floors) world.addFloor(f);
     for (const ring of mela.walls) world.addWall(ring, 3.4);
   }
@@ -188,10 +194,10 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   const crowdFor = (n: number) => Math.round(n * (desktop ? 1 : 0.5) * (map.area === 'moti_jheel' ? 3 : 1));
   // stage 1: the crowd is the corridor's own (footpaths, road edges, round the carts), not the city's around Ramu
   const peds = route ? new Pedestrians(corridorWalks(map, route.stalls), true) : new Pedestrians(map);
-  peds.setCount(forced ?? crowdFor(loadSettings().crowd));
-  if (forced === null) onSettingsChange((s) => peds.setCount(crowdFor(s.crowd)));
+  peds.setCount(!population.on ? 0 : forced ?? crowdFor(loadSettings().crowd));
+  if (forced === null && population.on) onSettingsChange((s) => peds.setCount(crowdFor(s.crowd)));
   scene.add(peds.group);
-  peds.populate(Math.max(crowdFor(CROWD_MAX), forced ?? 0));      // uncles, aunties, women in burqas, college girls and boys, in all their looks (no guards or goons in the street)
+  if (population.on) peds.populate(Math.max(crowdFor(CROWD_MAX), forced ?? 0));      // uncles, aunties, women in burqas, college girls and boys, in all their looks (no guards or goons in the street)
   const lookDir = new THREE.Vector3();
   const hud = new Hud(map);
   const stats = new Stats(city.roadPoints);
@@ -263,7 +269,8 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
     if (play.run !== null && (run.beat -= dt) <= 0) { run.beat = 60; account.runBeat(play.run, run.played, runStats()); }
   };
   // life bar: vehicles hurt; a knockout wakes Ramu back at the spawn point
-  const health = new Health(() => { ramu.position.set(spawnAt[0], 0, spawnAt[1]); ramu.releaseKeys(); stats.count('knockouts'); });
+  let daakus: Daakus | null = null;
+  const health = new Health(() => { ramu.position.set(spawnAt[0], 0, spawnAt[1]); ramu.releaseKeys(); stats.count('knockouts'); daakus?.calm(); });
   if (params.has('debug')) (window as unknown as { __health: Health }).__health = health;
   // goons (dark-clothed men in the crowd) run at Ramu and punch / kick; his own punch staggers them
   const mugged = (d: number) => { const was = health.value; health.hurt(d); if (health.value < was) { ramu.flinch(); void playSfx('punch', 0.9); } };
@@ -280,7 +287,7 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
   if (params.has('debug')) (window as unknown as { __footpaths: typeof FOOTPATHS }).__footpaths = FOOTPATHS;
   if (params.has('debug') && mela) (window as unknown as { __melaCrowd: Pedestrians }).__melaCrowd = mela.crowd;
   // Explore world: the revolver, and blood where it hits
-  let gun: Gun | null = null, blood: Blood | null = null;
+  let gun: Gun | null = null, blood: Blood | null = null, exploreBox: MissionBox | null = null;
   if (EXPLORE && !play) {
     document.body.classList.add('explore');
     // street level: the road and the paving are drawn a little over the floor's 0 (up to 5 cm, the plazas): marks on the top
@@ -288,6 +295,33 @@ async function main(play: Play | null): Promise<{ begin: () => Promise<void> }> 
     scene.add(blood.group);
     gun = new Gun(scene, ramu, controls, world, mela ? [peds, mela.crowd] : [peds], blood);
     if (params.has('debug')) (window as unknown as { __gun: Gun }).__gun = gun;
+    // the mission: the daakus about Moti Jheel, and their leader hiding down in the maut ka kuan
+    if (mela) {
+      const box = new MissionBox();
+      box.set(1, 'explore.m1', 'explore.m1.h1', [KUAN.x, KUAN.z]);
+      exploreBox = box;
+      void Daakus.create(world, ramu, peds.spots(), mela.crowd.spots(), spawnAt).then((g) => {
+        daakus = g;
+        scene.add(g.group);
+        gun!.addTargets(g);
+        g.onShot = (muzzle, end, loud, flesh) => gun!.shotFx(muzzle, end, loud, flesh);
+        g.onHurt = (dmg) => {
+          const was = health.value;
+          health.hurt(dmg);
+          if (health.value >= was) return;
+          ramu.flinch();
+          void playSfx('flesh', 0.8);
+          const at = new THREE.Vector3(ramu.position.x, ramu.position.y + 1.3, ramu.position.z);
+          blood!.spray(at, new THREE.Vector3(-Math.sin(ramu.facing), 0, -Math.cos(ramu.facing)).negate(), false);
+        };
+        g.onLeaderDown = () => {
+          box.clear();
+          exploreBox = null;
+          void passedCard(t('explore.passed'), t('explore.passed.sub'), 6);
+        };
+        if (params.has('debug')) (window as unknown as { __daakus: Daakus }).__daakus = g;
+      }).catch((e) => console.error('the daakus failed to load', e));
+    }
   }
   let punchesSeen = 0;
   let punchLand = -1;      // seconds until the punch now in the air lands (-1: none)
@@ -497,6 +531,7 @@ void main() {
       }
       ramu.update(dt);
       if (gun && !paused) gun.update(dt);                 // (after his clip: the arm up at the aim, the gun in his fist)
+      if (daakus && !paused) daakus.update(dt);
       if (director && !paused) director.update(dt);
       if (keepers && !paused) keepers.update(dt, ramu.position.x, ramu.position.z);
       if (queue && !paused) queue.update(dt, ramu.position.x, ramu.position.z);     // the story: after Ramu, so a cutscene's camera has the last word
@@ -537,6 +572,14 @@ void main() {
     }
     sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
     hud.guide = director?.guide() ?? null;
+    if (exploreBox) {
+      exploreBox.update(dt, ramu.position.x, ramu.position.z);
+      const [lx, lz] = daakus?.leaderAt ?? [KUAN.x, KUAN.z];
+      // near the well, the hint says how to get at him
+      const hint = Math.hypot(ramu.position.x - KUAN.x, ramu.position.z - KUAN.z) < 30 ? 'explore.m1.h2' : 'explore.m1.h1';
+      if (hint !== exploreBox.hintNow) exploreBox.set(1, 'explore.m1', hint, [KUAN.x, KUAN.z]);
+      hud.guide = { x: lx, z: lz, title: t('explore.m1'), hint: t(hint), path: [] };
+    }
     if (!fixed) hud.update(ramu.position.x, ramu.position.z, ramu.yaw);
     renderer.info.reset();
     treeUniforms.time.value += dt;

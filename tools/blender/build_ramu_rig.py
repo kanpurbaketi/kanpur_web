@@ -50,8 +50,12 @@ UNUSED = {'kp_fall_reach'}    # clips that keep their travel: a man knocked out 
 # clips whose left arm the FBX leaves in the T-pose: that arm comes from the idle instead
 LEFT_ARM_FROM_IDLE = {'hungry'}
 RAMU_ONLY = {'hungry', 'hang_idle', 'hang_start', 'hang_braced', 'hang_drop', 'falling',
-             'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far', 'fall_back', 'hang_jump', 'fall_balance', 'climb_rail', 'slip_fall',
-             'gun_point', 'gun_aim'}   # the revolver in Explore world (src/player/gun.ts): one-handed from the hip, two-handed aimed
+             'pick_try', 'pick_start', 'pick_lock', 'pick_open', 'pick_low', 'car_sit', 'car_in', 'car_out', 'car_bail', 'lurk', 'self_point', 'struck', 'climb_roof', 'roof_crouch', 'roof_leap', 'jump_far', 'fall_back', 'hang_jump', 'fall_balance', 'climb_rail', 'slip_fall'}
+
+# the revolver's clips (Explore world): Ramu's (src/player/gun.ts: one-handed from the hip, two-handed aimed), and the
+# daakus' who shoot back (src/game/daakus.ts; until their own models come, they are the uncle's body in dark clothes)
+GUN_CLIPS = {'gun_point', 'gun_aim'}
+ARMED = PLAYER or CHAR in ('uncle',) or CHAR.startswith('daaku')
 
 # clips only the guards play (shouting at Ramu while they talk: person.ts talkClip): not baked into the others
 GUARD_ONLY = {'yell'}
@@ -792,6 +796,8 @@ def import_mixamo_clips():
     for f in files:
         name = clip_name(os.path.splitext(os.path.basename(f))[0])
         if name in RAMU_ONLY and not PLAYER:
+            continue
+        if name in GUN_CLIPS and not ARMED:
             continue
         if name in GUARD_ONLY and not CHAR.startswith('security'):
             continue

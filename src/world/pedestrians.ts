@@ -467,6 +467,9 @@ export class Pedestrians {
   }
 
   /** Keep Ramu (a circle of radius r at foot height y) out of the people: returns his corrected [x, z]. */
+  /** the places on the walking graph (footpath and aisle corners): somewhere a person can stand */
+  spots(): [number, number][] { return this.nodes.map((n) => [n.x, n.z]); }
+
   pushOut(x: number, z: number, r: number, y: number): [number, number] {
     for (let i = 0; i < this.active; i++) {
       const p = this.peds[i];

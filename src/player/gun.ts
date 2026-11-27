@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Ramu } from './ramu';
 import type { Controls } from '../game/controls';
 import type { CollisionWorld } from './collide';
-import type { Pedestrians } from '../world/pedestrians';
+import type { Rider } from './rider';
 import type { Blood } from '../world/blood';
 import { gltfLoader } from '../world/gltf';
 import { findBone } from '../world/handProp';
@@ -24,7 +24,7 @@ import { t, onLang } from '../i18n';
 export type Weapon = 'fists' | 'revolver';
 const WEAPONS: Weapon[] = ['fists', 'revolver'];
 /** where the muzzle is on the model, from its origin (the fist): build_revolver prints it */
-const MUZZLE = new THREE.Vector3(0, 0.069, 0.24);
+export const MUZZLE = new THREE.Vector3(0, 0.069, 0.24);
 /** the barrel lies this far above the line from wrist to knuckles (radians): how a hand closes on a pistol's grip */
 const GRIP_TILT = 0.45;
 /** the handle this far down the knuckle line (index toward little finger) from the index knuckle: the middle of the fist */
@@ -84,7 +84,36 @@ class UpperClip {
 }
 const UP = new THREE.Vector3(0, 1, 0);
 
-function glowTexture(inner: string, outer: string): THREE.Texture {
+/** whoever can be shot: the street crowd and the mela's (Pedestrians), the daakus (src/game/daakus.ts) */
+export interface Targets {
+  /** the first of them a shot from `o` along `d` hits within `max` m: who, how far along, in the head or not */
+  shoot(o: THREE.Vector3, d: THREE.Vector3, max: number): { i: number; t: number; head: boolean } | null;
+  /** person `i` hit by a bullet travelling along `d` */
+  shot(i: number, d: THREE.Vector3, head: boolean): 'dead' | 'hurt';
+  /** where person `i`'s chest is now (a body: where it lies) */
+  chestOf(i: number, out: THREE.Vector3): THREE.Vector3;
+  /** a gunshot at (x, z), heard `r` m round */
+  scare(x: number, z: number, r: number): void;
+}
+
+/**
+ * A revolver in a right fist as the hand is now (Rider: the hand's bones): where its handle sits (the origin of
+ * models/revolver.glb) and which way it points (its barrel, its top). Ramu's and the daakus'.
+ */
+export function gunInFist(rig: Rider, hand: THREE.Object3D, index: THREE.Object3D | null): { fist: THREE.Vector3; fwd: THREE.Vector3; up: THREE.Vector3 } | null {
+  const along = new THREE.Vector3(), palm = new THREE.Vector3();
+  if (!rig.hand('Right', along, palm)) return null;
+  const across = new THREE.Vector3().crossVectors(palm, along).normalize();      // index to little finger
+  const fist = hand.getWorldPosition(new THREE.Vector3());
+  if (index) fist.lerp(index.getWorldPosition(new THREE.Vector3()), 0.8); else fist.addScaledVector(along, 0.07);
+  // into the fist: the skinned fingers close lower than the knuckle bones (a rig may have one finger bone for all four)
+  fist.addScaledVector(palm, 0.022).addScaledVector(across, FIST_DOWN).addScaledVector(along, 0.025);
+  const up = across.clone().negate();
+  const fwd = along.clone().multiplyScalar(Math.cos(GRIP_TILT)).addScaledVector(up, Math.sin(GRIP_TILT)).normalize();
+  return { fist, fwd, up };
+}
+
+export function glowTexture(inner: string, outer: string): THREE.Texture {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const g = c.getContext('2d')!;
@@ -115,6 +144,8 @@ export class Gun {
   /** the bullets in flight: a bright streak running from the muzzle to where it hit, and a faint trail left behind */
   private bullets: { streak: THREE.Mesh; trail: THREE.Mesh; from: THREE.Vector3; dir: THREE.Vector3; len: number; t: number }[] = [];
   private puffs: { s: THREE.Sprite; t: number }[] = [];
+  /** others' muzzle flashes (shotFx) */
+  private flashes: { s: THREE.Sprite; t: number }[] = [];
   private hud = document.createElement('div');
   private cross = document.createElement('div');
   private hitT = 0;
@@ -136,7 +167,7 @@ export class Gun {
   readonly tally = { shots: 0, hits: 0, kills: 0 };
 
   constructor(private scene: THREE.Scene, private ramu: Ramu, private controls: Controls,
-              private world: CollisionWorld, private crowds: Pedestrians[], private blood: Blood) {
+              private world: CollisionWorld, private crowds: Targets[], private blood: Blood) {
     scene.add(this.holder);
     this.holder.visible = false;
     gltfLoader().loadAsync('models/revolver.glb').then((g) => {
@@ -151,9 +182,16 @@ export class Gun {
     this.flash.visible = false;
     this.light = new THREE.PointLight('#ffc46a', 0, 7, 2);
     scene.add(this.flash, this.light);
+    for (let k = 0; k < 4; k++) {
+      const s = new THREE.Sprite(this.flash.material.clone());
+      s.scale.setScalar(0.22);
+      s.visible = false;
+      scene.add(s);
+      this.flashes.push({ s, t: 0 });
+    }
     // the bullets' streaks and trails: a unit tube along +z (0..1), stretched from the muzzle to the end
     const tube = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
-    for (let k = 0; k < 6; k++) {
+    for (let k = 0; k < 14; k++) {
       const streak = new THREE.Mesh(tube, new THREE.MeshBasicMaterial({ color: '#ffd889', transparent: true,
         blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
       const trail = new THREE.Mesh(tube, new THREE.MeshBasicMaterial({ color: '#e8e2d6', transparent: true, opacity: 0,
@@ -182,6 +220,9 @@ export class Gun {
     }, { passive: true });
     this.hud.addEventListener('click', () => this.choose(WEAPONS[(WEAPONS.indexOf(this.weapon) + 1) % WEAPONS.length]));
   }
+
+  /** more people who can be shot (the daakus, once they are in) */
+  addTargets(t: Targets): void { this.crowds.push(t); }
 
   choose(w: Weapon): void {
     if (w === this.weapon) return;
@@ -283,7 +324,7 @@ export class Gun {
     sk.updateMatrixWorld(true);
 
     // the gun in the fist: aimed, along the shot; carried, as the hand holds it
-    const f = rig && this.fistFrame(rig, b);
+    const f = rig && gunInFist(rig, b.hand, b.index);
     if (!f) return;
     const fwd = f.fwd.clone().lerp(kicked, this.aimW).normalize();
     const up = f.up.clone().lerp(gunUp, this.aimW);
@@ -298,20 +339,6 @@ export class Gun {
     if (n > 0 && this.cool <= 0) this.fire(o, dir);
   }
 
-  /** the fist as the hand is now: where the handle sits in it, and which way a gun held in it points (its barrel, its top) */
-  private fistFrame(rig: NonNullable<Ramu['rider']>, b: NonNullable<Gun['bones']>): { fist: THREE.Vector3; fwd: THREE.Vector3; up: THREE.Vector3 } | null {
-    const along = new THREE.Vector3(), palm = new THREE.Vector3();
-    if (!rig.hand('Right', along, palm)) return null;
-    const across = new THREE.Vector3().crossVectors(palm, along).normalize();      // index to little finger
-    const fist = b.hand.getWorldPosition(new THREE.Vector3());
-    if (b.index) fist.lerp(b.index.getWorldPosition(new THREE.Vector3()), 0.8); else fist.addScaledVector(along, 0.07);
-    // into the fist: the skinned fingers close lower than the knuckle bones (this rig has one finger bone for all four)
-    fist.addScaledVector(palm, 0.022).addScaledVector(across, FIST_DOWN).addScaledVector(along, 0.025);
-    const up = across.clone().negate();
-    const fwd = along.clone().multiplyScalar(Math.cos(GRIP_TILT)).addScaledVector(up, Math.sin(GRIP_TILT)).normalize();
-    return { fist, fwd, up };
-  }
-
   /** where a shot's line starts: on the camera's line, level with Ramu (nothing between him and the camera is hit) */
   private rayStart(dir: THREE.Vector3): THREE.Vector3 {
     const c = this.ramu.aimFrom, p = this.ramu.position;
@@ -319,17 +346,35 @@ export class Gun {
     return c.clone().addScaledVector(dir, along);
   }
 
-  /** the first thing along the line: a person (which crowd, who, head or body) or a wall / the ground, `t` m along */
-  private trace(o: THREE.Vector3, dir: THREE.Vector3): { t: number; crowd: Pedestrians | null; i: number; head: boolean; wall: boolean } {
-    let tw = RANGE, wall = false;
-    const f = this.world.raycast(o.x, o.y, o.z, o.x + dir.x * RANGE, o.y + dir.y * RANGE, o.z + dir.z * RANGE);
-    if (f < 1) { tw = f * RANGE; wall = true; }
-    if (dir.y < -0.01) {                                  // the ground (about level with Ramu's feet)
-      const g = this.world.floorAt(this.ramu.position.x, this.ramu.position.z, this.ramu.position.y + 0.5);
-      const tg = (o.y - g) / -dir.y;
-      if (tg > 0 && tg < tw) { tw = tg; wall = true; }
+  /** how far down the line from `o` it meets the floor under it (walked in steps, finer near), or `max` */
+  private groundAlong(o: THREE.Vector3, dir: THREE.Vector3, max: number): number {
+    let prev = 0;
+    for (let t = 0.5; t < max; t += t < 30 ? 0.5 : 1.5) {
+      const x = o.x + dir.x * t, y = o.y + dir.y * t, z = o.z + dir.z * t;
+      if (y < -1) return t;
+      if (y <= this.world.floorAt(x, z, y + 0.4)) {
+        // between the last step above and this one
+        for (let k = 0; k < 5; k++) {
+          const m = (prev + t) / 2, ym = o.y + dir.y * m;
+          if (ym <= this.world.floorAt(o.x + dir.x * m, o.z + dir.z * m, ym + 0.4)) t = m; else prev = m;
+        }
+        return t;
+      }
+      prev = t;
     }
-    let best: { t: number; crowd: Pedestrians | null; i: number; head: boolean; wall: boolean } = { t: tw, crowd: null, i: -1, head: false, wall };
+    return max;
+  }
+
+  /** the first thing along the line: a person (which crowd, who, head or body) or a wall / the ground, `t` m along */
+  private trace(o: THREE.Vector3, dir: THREE.Vector3): { t: number; crowd: Targets | null; i: number; head: boolean; wall: boolean } {
+    let tw = RANGE, wall = false;
+    const f = this.world.fireLine(o.x, o.y, o.z, o.x + dir.x * RANGE, o.y + dir.y * RANGE, o.z + dir.z * RANGE);
+    if (f < 1) { tw = f * RANGE; wall = true; }
+    if (dir.y < -0.01) {                                  // the ground (the floor under each point of the way: down into the well too)
+      const tg = this.groundAlong(o, dir, tw);
+      if (tg < tw) { tw = tg; wall = true; }
+    }
+    let best: { t: number; crowd: Targets | null; i: number; head: boolean; wall: boolean } = { t: tw, crowd: null, i: -1, head: false, wall };
     for (const c of this.crowds) {
       const h = c.shoot(o, dir, best.t);
       if (h && h.t < best.t) best = { t: h.t, crowd: c, i: h.i, head: h.head, wall: false };
@@ -389,6 +434,21 @@ export class Gun {
     b.streak.visible = true;
   }
 
+  /**
+   * Somebody else's shot (a daaku's): its flash at `muzzle`, its streak to `end`, the bang (`loud`: 0..1, by how far off),
+   * dust where it strikes unless it struck a person (`flesh`)
+   */
+  shotFx(muzzle: THREE.Vector3, end: THREE.Vector3, loud: number, flesh: boolean): void {
+    const f = this.flashes.find((x) => x.t <= 0) ?? this.flashes[0];
+    f.s.position.copy(muzzle);
+    f.s.material.rotation = Math.random() * Math.PI;
+    f.s.visible = true;
+    f.t = 0.06;
+    this.launch(muzzle, end);
+    if (loud > 0.02) void playSfx('shot', loud);
+    if (!flesh) this.puff(end);
+  }
+
   private puff(at: THREE.Vector3): void {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: PUFF, color: '#b8ab95', transparent: true, depthWrite: false, opacity: 0.9 }));
     s.position.copy(at);
@@ -399,6 +459,7 @@ export class Gun {
 
   private effects(dt: number): void {
     if (this.flashT > 0 && (this.flashT -= dt) <= 0) { this.flash.visible = false; this.light.intensity = 0; }
+    for (const f of this.flashes) if (f.t > 0 && (f.t -= dt) <= 0) f.s.visible = false;
     for (const b of this.bullets) {
       if (b.t >= TRAIL_LIFE) continue;
       b.t += dt;

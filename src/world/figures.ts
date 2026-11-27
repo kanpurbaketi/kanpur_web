@@ -61,7 +61,15 @@ function resolve(s: Spot, i: number): { kind: FigureKind; look: number } {
  * The room the figures at `spots` take up, for the collision world: [x, z, half-size, top, foot] in the spots' own frame.
  * Somebody sitting cross-legged takes more floor than somebody standing.
  */
+/**
+ * Whether the town has its people: off in Explore world (the daakus' mission), where nobody is about but the gang. Read
+ * as the world is built: the mela, the well, the street vendors and the rides leave their people out (figures and rigged
+ * people both) while it is off.
+ */
+export const population = { on: true };
+
 export function figurePosts(spots: Spot[]): [number, number, number, number, number][] {
+  if (!population.on) return [];
   return spots.map((s) => {
     const k = s.s ?? 1;
     const r = (s.pose === 'sit' ? 0.36 : s.pose === 'chair' ? 0.32 : 0.24) * k;
@@ -72,6 +80,7 @@ export function figurePosts(spots: Spot[]): [number, number, number, number, num
 
 /** Put figures at `spots` under `parent`. They appear once their models have loaded. */
 export function addFigures(parent: THREE.Object3D, spots: Spot[]): void {
+  if (!population.on) return;
   const groups = new Map<string, { kind: FigureKind; look: number; pose: Pose; spots: Spot[] }>();
   spots.forEach((s, i) => {
     const { kind, look } = resolve(s, i);
@@ -112,6 +121,7 @@ export function someone(n: number, pose: Pose, scale = 1, kinds: FigureKind[] = 
 /** One figure, as an object that can be moved about (it is empty until the model has loaded). */
 export function figure(kind: FigureKind, look: number, pose: Pose, scale = 1): THREE.Group {
   const holder = new THREE.Group();
+  if (!population.on) return holder;
   Promise.all([poses(kind), rigMaterial(kind, look)]).then(([geo, mat]) => {
     const geometry = geo.get(pose);
     if (!geometry) return;
